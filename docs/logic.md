@@ -42,7 +42,7 @@ Each pet's position is a pure function of `(owner id, pet slot, current time, wa
 ## Camera
 
 - The zoom is the largest whole number at which the current room (with walls) fits the space the HUD, dock, side bar and panels leave free. Whole numbers keep the pixels crisp.
-- If the room fits, the camera centres on the room. Otherwise it follows the player. It eases between rooms.
+- If the room fits, the camera centres on the room. Otherwise it follows the player. Either way it stops at the edges of the house, so the screen never shows empty space beyond it. It eases between rooms.
 
 ## Using furniture
 

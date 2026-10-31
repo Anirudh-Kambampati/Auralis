@@ -60,7 +60,7 @@ let shopTab = 'cozy';
 let placing: ItemKey | null = null;
 let moving: number | null = null; // index of the furniture picked up in Decorate
 let drag: { index: number; gx: number; gy: number; lx: number; ly: number; moved: boolean } | null = null;
-let doneSentFor = 0;
+let lastDoneTry = 0; // when we last told the server a finished session is done
 let view = { ox: 0, oy: 0, scale: 1 };
 // Extra integer scale steps on top of the fitted view (+ zooms in, - zooms out).
 // Phones start one step closer, so faces and small things are easier to see; pinch or +/- changes it.
@@ -527,8 +527,10 @@ function step(dt: number) {
   }
   wander();
   const focus = myMember()?.focus;
-  if (focus && Date.now() >= focus.endsAt && doneSentFor !== focus.endsAt) {
-    doneSentFor = focus.endsAt;
+  // Keep asking until the server ends the session: a single try is lost if the connection blinks
+  // or this device's clock runs ahead of the server's (it refuses "done" before its own end time).
+  if (focus && Date.now() >= focus.endsAt && Date.now() - lastDoneTry > 3000) {
+    lastDoneTry = Date.now();
     send({ t: 'focus_done' });
   }
 }
@@ -564,8 +566,10 @@ function render(t: number) {
   const vw = aw / scale, vh = ah / scale;
   // Centre the whole room when it fits on screen; otherwise follow the player.
   const fits = roomW <= vw && roomH <= vh;
-  const tx = fits ? (o.x - 1) * T + roomW / 2 : me_.x * T + 8;
-  const ty = fits ? (o.y - WALL_H) * T + roomH / 2 : me_.y * T + 8;
+  // When following the player, stop at the house edges so the view never shows empty paper beyond them.
+  const follow = (p: number, view: number, size: number) => (size + T <= view ? size / 2 : Math.max(view / 2 - T / 2, Math.min(size - view / 2 + T / 2, p)));
+  const tx = follow(fits ? (o.x - 1) * T + roomW / 2 : me_.x * T + 8, vw, grid.w * T);
+  const ty = follow(fits ? (o.y - WALL_H) * T + roomH / 2 : me_.y * T + 8, vh, grid.h * T);
   if (!cam || cam.scale !== scale) cam = { x: tx, y: ty, scale };
   cam.x += (tx - cam.x) * 0.12; // glide when moving to another room
   cam.y += (ty - cam.y) * 0.12;
