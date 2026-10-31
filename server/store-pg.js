@@ -19,17 +19,22 @@ export async function openPgStore(url, legacyJsonFile) {
     create table if not exists auth (token text primary key, player_id text not null, expires bigint not null);
     alter table accounts add column if not exists email text;
     create unique index if not exists accounts_email on accounts (lower(email)) where email is not null;
+    alter table accounts add column if not exists coins integer;
   `);
 
   const db = { players: {}, houses: {} };
   for (const r of (await pool.query('select id, data from players')).rows) db.players[r.id] = r.data;
   for (const r of (await pool.query('select code, data from houses')).rows) db.houses[r.code] = r.data;
+  // An account's coins live in their own column; it wins over the copy in the player's JSON.
+  for (const r of (await pool.query('select player_id, coins from accounts where coins is not null')).rows) {
+    if (db.players[r.player_id]) db.players[r.player_id].coins = r.coins;
+  }
 
   // Saves run one at a time so an older snapshot never lands after a newer one.
   let queue = Promise.resolve();
   function saveAll() {
     const players = Object.values(db.players), houses = Object.values(db.houses);
-    const ids = players.map((p) => p.id), pdata = players.map((p) => JSON.stringify(p));
+    const ids = players.map((p) => p.id), pdata = players.map((p) => JSON.stringify(p)), coins = players.map((p) => p.coins ?? null);
     const codes = houses.map((h) => h.code), hdata = houses.map((h) => JSON.stringify(h));
     queue = queue.then(async () => {
       const c = await pool.connect();
@@ -37,6 +42,8 @@ export async function openPgStore(url, legacyJsonFile) {
         await c.query('begin');
         await c.query(`insert into players (id, data) select * from unnest($1::text[], $2::jsonb[])
           on conflict (id) do update set data = excluded.data`, [ids, pdata]);
+        await c.query(`update accounts a set coins = v.coins from unnest($1::text[], $2::int[]) v(id, coins)
+          where a.player_id = v.id`, [ids, coins]);
         await c.query(`insert into houses (code, data) select * from unnest($1::text[], $2::jsonb[])
           on conflict (code) do update set data = excluded.data`, [codes, hdata]);
         await c.query('commit');

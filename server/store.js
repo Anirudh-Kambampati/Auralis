@@ -37,19 +37,25 @@ export function openStore(file, legacyJsonFile) {
   // Email arrived after the first accounts, so add it to older databases too.
   if (!sql.prepare("select 1 from pragma_table_info('accounts') where name = 'email'").get()) sql.exec('alter table accounts add column email text');
   sql.exec('create unique index if not exists accounts_email on accounts (lower(email)) where email is not null');
+  // An account's coins live in their own column; it wins over the copy in the player's JSON.
+  if (!sql.prepare("select 1 from pragma_table_info('accounts') where name = 'coins'").get()) sql.exec('alter table accounts add column coins integer');
 
   const db = { players: {}, houses: {} };
   for (const r of sql.prepare('select id, data from players').all()) db.players[r.id] = JSON.parse(r.data);
   for (const r of sql.prepare('select code, data from houses').all()) db.houses[r.code] = JSON.parse(r.data);
+  for (const r of sql.prepare('select player_id, coins from accounts where coins is not null').all()) {
+    if (db.players[r.player_id]) db.players[r.player_id].coins = r.coins;
+  }
 
   const upsertPlayer = sql.prepare('insert into players (id, data) values (?, ?) on conflict(id) do update set data = excluded.data');
   const upsertHouse = sql.prepare('insert into houses (code, data) values (?, ?) on conflict(code) do update set data = excluded.data');
+  const saveCoins = sql.prepare('update accounts set coins = ? where player_id = ?');
 
   // shortcut: rewrites every row in one transaction; fine for hundreds of players, track dirty rows beyond that.
   function saveAll() {
     sql.exec('begin');
     try {
-      for (const p of Object.values(db.players)) upsertPlayer.run(p.id, JSON.stringify(p));
+      for (const p of Object.values(db.players)) { upsertPlayer.run(p.id, JSON.stringify(p)); saveCoins.run(p.coins ?? null, p.id); }
       for (const h of Object.values(db.houses)) upsertHouse.run(h.code, JSON.stringify(h));
       sql.exec('commit');
     } catch (err) {

@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 import { openStore, hashPassword, checkPassword } from './store.js';
 
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'auralis-'));
@@ -29,6 +30,20 @@ test('players and houses survive a restart', () => {
   again.deleteHouse('ABCDE');
   again.close();
   assert.equal(openStore(file).db.houses.ABCDE, undefined);
+});
+
+test('account coins are saved in their own column, which wins on load', () => {
+  const file = path.join(tmp(), 'c.db');
+  const s = openStore(file);
+  s.createAccount('p1', 'Mo', 'secret-pass', null);
+  s.db.players.p1 = { id: 'p1', coins: 42 };
+  s.saveAll();
+  s.close();
+  const raw = new DatabaseSync(file);
+  assert.equal(raw.prepare('select coins from accounts where player_id = ?').get('p1').coins, 42);
+  raw.prepare('update accounts set coins = 7').run();
+  raw.close();
+  assert.equal(openStore(file).db.players.p1.coins, 7);
 });
 
 test('accounts: unique usernames and emails, log in with either, token sign-in', () => {
