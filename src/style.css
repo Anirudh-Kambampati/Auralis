@@ -36,7 +36,6 @@ html, body {
 }
 /* Pixel cursors for each action (see public/cursor-*.svg). */
 :root {
-  --walk: url('/cursor-walk.svg') 0 0, auto;
   --grab: url('/cursor-grab.svg') 16 12, grab;
   --grabbing: url('/cursor-grabbing.svg') 16 12, grabbing;
   --place: url('/cursor-place.svg') 16 16, crosshair;
@@ -44,7 +43,6 @@ html, body {
   --nope: url('/cursor-nope.svg') 0 0, not-allowed;
   --busy: url('/cursor-busy.svg') 16 16, progress;
 }
-#game { cursor: var(--walk); }
 body.busy, body.busy * { cursor: var(--busy) !important; }
 
 /* ---------- loading screen ---------- */
