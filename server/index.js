@@ -468,7 +468,7 @@ function serveStatic(req, res) {
     if (!fs.existsSync(file)) file = path.join(DIST, 'index.html');
   }
   if (!fs.existsSync(file)) return res.writeHead(200, { 'content-type': 'text/plain' }).end('Auralis game server is running. Open the game from its website.');
-  const types = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.webmanifest': 'application/manifest+json' };
+  const types = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.webmanifest': 'application/manifest+json', '.png': 'image/png', '.ico': 'image/x-icon' };
   res.writeHead(status, { 'content-type': types[path.extname(file)] ?? 'application/octet-stream' });
   fs.createReadStream(file).pipe(res);
 }
