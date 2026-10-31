@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <!-- Auralis app icon: a sleepy-happy study buddy with hair buns. Original artwork. -->
+  <defs>
+    <clipPath id="head"><rect x="15" y="18" width="34" height="32" rx="16"/></clipPath>
+  </defs>
+  <rect x="2" y="2" width="60" height="60" rx="16" fill="#f6dbe5" stroke="#2b2530" stroke-width="3"/>
+  <circle cx="51" cy="13" r="2" fill="#fffaf3"/>
+  <path d="M12 11v6M9 14h6" stroke="#f2c14e" stroke-width="2.5" stroke-linecap="round"/>
+  <!-- buns -->
+  <circle cx="17" cy="20" r="7" fill="#3a2a35" stroke="#2b2530" stroke-width="3"/>
+  <circle cx="47" cy="20" r="7" fill="#3a2a35" stroke="#2b2530" stroke-width="3"/>
+  <circle cx="15" cy="18" r="2" fill="#5a4656"/>
+  <circle cx="45" cy="18" r="2" fill="#5a4656"/>
+  <!-- face -->
+  <rect x="15" y="18" width="34" height="32" rx="16" fill="#ffe0c8"/>
+  <g clip-path="url(#head)">
+    <path d="M13 16h38v13c-3 0-5-2-6-4-2 3-6 4-10 4-3 0-5-1-6-3-2 3-6 3-9 3h-7z" fill="#3a2a35"/>
+    <path d="M20 21c3-2 6-3 10-3" stroke="#5a4656" stroke-width="2" fill="none" stroke-linecap="round"/>
+  </g>
+  <rect x="15" y="18" width="34" height="32" rx="16" fill="none" stroke="#2b2530" stroke-width="3"/>
+  <!-- happy closed eyes, blush, smile -->
+  <path d="M22 36q3-3 6 0M36 36q3-3 6 0" stroke="#2b2530" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+  <ellipse cx="21" cy="41" rx="3" ry="2" fill="#f7a0a8"/>
+  <ellipse cx="43" cy="41" rx="3" ry="2" fill="#f7a0a8"/>
+  <path d="M29.5 41q2.5 2.5 5 0" stroke="#c8606a" stroke-width="2.2" fill="none" stroke-linecap="round"/>
+  <!-- little open book below the chin -->
+  <path d="M20 52l12 3 12-3v7l-12 2-12-2z" fill="#fffaf3" stroke="#2b2530" stroke-width="2.5" stroke-linejoin="round"/>
+  <path d="M32 55v6" stroke="#2b2530" stroke-width="2"/>
+</svg>

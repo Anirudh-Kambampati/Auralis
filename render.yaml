@@ -1,0 +1,26 @@
+# Render Blueprint for the Auralis game server (API + WebSocket).
+# The frontend is deployed separately on Vercel. Secrets are entered in the Render dashboard (sync: false).
+services:
+  - type: web
+    name: auralis-server
+    runtime: node
+    plan: free
+    region: singapore # closest Render region to the Neon project (aws-ap-southeast-1)
+    buildCommand: npm ci --omit=dev
+    startCommand: node server/index.js
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_VERSION
+        value: "24"
+      - key: DATABASE_URL
+        sync: false
+      - key: AWS_ACCESS_KEY_ID
+        sync: false
+      - key: AWS_SECRET_ACCESS_KEY
+        sync: false
+      - key: AWS_ENDPOINT_URL_S3
+        sync: false
+      - key: AWS_REGION
+        sync: false
+      - key: ALLOWED_ORIGINS
+        sync: false # e.g. https://auralis.vercel.app

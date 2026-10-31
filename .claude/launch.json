@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "auralis",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["--env-file-if-exists=.env", "--env-file-if-exists=.env.local", "server/index.js"],
+      "port": 8787
+    }
+  ]
+}
