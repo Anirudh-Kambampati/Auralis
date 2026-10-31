@@ -24,7 +24,7 @@ type Member = {
 type Todo = { id: number; text: string; done: boolean; by: string };
 type Chat = { id: number; from: string; by: string; text: string; at: number };
 type Session = { at: number; minutes: number; tag: string };
-type Me = { id: string; coins: number; inventory: Record<string, number>; sessions: Session[]; subjects: string[]; hiddenSubjects: string[]; todos: Todo[]; dm: Record<string, Chat[]>; petAccs?: string[] };
+type Me = { id: string; home?: string; visited?: { code: string; ownerName: string | null; online: number }[]; banned?: { id: string; name: string }[]; coins: number; inventory: Record<string, number>; sessions: Session[]; subjects: string[]; hiddenSubjects: string[]; todos: Todo[]; dm: Record<string, Chat[]>; petAccs?: string[] };
 type Board = { scope: string; period: string; rows: { name: string; me: boolean; minutes: number }[] };
 type Avatar = { x: number; y: number; tx: number; ty: number; up: boolean; dist: number; use?: string };
 type ItemKey = keyof typeof ITEMS;
@@ -46,6 +46,7 @@ let todos: Todo[] = [];
 let chat: Chat[] = [];
 let dmPeer: string | null = null; // null = talking to the whole house
 let houseCode = '';
+let houseOwnerName = ''; // whose home this house is (empty for old shared houses with no owner)
 let me: Me = { id: myId, coins: 0, inventory: {}, sessions: [], subjects: [], hiddenSubjects: [], todos: [], dm: {} };
 let statsTab = 'mine';
 let statsRange = 'week';
@@ -106,6 +107,7 @@ function onMessage(m: any) {
     const wasFocusing = !!myMember()?.focus;
     const oldGrid = grid, oldSlots = slots.map((x) => `${x.m.id}:${x.ri}`);
     houseCode = m.house.code;
+    houseOwnerName = m.house.ownerName ?? '';
     members = m.house.members;
     todos = m.house.todos;
     me = m.me;
@@ -918,12 +920,12 @@ function toast(html: string, kind = '') {
   toastTimer = window.setTimeout(() => (el.hidden = true), 3200);
 }
 
-function copyCode() {
-  const shown = () => toast(`Your house code is <b>${houseCode}</b>`);
-  if (navigator.clipboard) navigator.clipboard.writeText(houseCode).then(() => toast(`Copied house code <b>${houseCode}</b>!`), shown);
+function copyCode(code = houseCode) {
+  const shown = () => toast(`The house code is <b>${code}</b>`);
+  if (navigator.clipboard) navigator.clipboard.writeText(code).then(() => toast(`Copied house code <b>${code}</b>!`), shown);
   else shown();
 }
-$('#code').addEventListener('click', copyCode);
+$('#code').addEventListener('click', () => copyCode());
 
 const icons = new Map<string, string>();
 function icon(item: string, cls = 'icon', style = 0) {
@@ -1124,14 +1126,23 @@ function panelBody(mine: Member) {
       <h3>Skin</h3>${swatches('skin', SKINS, mine.look.skin)}`;
   }
   // house
-  return `<p class="hint">Share your code. When friends join, their rooms open up into yours to make one big house.</p>
+  const away = !!me.home && me.home !== houseCode;
+  return `${away
+    ? `<p class="hint">You're visiting ${houseOwnerName ? `<b>${esc(houseOwnerName)}</b>'s house` : "a friend's house"}. Your own home keeps its code, so you can always go back.</p>
     <div class="code-big">${houseCode}</div>
-    <div class="center"><button class="off" data-act="copy">Copy code</button></div>
+    <div class="center"><button data-act="home">🏠 Go home (${me.home})</button> <button class="off" data-act="copyhome">Copy my home code</button></div>`
+    : `<p class="hint">This is your home, and its code never changes. Share it: when friends join, their rooms open up into yours to make one big house.</p>
+    <div class="code-big">${houseCode}</div>
+    <div class="center"><button class="off" data-act="copy">Copy code</button></div>`}
     <h3>Housemates</h3>
-    <ul class="members">${members.map((m) => `<li><span class="dot${m.online ? ' on' : ''}"></span>${esc(m.name)}${m.id === myId ? ' (you)' : ''}${m.focus ? '<span class="tag">📖 studying</span>' : ''}</li>`).join('')}</ul>
+    <ul class="members">${members.map((m) => `<li><span class="dot${m.online ? ' on' : ''}"></span>${esc(m.name)}${m.id === myId ? ' (you)' : ''}${m.focus ? '<span class="tag">📖 studying</span>' : ''}${!away && m.id !== myId ? `<button class="off small" data-act="kick" data-v="${m.id}">Remove</button>` : ''}</li>`).join('')}</ul>
     <h3>Join a friend</h3>
     <div class="row"><input id="join" placeholder="Friend's code" maxlength="5" autocapitalize="characters"><button data-act="join">Join</button></div>
-    ${members.length > 1 ? '<button class="danger" data-act="leave">Move out (take my room)</button>' : ''}`;
+    ${me.visited?.length ? `<h3>Recent houses</h3>
+    <ul class="members">${me.visited.map((h) => `<li><span class="who">${h.ownerName ? `${esc(h.ownerName)}'s house` : 'A shared house'} <span class="code-small">${h.code}</span></span>
+      <span class="tag">${h.online} online</span>${h.code === houseCode ? '<span class="tag">Here</span>' : `<button class="small" data-act="rejoin" data-v="${h.code}">Join</button>`}<button class="off small" data-act="forget" data-v="${h.code}" aria-label="Forget this house">✕</button></li>`).join('')}</ul>` : ''}
+    ${me.banned?.length ? `<h3>Removed from your house</h3>
+    <ul class="members">${me.banned.map((b) => `<li><span class="who">${esc(b.name)}</span><button class="off small" data-act="unban" data-v="${b.id}">Allow back</button></li>`).join('')}</ul>` : ''}`;
 }
 
 function renderPanel() {
@@ -1211,7 +1222,18 @@ panel.addEventListener('click', (e) => {
       send({ t: 'look', name: mine.name, look: { ...mine.look, [b.dataset.act]: v } }); break;
     case 'copy': copyCode(); break;
     case 'join': send({ t: 'join', code: panel.querySelector<HTMLInputElement>('#join')!.value.trim() }); break;
-    case 'leave': send({ t: 'leave' }); break;
+    case 'home': send({ t: 'leave' }); break;
+    case 'copyhome': copyCode(me.home); break;
+    case 'rejoin': send({ t: 'join', code: v }); break;
+    case 'forget': send({ t: 'forget', code: v }); break;
+    case 'unban': send({ t: 'unban', id: v }); break;
+    case 'kick': // two taps, so nobody gets removed by a stray click
+      if (!b.classList.contains('armed')) {
+        b.classList.add('armed');
+        b.textContent = 'Tap again';
+        setTimeout(() => { b.classList.remove('armed'); b.textContent = 'Remove'; }, 3000);
+      } else send({ t: 'kick', id: v });
+      break;
     case 'logout': signOut(true); break;
     case 'snapshot': saveSnapshot(); break;
   }

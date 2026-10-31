@@ -46,17 +46,48 @@ const newCode = () => {
   return code;
 };
 
-function createHouse(p) {
-  const code = newCode();
-  db.houses[code] = { code, members: [p.id], todos: [], chat: [] };
-  p.house = code;
+// Every player has a home house whose code never changes: they can visit friends and always come back to it.
+// A home stays (with its to-dos and chat) while its owner is out; only ownerless houses are removed when empty.
+function ensureHome(p) {
+  if (!p.home) { // saves from before homes: the house you founded becomes your home
+    const h = db.houses[p.house];
+    if (h && !h.owner && h.members[0] === p.id) { h.owner = p.id; p.home = h.code; }
+  }
+  if (db.houses[p.home]?.owner === p.id) return;
+  // No home yet, or it was removed under the old rules: bring it back under the same code when that's still free.
+  const code = p.home && !db.houses[p.home] ? p.home : newCode();
+  db.houses[code] = { code, owner: p.id, members: [], todos: [], chat: [] };
+  p.home = code;
+}
+
+function goHome(p) {
+  ensureHome(p);
+  const h = db.houses[p.home];
+  if (!h.members.includes(p.id)) h.members.push(p.id);
+  p.house = p.home;
+}
+
+// Houses you've visited, newest first, so you can go back with one click.
+const MAX_VISITED = 8;
+function remember(p, code) {
+  if (code === p.home) return;
+  p.visited = [code, ...(p.visited ?? []).filter((c) => c !== code)].slice(0, MAX_VISITED);
+}
+// What the House panel shows: recent houses that still exist and still let you in, and (for owners) who they removed.
+function houseLists(p) {
+  const visited = (p.visited ?? []).filter((c) => db.houses[c] && c !== p.home && !db.houses[c].banned?.includes(p.id)).map((c) => {
+    const h = db.houses[c];
+    return { code: c, ownerName: db.players[h.owner]?.name ?? null, online: h.members.filter((id) => sockets.has(id)).length };
+  });
+  const banned = (db.houses[p.home]?.banned ?? []).map((id) => ({ id, name: db.players[id]?.name ?? 'Someone' }));
+  return { visited, banned };
 }
 
 function leaveHouse(p) {
   const h = db.houses[p.house];
   if (!h) return;
   h.members = h.members.filter((id) => id !== p.id);
-  if (!h.members.length) { delete db.houses[h.code]; store.deleteHouse(h.code); }
+  if (!h.members.length && !h.owner) { delete db.houses[h.code]; store.deleteHouse(h.code); }
   else broadcastHouse(h.code);
   p.house = null;
 }
@@ -91,11 +122,14 @@ function broadcastHouse(code) {
   if (!h) return;
   const w = watches.get(code);
   // now lets clients work out how far a playing video has got without trusting their own clocks.
-  const house = { code, members: h.members.map((id) => publicPlayer(db.players[id])), todos: h.todos ?? [], chat: h.chat ?? [], watch: w ? { ...w, now: Date.now() } : null };
+  const house = {
+    code, owner: h.owner ?? null, ownerName: db.players[h.owner]?.name ?? null,
+    members: h.members.map((id) => publicPlayer(db.players[id])), todos: h.todos ?? [], chat: h.chat ?? [], watch: w ? { ...w, now: Date.now() } : null,
+  };
   for (const id of h.members) {
     const p = db.players[id];
     // Personal to-dos ride along in `me`, which only this player receives.
-    send(sockets.get(id), { t: 'state', house, me: { id: p.id, coins: p.coins, inventory: p.inventory, petAccs: p.petAccs ?? [], sessions: p.sessions ?? [], subjects: p.subjects ?? [], hiddenSubjects: p.hiddenSubjects ?? [], todos: p.todos ?? [], dm: p.dm ?? {} } });
+    send(sockets.get(id), { t: 'state', house, me: { id: p.id, home: p.home, ...houseLists(p), coins: p.coins, inventory: p.inventory, petAccs: p.petAccs ?? [], sessions: p.sessions ?? [], subjects: p.subjects ?? [], hiddenSubjects: p.hiddenSubjects ?? [], todos: p.todos ?? [], dm: p.dm ?? {} } });
   }
 }
 
@@ -122,15 +156,42 @@ function handle(p, m) {
       const code = String(m.code ?? '').toUpperCase();
       if (!db.houses[code]) return send(sockets.get(p.id), { t: 'error', text: 'No house with that code.' });
       if (code === p.house) return;
+      if (db.houses[code].banned?.includes(p.id)) return send(sockets.get(p.id), { t: 'error', text: "The owner removed you from that house, so you can't join it." });
       leaveHouse(p);
       db.houses[code].members.push(p.id);
       p.house = code;
+      remember(p, code);
       positions.delete(p.id);
       break;
     }
-    case 'leave':
+    case 'forget': // drop a house from your recent list
+      p.visited = (p.visited ?? []).filter((c) => c !== m.code);
+      break;
+    case 'kick': { // a home's owner removes someone; they go back to their own home and can't rejoin until allowed back
+      const h = db.houses[p.home], them = db.players[m.id];
+      if (!h || h.owner !== p.id || !them || them.id === p.id) return;
+      h.banned = [...new Set([...(h.banned ?? []), them.id])];
+      them.visited = (them.visited ?? []).filter((c) => c !== h.code);
+      if (them.house === h.code) {
+        leaveHouse(them);
+        goHome(them);
+        positions.delete(them.id);
+        broadcastHouse(them.house);
+        send(sockets.get(them.id), { t: 'error', text: `${p.name} removed you from their house. You're back home.` });
+      }
+      break;
+    }
+    case 'unban': { // allow someone back
+      const h = db.houses[p.home];
+      if (!h || h.owner !== p.id) return;
+      h.banned = (h.banned ?? []).filter((id) => id !== m.id);
+      break;
+    }
+    case 'leave': // go back home
+      ensureHome(p);
+      if (p.house === p.home) return;
       leaveHouse(p);
-      createHouse(p);
+      goHome(p);
       positions.delete(p.id);
       break;
     case 'subject_save': {
@@ -547,7 +608,8 @@ wss.on('connection', (ws) => {
       for (const k of Object.keys(p.inventory)) if (!ITEMS[k]) delete p.inventory[k];
       if (!STYLES.includes(p.look.style)) p.look.style = STYLES[0]; // retired hairstyles fall back to the default
       p.pets ??= hadCat ? [{ kind: 'cat' }] : [];
-      if (!db.houses[p.house]) createHouse(p);
+      ensureHome(p);
+      if (!db.houses[p.house]?.members.includes(p.id)) goHome(p); // new player, or their house is gone
       sockets.get(p.id)?.close();
       sockets.set(p.id, ws);
       save();
