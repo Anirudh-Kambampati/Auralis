@@ -103,7 +103,8 @@ function onMessage(m: any) {
   if (m.t === 'state') {
     if (!houseCode) showLoading(false);
     myId = m.me.id;
-    if (m.house.code !== houseCode) avatars.delete(myId); // moved house: start in my own room
+    // Moved house: start in my own room, and drop any walk or seat that pointed at the old house's tiles.
+    if (m.house.code !== houseCode) { avatars.delete(myId); path = []; seat = null; useNext = null; }
     const wasFocusing = !!myMember()?.focus;
     const oldGrid = grid, oldSlots = slots.map((x) => `${x.m.id}:${x.ri}`);
     houseCode = m.house.code;
@@ -1138,11 +1139,11 @@ function panelBody(mine: Member) {
     <ul class="members">${members.map((m) => `<li><span class="dot${m.online ? ' on' : ''}"></span>${esc(m.name)}${m.id === myId ? ' (you)' : ''}${m.focus ? '<span class="tag">📖 studying</span>' : ''}${!away && m.id !== myId ? `<button class="off small" data-act="kick" data-v="${m.id}">Remove</button>` : ''}</li>`).join('')}</ul>
     <h3>Join a friend</h3>
     <div class="row"><input id="join" placeholder="Friend's code" maxlength="5" autocapitalize="characters"><button data-act="join">Join</button></div>
-    ${me.visited?.length ? `<h3>Recent houses</h3>
-    <ul class="members">${me.visited.map((h) => `<li><span class="who">${h.ownerName ? `${esc(h.ownerName)}'s house` : 'A shared house'} <span class="code-small">${h.code}</span></span>
-      <span class="tag">${h.online} online</span>${h.code === houseCode ? '<span class="tag">Here</span>' : `<button class="small" data-act="rejoin" data-v="${h.code}">Join</button>`}<button class="off small" data-act="forget" data-v="${h.code}" aria-label="Forget this house">✕</button></li>`).join('')}</ul>` : ''}
-    ${me.banned?.length ? `<h3>Removed from your house</h3>
-    <ul class="members">${me.banned.map((b) => `<li><span class="who">${esc(b.name)}</span><button class="off small" data-act="unban" data-v="${b.id}">Allow back</button></li>`).join('')}</ul>` : ''}`;
+    <h3>Recent houses</h3>
+    ${me.visited?.length ? `<ul class="members">${me.visited.map((h) => `<li><span class="who">${h.ownerName ? `${esc(h.ownerName)}'s house` : 'A shared house'} <span class="code-small">${h.code}</span></span>
+      <span class="tag">${h.online} online</span>${h.code === houseCode ? '<span class="tag">Here</span>' : `<button class="small" data-act="rejoin" data-v="${h.code}">Join</button>`}<button class="off small" data-act="forget" data-v="${h.code}" aria-label="Forget this house">✕</button></li>`).join('')}</ul>` : '<p class="hint">Houses you visit show up here.</p>'}
+    <h3>Removed from your house</h3>
+    ${me.banned?.length ? `<ul class="members">${me.banned.map((b) => `<li><span class="who">${esc(b.name)}</span><button class="off small" data-act="unban" data-v="${b.id}">Allow back</button></li>`).join('')}</ul>` : '<p class="hint">Nobody. People you remove show up here, so you can let them back in.</p>'}`;
 }
 
 function renderPanel() {

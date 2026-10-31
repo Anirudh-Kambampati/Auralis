@@ -190,6 +190,7 @@ function handle(p, m) {
     case 'leave': // go back home
       ensureHome(p);
       if (p.house === p.home) return;
+      remember(p, p.house); // also covers houses joined before history existed
       leaveHouse(p);
       goHome(p);
       positions.delete(p.id);
