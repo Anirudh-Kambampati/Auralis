@@ -46,6 +46,26 @@ test('account coins are saved in their own column, which wins on load', () => {
   assert.equal(openStore(file).db.players.p1.coins, 7);
 });
 
+test('coins edited in the database while running are picked up, not overwritten', () => {
+  const file = path.join(tmp(), 'd.db');
+  const s = openStore(file);
+  s.createAccount('p1', 'Mo', 'secret-pass', null);
+  s.db.players.p1 = { id: 'p1', coins: 10 };
+  s.saveAll();
+  assert.deepEqual(s.syncCoins(), []);
+  const raw = new DatabaseSync(file);
+  raw.prepare('update accounts set coins = 500').run();
+  s.db.players.p1.coins = 12; // the game changed coins before noticing the edit
+  s.saveAll();
+  assert.equal(raw.prepare('select coins from accounts').get().coins, 500);
+  assert.deepEqual(s.syncCoins(), ['p1']);
+  assert.equal(s.db.players.p1.coins, 500);
+  s.db.players.p1.coins = 520;
+  s.saveAll();
+  assert.equal(raw.prepare('select coins from accounts').get().coins, 520);
+  raw.close();
+});
+
 test('accounts: unique usernames and emails, log in with either, token sign-in', () => {
   const s = openStore(path.join(tmp(), 'b.db'));
   s.createAccount('p1', 'Mo', 'secret-pass', 'mo@example.com');

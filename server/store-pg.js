@@ -26,8 +26,11 @@ export async function openPgStore(url, legacyJsonFile) {
   for (const r of (await pool.query('select id, data from players')).rows) db.players[r.id] = r.data;
   for (const r of (await pool.query('select code, data from houses')).rows) db.houses[r.code] = r.data;
   // An account's coins live in their own column; it wins over the copy in the player's JSON.
-  for (const r of (await pool.query('select player_id, coins from accounts where coins is not null')).rows) {
-    if (db.players[r.player_id]) db.players[r.player_id].coins = r.coins;
+  // written: the coins value last written per player, so a value that differs was edited in the database by hand.
+  const written = {};
+  const readCoins = 'select player_id, coins from accounts where coins is not null';
+  for (const r of (await pool.query(readCoins)).rows) {
+    if (db.players[r.player_id]) db.players[r.player_id].coins = written[r.player_id] = r.coins;
   }
 
   // Saves run one at a time so an older snapshot never lands after a newer one.
@@ -42,11 +45,13 @@ export async function openPgStore(url, legacyJsonFile) {
         await c.query('begin');
         await c.query(`insert into players (id, data) select * from unnest($1::text[], $2::jsonb[])
           on conflict (id) do update set data = excluded.data`, [ids, pdata]);
-        await c.query(`update accounts a set coins = v.coins from unnest($1::text[], $2::int[]) v(id, coins)
-          where a.player_id = v.id`, [ids, coins]);
+        // Only overwrite coins nobody edited by hand since our last write; syncCoins picks those edits up instead.
+        const wrote = await c.query(`update accounts a set coins = v.coins from unnest($1::text[], $2::int[], $3::int[]) v(id, coins, old)
+          where a.player_id = v.id and a.coins is not distinct from v.old returning a.player_id, a.coins`, [ids, coins, ids.map((id) => written[id] ?? null)]);
         await c.query(`insert into houses (code, data) select * from unnest($1::text[], $2::jsonb[])
           on conflict (code) do update set data = excluded.data`, [codes, hdata]);
         await c.query('commit');
+        for (const r of wrote.rows) written[r.player_id] = r.coins;
       } catch (err) {
         await c.query('rollback').catch(() => {});
         console.error('save failed', err);
@@ -55,6 +60,23 @@ export async function openPgStore(url, legacyJsonFile) {
       }
     });
     return queue;
+  }
+
+  // Applies coins edited straight in the database while the server runs; returns the players whose coins changed.
+  // Queued with the saves so it never reads halfway through one.
+  function syncCoins() {
+    const run = queue.then(async () => {
+      const changed = [];
+      for (const r of (await pool.query(readCoins)).rows) {
+        const p = db.players[r.player_id];
+        if (!p || r.coins === written[r.player_id]) continue;
+        p.coins = written[r.player_id] = r.coins;
+        changed.push(p.id);
+      }
+      return changed;
+    }).catch((err) => { console.error('coin sync failed', err); return []; });
+    queue = run;
+    return run;
   }
 
   if (!Object.keys(db.players).length && legacyJsonFile && fs.existsSync(legacyJsonFile)) {
@@ -69,6 +91,7 @@ export async function openPgStore(url, legacyJsonFile) {
   return {
     db,
     saveAll,
+    syncCoins,
     deleteHouse: (code) => pool.query('delete from houses where code = $1', [code]),
     // Log in with either the username or the email.
     findAccount: (login) => one('select player_id, username, pass from accounts where lower(username) = lower($1) or lower(email) = lower($1)', [login]),

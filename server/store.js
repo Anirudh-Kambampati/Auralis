@@ -43,25 +43,47 @@ export function openStore(file, legacyJsonFile) {
   const db = { players: {}, houses: {} };
   for (const r of sql.prepare('select id, data from players').all()) db.players[r.id] = JSON.parse(r.data);
   for (const r of sql.prepare('select code, data from houses').all()) db.houses[r.code] = JSON.parse(r.data);
-  for (const r of sql.prepare('select player_id, coins from accounts where coins is not null').all()) {
-    if (db.players[r.player_id]) db.players[r.player_id].coins = r.coins;
+  // The coins value last written per player, so a value that differs was edited in the database by hand.
+  const written = {};
+  const readCoins = sql.prepare('select player_id, coins from accounts where coins is not null');
+  for (const r of readCoins.all()) {
+    if (db.players[r.player_id]) db.players[r.player_id].coins = written[r.player_id] = r.coins;
   }
 
   const upsertPlayer = sql.prepare('insert into players (id, data) values (?, ?) on conflict(id) do update set data = excluded.data');
   const upsertHouse = sql.prepare('insert into houses (code, data) values (?, ?) on conflict(code) do update set data = excluded.data');
-  const saveCoins = sql.prepare('update accounts set coins = ? where player_id = ?');
+  // Only overwrite coins nobody edited by hand since our last write; syncCoins picks those edits up instead.
+  const saveCoins = sql.prepare('update accounts set coins = ? where player_id = ? and coins is ?');
 
   // shortcut: rewrites every row in one transaction; fine for hundreds of players, track dirty rows beyond that.
   function saveAll() {
+    const wrote = [];
     sql.exec('begin');
     try {
-      for (const p of Object.values(db.players)) { upsertPlayer.run(p.id, JSON.stringify(p)); saveCoins.run(p.coins ?? null, p.id); }
+      for (const p of Object.values(db.players)) {
+        upsertPlayer.run(p.id, JSON.stringify(p));
+        const c = p.coins ?? null;
+        if (saveCoins.run(c, p.id, written[p.id] ?? null).changes) wrote.push([p.id, c]);
+      }
       for (const h of Object.values(db.houses)) upsertHouse.run(h.code, JSON.stringify(h));
       sql.exec('commit');
+      for (const [id, c] of wrote) written[id] = c;
     } catch (err) {
       sql.exec('rollback');
       console.error('save failed', err);
     }
+  }
+
+  // Applies coins edited straight in the database while the server runs; returns the players whose coins changed.
+  function syncCoins() {
+    const changed = [];
+    for (const r of readCoins.all()) {
+      const p = db.players[r.player_id];
+      if (!p || r.coins === written[r.player_id]) continue;
+      p.coins = written[r.player_id] = r.coins;
+      changed.push(p.id);
+    }
+    return changed;
   }
 
   // One-time import of the old data.json save, kept as data.json.imported.
@@ -76,6 +98,7 @@ export function openStore(file, legacyJsonFile) {
   return {
     db,
     saveAll,
+    syncCoins,
     deleteHouse: (code) => sql.prepare('delete from houses where code = ?').run(code),
     // Log in with either the username or the email.
     findAccount: (login) => sql.prepare('select player_id, username, pass from accounts where username = ? or lower(email) = lower(?)').get(login, login),

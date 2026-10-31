@@ -31,6 +31,13 @@ const save = () => {
   saveTimer = setTimeout(store.saveAll, 500);
 };
 
+// Pick up coins edited by hand in the accounts table. Only while someone's online, so an idle Neon database can still sleep.
+setInterval(async () => {
+  if (!sockets.size) return;
+  const changed = await store.syncCoins();
+  for (const code of new Set(changed.map((id) => db.players[id].house))) broadcastHouse(code);
+}, 3000);
+
 const sockets = new Map(); // playerId -> ws
 const positions = new Map(); // playerId -> { x, y }
 const lastChat = new Map(); // playerId -> ms, simple flood guard
