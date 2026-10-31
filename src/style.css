@@ -16,6 +16,15 @@
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }
 
+/* Pixel cursors to match the art: a cream arrow, and the arrow with a star over things you can click. */
+:root {
+  --arrow: url('/cursor.svg') 0 0, auto;
+  --point: url('/cursor-point.svg') 0 0, pointer;
+}
+html { cursor: var(--arrow); }
+a, select, label, summary, [data-act], .swatch { cursor: var(--point); }
+input, textarea { cursor: var(--text); }
+
 html, body {
   margin: 0;
   height: 100%;
@@ -25,6 +34,39 @@ html, body {
   -webkit-user-select: none;
   user-select: none;
 }
+/* Pixel cursors for each action (see public/cursor-*.svg). */
+:root {
+  --walk: url('/cursor-walk.svg') 0 0, auto;
+  --grab: url('/cursor-grab.svg') 16 12, grab;
+  --grabbing: url('/cursor-grabbing.svg') 16 12, grabbing;
+  --place: url('/cursor-place.svg') 16 16, crosshair;
+  --text: url('/cursor-text.svg') 16 16, text;
+  --nope: url('/cursor-nope.svg') 0 0, not-allowed;
+  --busy: url('/cursor-busy.svg') 16 16, progress;
+}
+#game { cursor: var(--walk); }
+body.busy, body.busy * { cursor: var(--busy) !important; }
+
+/* ---------- loading screen ---------- */
+#loading {
+  position: fixed; inset: 0; z-index: 50; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px;
+  padding: 24px; text-align: center; background: var(--bg); cursor: var(--busy);
+}
+.load-logo { width: 104px; height: 104px; image-rendering: auto; animation: loadBob 1.4s ease-in-out infinite; }
+.load-title { margin: 0; font-size: 24px; font-weight: 700; }
+.dots i { font-style: normal; animation: dot 1.2s infinite; }
+.dots i:nth-child(2) { animation-delay: 0.2s; }
+.dots i:nth-child(3) { animation-delay: 0.4s; }
+.load-bar { width: min(240px, 70vw); height: 18px; padding: 3px; background: var(--paper); border: 3px solid var(--ink); border-radius: 10px; overflow: hidden; }
+.load-bar i { display: block; width: 30%; height: 100%; border-radius: 4px; background: repeating-linear-gradient(90deg, #b89af0 0 8px, #f4a6b8 8px 16px); animation: slide 1.3s ease-in-out infinite; }
+.load-hint { margin: 0; max-width: 320px; color: var(--muted); font-size: 15px; }
+@keyframes loadBob { 0%, 100% { transform: translateY(0) rotate(-4deg); } 50% { transform: translateY(-10px) rotate(4deg); } }
+@keyframes dot { 0%, 100% { opacity: 0.2; } 40% { opacity: 1; } }
+@keyframes slide { 0% { transform: translateX(-100%); } 100% { transform: translateX(340%); } }
+@media (prefers-reduced-motion: reduce) { .load-logo, .dots i, .load-bar i { animation: none; } .load-bar i { width: 100%; } }
+
+/* Signed out: the landing page may be pinch-zoomed for reading. */
+html.signed-out, html.signed-out body { touch-action: auto; }
 
 #game { position: fixed; inset: 0; width: 100%; height: 100%; image-rendering: pixelated; }
 img, canvas { image-rendering: pixelated; }
@@ -39,7 +81,7 @@ button {
   border-radius: 10px;
   padding: 8px 14px;
   box-shadow: 0 4px 0 var(--ink);
-  cursor: pointer;
+  cursor: var(--point);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -47,7 +89,7 @@ button {
   transition: transform 0.06s, box-shadow 0.06s;
 }
 button:active { transform: translateY(3px); box-shadow: 0 1px 0 var(--ink); }
-button:disabled { opacity: 0.45; cursor: default; transform: none; box-shadow: 0 4px 0 var(--ink); }
+button:disabled { opacity: 0.45; cursor: var(--nope); transform: none; box-shadow: 0 4px 0 var(--ink); }
 button.off { background: var(--soft); color: var(--ink); }
 button.on { background: var(--gold); color: var(--ink); }
 button.danger { background: var(--coral); }
@@ -81,7 +123,7 @@ button.danger.armed { background: #c43f3f; animation: shake 0.3s; }
   box-shadow: 0 4px 0 var(--ink);
 }
 .chip.house { font-size: 16px; letter-spacing: 2px; }
-.chip.focus { flex-direction: column; gap: 4px; background: var(--blue); color: #fff; cursor: pointer; }
+.chip.focus { flex-direction: column; gap: 4px; background: var(--blue); color: #fff; cursor: var(--point); }
 .coin { width: 22px; height: 22px; }
 .bar { width: 120px; height: 10px; background: rgba(43, 37, 48, 0.35); border-radius: 4px; overflow: hidden; }
 .bar i { display: block; height: 100%; width: 0; background: var(--gold); transition: width 0.5s linear; }
@@ -418,7 +460,7 @@ body.side-open #side { display: flex; }
 .side-card.folded { flex: 0 0 auto; }
 /* Needs an id to outrank the #todoList / #myTodoList / #chatLog display rules. */
 #side .side-card.folded > :not(.side-head) { display: none; }
-.side-card.folded .side-head { border-bottom: none; cursor: pointer; }
+.side-card.folded .side-head { border-bottom: none; cursor: var(--point); }
 .side-card.folded .side-head h2 { color: var(--muted); }
 .side-card form { margin: 0; padding: 8px 10px 10px; border-top: 3px dashed var(--soft); }
 .side-card form button { padding: 8px 12px; }
@@ -452,7 +494,13 @@ li.done .check { background: #6fcf8a; color: #fff; }
   #dock { gap: 6px; padding: 6px; }
   #dock button { width: 46px; height: 46px; }
   #dock img { width: 28px; height: 28px; }
-  .rail-btn { min-width: 0; flex: 1 1 22%; }
+  .rail-btn { min-width: 58px; height: 58px; padding: 4px 6px; font-size: 11px; }
+}
+/* Phones and tablets: the shop categories are one swipeable strip, so the items stay in view. */
+@media (max-width: 899px) {
+  .rail { position: relative; flex-wrap: nowrap; overflow-x: auto; touch-action: pan-x; scrollbar-width: none; padding: 2px 2px 8px; margin: 0 -2px; }
+  .rail::-webkit-scrollbar { display: none; }
+  .rail-btn { flex: 0 0 auto; }
 }
 
 @media (min-width: 900px) {
@@ -539,7 +587,7 @@ body.signed-out #deck, body.signed-out #game, body.signed-out #zoom { display: n
   inset: 0;
   overflow-x: hidden;
   overflow-y: auto;
-  touch-action: pan-y;
+  touch-action: pan-y pinch-zoom;
   background-color: var(--bg);
   background-image: radial-gradient(#e3d7c8 1.5px, transparent 1.5px);
   background-size: 24px 24px;
@@ -566,7 +614,7 @@ body.signed-out #deck, body.signed-out #game, body.signed-out #zoom { display: n
 
 .land-top { text-align: center; }
 .brand { display: inline-flex; align-items: center; gap: 14px; }
-.brand img { width: 72px; height: 72px; animation: wobble 3s ease-in-out infinite; }
+.brand img { width: 72px; height: 72px; image-rendering: auto; animation: wobble 3s ease-in-out infinite; }
 .bouncy { margin: 0; font-size: clamp(48px, 10vw, 76px); letter-spacing: 2px; display: inline-flex; }
 .bouncy span {
   display: inline-block;
@@ -595,7 +643,7 @@ body.signed-out #deck, body.signed-out #game, body.signed-out #zoom { display: n
   border-radius: 18px;
   box-shadow: 0 7px 0 var(--ink);
   background: var(--paper);
-  cursor: pointer;
+  cursor: var(--point);
 }
 .bubble {
   position: absolute;

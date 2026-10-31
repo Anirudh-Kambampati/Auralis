@@ -78,6 +78,13 @@
       </div>
     </section>
     <canvas id="game"></canvas>
+    <!-- Shown while the game connects (the free server can take a while to wake up). -->
+    <section id="loading" hidden aria-live="polite">
+      <img class="load-logo" src="/icon.svg" alt="" />
+      <p class="load-title">Opening your room<span class="dots"><i>.</i><i>.</i><i>.</i></span></p>
+      <div class="load-bar" aria-hidden="true"><i></i></div>
+      <p class="load-hint" id="loadHint" hidden>The server is waking up. The first visit in a while can take up to a minute.</p>
+    </section>
     <header id="hud">
       <div class="chip coins"><img class="coin" id="coinIcon" alt="" /><span id="coins">0</span></div>
       <div class="chip focus" id="focusChip" hidden>

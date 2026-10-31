@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#efe6da" />
+    <link rel="icon" href="/icon.svg" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&display=swap" rel="stylesheet" />
+    <title>Page not found · Auralis</title>
+    <style>
+      /* Standalone so it works even when the game's own files are what's missing. */
+      :root { --bg: #efe6da; --paper: #fffaf3; --ink: #2b2530; --muted: #8c8090; --gold: #f2c14e; }
+      * { box-sizing: border-box; }
+      html { cursor: url('/cursor.svg') 0 0, auto; }
+      a { cursor: url('/cursor-point.svg') 0 0, pointer; }
+      body {
+        margin: 0; min-height: 100vh; min-height: 100dvh; display: grid; place-items: center; padding: 24px;
+        font-family: 'Fredoka', system-ui, -apple-system, 'Segoe UI', sans-serif; color: var(--ink);
+        background: var(--bg) radial-gradient(#e3d7c8 1.5px, transparent 1.6px) 0 0 / 24px 24px;
+      }
+      main {
+        width: min(440px, 100%); text-align: center; padding: 32px 28px 28px; background: var(--paper);
+        border: 3px solid var(--ink); border-radius: 22px; box-shadow: 0 8px 0 var(--ink);
+      }
+      .logo { width: 84px; height: 84px; animation: wobble 3s ease-in-out infinite; }
+      h1 { margin: 6px 0 0; font-size: 84px; line-height: 1; letter-spacing: 4px; text-shadow: 4px 4px 0 #ddd3ef; }
+      h2 { margin: 6px 0 4px; font-size: 22px; }
+      p { margin: 0 0 18px; color: var(--muted); font-size: 16px; }
+      .stage { position: relative; height: 56px; margin: 4px 0 18px; overflow: hidden; border-bottom: 3px dashed #d9cbbb; }
+      .cat { position: absolute; bottom: 2px; width: 60px; height: 50px; image-rendering: pixelated; animation: roam 7s linear infinite; }
+      .cat svg { width: 100%; height: 100%; animation: hop 0.36s steps(2) infinite; }
+      a.home {
+        display: inline-flex; align-items: center; gap: 8px; padding: 12px 22px; font: 600 18px inherit; font-family: inherit;
+        color: var(--ink); text-decoration: none; background: var(--gold); border: 3px solid var(--ink); border-radius: 14px;
+        box-shadow: 0 4px 0 var(--ink); transition: transform 0.1s;
+      }
+      a.home:hover { transform: translateY(-2px); box-shadow: 0 6px 0 var(--ink); }
+      a.home:active { transform: translateY(2px); box-shadow: 0 2px 0 var(--ink); }
+      @keyframes wobble { 0%, 100% { transform: rotate(-4deg); } 50% { transform: rotate(4deg); } }
+      @keyframes hop { 50% { transform: translateY(-3px); } }
+      /* The cat trots across, turns round and trots back. */
+      @keyframes roam {
+        0% { left: -64px; transform: scaleX(1); } 48% { left: calc(100% + 4px); transform: scaleX(1); }
+        50% { left: calc(100% + 4px); transform: scaleX(-1); } 98% { left: -64px; transform: scaleX(-1); } 100% { left: -64px; transform: scaleX(1); }
+      }
+      @media (prefers-reduced-motion: reduce) { .logo, .cat, .cat svg { animation: none; } .cat { left: calc(50% - 30px); } }
+    </style>
+  </head>
+  <body>
+    <main>
+      <img class="logo" src="/icon.svg" alt="Auralis" />
+      <h1>404</h1>
+      <h2>This page wandered off</h2>
+      <p>Even the house cat couldn't find it. Let's get you back to your room.</p>
+      <div class="stage" aria-hidden="true">
+        <div class="cat"><svg viewBox="0 0 12 10" shape-rendering="crispEdges"><rect x="1" y="0" width="2" height="1" fill="#7a4a2a"/><rect x="9" y="0" width="2" height="1" fill="#7a4a2a"/><rect x="0" y="1" width="1" height="1" fill="#7a4a2a"/><rect x="1" y="1" width="1" height="1" fill="#f2a65a"/><rect x="2" y="1" width="1" height="1" fill="#f7a0b0"/><rect x="3" y="1" width="1" height="1" fill="#7a4a2a"/><rect x="8" y="1" width="1" height="1" fill="#7a4a2a"/><rect x="9" y="1" width="1" height="1" fill="#f7a0b0"/><rect x="10" y="1" width="1" height="1" fill="#f2a65a"/><rect x="11" y="1" width="1" height="1" fill="#7a4a2a"/><rect x="0" y="2" width="1" height="1" fill="#7a4a2a"/><rect x="1" y="2" width="2" height="1" fill="#f2a65a"/><rect x="3" y="2" width="6" height="1" fill="#7a4a2a"/><rect x="9" y="2" width="2" height="1" fill="#f2a65a"/><rect x="11" y="2" width="1" height="1" fill="#7a4a2a"/><rect x="0" y="3" width="1" height="1" fill="#7a4a2a"/><rect x="1" y="3" width="10" height="1" fill="#f2a65a"/><rect x="11" y="3" width="1" height="1" fill="#7a4a2a"/><rect x="0" y="4" width="1" height="1" fill="#7a4a2a"/><rect x="1" y="4" width="1" height="1" fill="#f2a65a"/><rect x="2" y="4" width="1" height="1" fill="#d98a40"/><rect x="3" y="4" width="6" height="1" fill="#f2a65a"/><rect x="9" y="4" width="1" height="1" fill="#d98a40"/><rect x="10" y="4" width="1" height="1" fill="#f2a65a"/><rect x="11" y="4" width="1" height="1" fill="#7a4a2a"/><rect x="0" y="5" width="1" height="1" fill="#7a4a2a"/><rect x="1" y="5" width="1" height="1" fill="#f2a65a"/><rect x="2" y="5" width="1" height="1" fill="#ffffff"/><rect x="3" y="5" width="1" height="1" fill="#3a2633"/><rect x="4" y="5" width="4" height="1" fill="#f2a65a"/><rect x="8" y="5" width="1" height="1" fill="#ffffff"/><rect x="9" y="5" width="1" height="1" fill="#3a2633"/><rect x="10" y="5" width="1" height="1" fill="#f2a65a"/><rect x="11" y="5" width="1" height="1" fill="#7a4a2a"/><rect x="0" y="6" width="1" height="1" fill="#7a4a2a"/><rect x="1" y="6" width="1" height="1" fill="#f2a65a"/><rect x="2" y="6" width="2" height="1" fill="#3a2633"/><rect x="4" y="6" width="4" height="1" fill="#f2a65a"/><rect x="8" y="6" width="2" height="1" fill="#3a2633"/><rect x="10" y="6" width="1" height="1" fill="#f2a65a"/><rect x="11" y="6" width="1" height="1" fill="#7a4a2a"/><rect x="0" y="7" width="1" height="1" fill="#7a4a2a"/><rect x="1" y="7" width="1" height="1" fill="#f7a0b0"/><rect x="2" y="7" width="3" height="1" fill="#f2a65a"/><rect x="5" y="7" width="2" height="1" fill="#e86a8a"/><rect x="7" y="7" width="3" height="1" fill="#f2a65a"/><rect x="10" y="7" width="1" height="1" fill="#f7a0b0"/><rect x="11" y="7" width="1" height="1" fill="#7a4a2a"/><rect x="1" y="8" width="1" height="1" fill="#7a4a2a"/><rect x="2" y="8" width="8" height="1" fill="#f2a65a"/><rect x="10" y="8" width="1" height="1" fill="#7a4a2a"/><rect x="2" y="9" width="1" height="1" fill="#7a4a2a"/><rect x="3" y="9" width="1" height="1" fill="#fff4e6"/><rect x="4" y="9" width="1" height="1" fill="#7a4a2a"/><rect x="7" y="9" width="1" height="1" fill="#7a4a2a"/><rect x="8" y="9" width="1" height="1" fill="#fff4e6"/><rect x="9" y="9" width="1" height="1" fill="#7a4a2a"/></svg></div>
+      </div>
+      <a class="home" href="/">🏠 Back to Auralis</a>
+    </main>
+  </body>
+</html>

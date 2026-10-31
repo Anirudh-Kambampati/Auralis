@@ -459,10 +459,17 @@ async function api(req, res, route) {
 function serveStatic(req, res) {
   const url = decodeURIComponent(new URL(req.url, 'http://x').pathname);
   let file = path.join(DIST, url);
-  if (!file.startsWith(DIST) || !fs.existsSync(file) || fs.statSync(file).isDirectory()) file = path.join(DIST, 'index.html');
+  let status = 200;
+  // The game lives at '/'; any other address that isn't a real file gets the 404 page.
+  if (!file.startsWith(DIST) || !fs.existsSync(file) || fs.statSync(file).isDirectory()) {
+    const home = url === '/' || url === '/index.html';
+    file = path.join(DIST, home ? 'index.html' : '404.html');
+    if (!home) status = 404;
+    if (!fs.existsSync(file)) file = path.join(DIST, 'index.html');
+  }
   if (!fs.existsSync(file)) return res.writeHead(200, { 'content-type': 'text/plain' }).end('Auralis game server is running. Open the game from its website.');
   const types = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.webmanifest': 'application/manifest+json' };
-  res.writeHead(200, { 'content-type': types[path.extname(file)] ?? 'application/octet-stream' });
+  res.writeHead(status, { 'content-type': types[path.extname(file)] ?? 'application/octet-stream' });
   fs.createReadStream(file).pipe(res);
 }
 
