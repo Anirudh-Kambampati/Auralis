@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   buildGrid, canPlace, focusReward, colorsFor, roomSize, PETS, EXPAND_COST,
-  DOOR, WALL, FLOOR, BLOCKED, VOID, ROOM_W, COLS,
+  DOOR, WALL, FLOOR, BLOCKED, VOID, ROOM_W, colsFor,
 } from './game.js';
 
 const empty = (level = 0) => ({ level, furniture: [] });
@@ -29,11 +29,35 @@ test('side-by-side rooms share one wall that opens up almost floor to floor', ()
 });
 
 test('rooms on the next row connect through a doorway down', () => {
-  const g = buildGrid(Array.from({ length: COLS + 1 }, () => empty()));
-  const o = g.origins[0], below = g.origins[COLS];
+  const g = buildGrid(Array.from({ length: 3 }, () => empty()));
+  assert.equal(g.cols, 2); // three rooms make a 2x2 grid: two on top, one below
+  const o = g.origins[0], below = g.origins[2];
   for (let y = o.y + 8; y < below.y; y++) assert.equal(g.at(o.x + 4, y), DOOR);
   assert.equal(g.at(o.x + 4, below.y), FLOOR);
   assert.equal(g.at(o.x + 2, below.y - 1), WALL); // the rest of the back wall stays
+});
+
+test('the house grows as a square grid and every room opens to its neighbours', () => {
+  assert.deepEqual([1, 2, 4, 5, 9, 10].map(colsFor), [1, 2, 2, 3, 3, 4]);
+  const g = buildGrid(Array.from({ length: 9 }, () => empty()));
+  assert.equal(g.cols, 3);
+  assert.equal(g.origins[3].x, g.origins[0].x); // 4th room starts the second row
+  // The middle room (4) reaches left, right, up and down without leaving the house.
+  const owners = (x, y) => g.owner[y * g.w + x];
+  const reach = new Set();
+  const o = g.origins[4], seen = new Set([`${o.x},${o.y}`]), queue = [[o.x, o.y]];
+  while (queue.length) {
+    const [x, y] = queue.shift();
+    if (owners(x, y) >= 0) reach.add(owners(x, y));
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      const k = `${x + dx},${y + dy}`, c = g.at(x + dx, y + dy);
+      if (!seen.has(k) && (c === FLOOR || c === DOOR)) { seen.add(k); queue.push([x + dx, y + dy]); }
+    }
+  }
+  assert.equal(reach.size, 9);
+  // Direct links: an opening to the side, a doorway up.
+  assert.equal(g.at(g.origins[3].x + ROOM_W, o.y + 2), DOOR);
+  assert.equal(g.at(g.origins[1].x + 4, g.origins[1].y + 8), DOOR);
 });
 
 test('an upgraded room packs snugly next to a small one', () => {
@@ -66,6 +90,12 @@ test('placement rules', () => {
   assert.equal(canPlace({ ...room, level: 2 }, 'sofa', 8, 0), true); // fits once the room is bigger
   assert.equal(canPlace(room, 'nope', 3, 3), false);
   assert.equal(canPlace(room, 'plant', 1.5, 3), false);
+  // Drinks and toys stand on tables and rugs, but not on each other.
+  assert.equal(canPlace(room, 'coffee', 1, 0), true);
+  const withCan = { furniture: [...room.furniture, { item: 'coffee', x: 1, y: 0 }] };
+  assert.equal(canPlace(withCan, 'wine', 1, 0), false);
+  assert.equal(canPlace(withCan, 'wine', 0, 0), true);
+  assert.equal(canPlace(withCan, 'gymBall', 1, 0), false); // solid still collides with the desk
 });
 
 test('recolour palettes and pet prices', () => {

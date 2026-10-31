@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+  <head><meta charset="UTF-8" /><title>Hair lab</title></head>
+  <body style="margin:0;padding:16px;background:#efe6da;font-family:system-ui,sans-serif">
+    <div id="grid" style="display:flex;flex-wrap:wrap;gap:16px"></div>
+    <script type="module">
+      import { drawAvatar, AVATAR_H } from '/src/draw.ts';
+      const styles = ['short', 'side part', 'buzz', 'spiky', 'curly', 'bob', 'long', 'ponytail', 'buns', 'messy', 'undercut', 'quiff', 'fauxhawk', 'topknot', 'slick'];
+      const looks = [
+        { skin: '#ffe0c8', hair: '#3a2a35', shirt: '#b89af0', face: 'happy', outfit: 'sweater' },
+        { skin: '#d9a07a', hair: '#7a4a32', shirt: '#7fb2e8', face: 'grin', outfit: 'hoodie' },
+      ];
+      const grid = document.querySelector('#grid');
+      for (const style of styles) {
+        const card = document.createElement('div');
+        card.style.cssText = 'text-align:center';
+        for (const base of looks) {
+          const small = document.createElement('canvas');
+          small.width = 16; small.height = AVATAR_H;
+          drawAvatar(small.getContext('2d'), { ...base, style }, 0, 4, 0, false);
+          const big = document.createElement('canvas');
+          big.width = 160; big.height = AVATAR_H * 10;
+          const g = big.getContext('2d');
+          g.imageSmoothingEnabled = false;
+          g.drawImage(small, 0, 0, 160, AVATAR_H * 10);
+          big.style.cssText = 'border:3px solid #3a2633;border-radius:10px;background:#c8935f;display:block;margin:0 auto 4px';
+          card.append(big);
+        }
+        const label = document.createElement('div');
+        label.textContent = style;
+        label.style.cssText = 'font-weight:700';
+        card.append(label);
+        grid.append(card);
+      }
+    </script>
+  </body>
+</html>

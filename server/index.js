@@ -9,7 +9,7 @@ import { openPgStore } from './store-pg.js';
 import { files, isPng } from './files.js';
 import {
   ITEMS, WALLPAPERS, FLOORS, SKINS, HAIRS, SHIRTS, STYLES, FACES, OUTFITS, FOCUS_LENGTHS, canPlace, focusReward,
-  WALL_PATTERNS, FLOOR_STYLES, PETS, MAX_PETS, EXPAND_COST, colorsFor,
+  WALL_PATTERNS, FLOOR_STYLES, PETS, MAX_PETS, EXPAND_COST, colorsFor, USES, PET_ACCS, MAX_ROOMS, ROOM_COST,
 } from '../shared/game.js';
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
@@ -22,6 +22,8 @@ const store = process.env.DATABASE_URL
   : openStore(process.env.DB_FILE || path.join(root, 'auralis.db'), legacy);
 console.log(`Storage: ${process.env.DATABASE_URL ? 'Postgres (DATABASE_URL)' : 'local SQLite'}; files: ${files ? 'Neon Object Storage' : 'off'}`);
 const { db } = store;
+// Players used to have one `room`; now they have `rooms`, the first being the original.
+for (const p of Object.values(db.players)) if (!p.rooms) { p.rooms = [p.room ?? newRoom()]; delete p.room; }
 let saveTimer = null;
 const save = () => {
   clearTimeout(saveTimer);
@@ -31,6 +33,7 @@ const save = () => {
 const sockets = new Map(); // playerId -> ws
 const positions = new Map(); // playerId -> { x, y }
 const lastChat = new Map(); // playerId -> ms, simple flood guard
+const lastDm = new Map(); // playerId -> ms, same guard for private messages
 let nextId = Date.now();
 
 const newCode = () => {
@@ -59,9 +62,19 @@ const pick = (list, v, fallback) => (list.includes(v) ? v : fallback);
 const cleanText = (s, max) => String(s ?? '').replace(/[\u0000-\u001f]/g, '').trim().slice(0, max);
 const cleanName = (s) => String(s ?? '').replace(/[^\p{L}\p{N} _.-]/gu, '').trim().slice(0, 16) || 'Studier';
 
+// Keep private conversations bounded: forget the least recently used threads.
+const MAX_DM_THREADS = 20;
+function trimDmThreads(rec) {
+  const keys = Object.keys(rec);
+  if (keys.length <= MAX_DM_THREADS) return;
+  const lastAt = (k) => rec[k].at(-1)?.at ?? 0;
+  keys.sort((a, b) => lastAt(a) - lastAt(b));
+  for (const k of keys.slice(0, keys.length - MAX_DM_THREADS)) delete rec[k];
+}
+
 function publicPlayer(p) {
   return {
-    id: p.id, name: p.name, look: p.look, room: p.room, focus: p.focus, pets: p.pets ?? [],
+    id: p.id, name: p.name, look: p.look, rooms: p.rooms, focus: p.focus, pets: p.pets ?? [],
     totalMinutes: p.totalMinutes, online: sockets.has(p.id), pos: positions.get(p.id) ?? null,
   };
 }
@@ -76,11 +89,18 @@ function broadcastHouse(code) {
   const house = { code, members: h.members.map((id) => publicPlayer(db.players[id])), todos: h.todos ?? [], chat: h.chat ?? [] };
   for (const id of h.members) {
     const p = db.players[id];
-    send(sockets.get(id), { t: 'state', house, me: { id: p.id, coins: p.coins, inventory: p.inventory, sessions: p.sessions ?? [], subjects: p.subjects ?? [], hiddenSubjects: p.hiddenSubjects ?? [] } });
+    // Personal to-dos ride along in `me`, which only this player receives.
+    send(sockets.get(id), { t: 'state', house, me: { id: p.id, coins: p.coins, inventory: p.inventory, petAccs: p.petAccs ?? [], sessions: p.sessions ?? [], subjects: p.subjects ?? [], hiddenSubjects: p.hiddenSubjects ?? [], todos: p.todos ?? [], dm: p.dm ?? {} } });
   }
 }
 
+// The room a message is about: m.r picks one of the player's rooms (the first when missing).
+const roomOf = (p, m) => p.rooms[m.r ?? 0] ?? null;
+function newRoom() { return { wallpaper: WALLPAPERS[0], floor: FLOORS[0], furniture: [] }; }
+
 function handle(p, m) {
+  const room = roomOf(p, m);
+  if (['place', 'move', 'pickup', 'room', 'flip', 'restyle', 'shape', 'expand'].includes(m.t) && !room) return;
   switch (m.t) {
     case 'look':
       p.name = cleanName(m.name);
@@ -138,9 +158,11 @@ function handle(p, m) {
     }
     case 'pos':
       if (Number.isFinite(m.x) && Number.isFinite(m.y)) {
-        positions.set(p.id, { x: m.x, y: m.y });
+        // use: what they're doing with the furniture in front of them (watering, reading...), if anything.
+        const use = USES.includes(m.use) ? m.use : undefined;
+        positions.set(p.id, { x: m.x, y: m.y, use });
         for (const id of db.houses[p.house].members) {
-          if (id !== p.id) send(sockets.get(id), { t: 'pos', id: p.id, x: m.x, y: m.y });
+          if (id !== p.id) send(sockets.get(id), { t: 'pos', id: p.id, x: m.x, y: m.y, use });
         }
       }
       return; // no full broadcast for movement
@@ -178,48 +200,61 @@ function handle(p, m) {
       break;
     }
     case 'place':
-      if (!(p.inventory[m.item] > 0) || !canPlace(p.room, m.item, m.x, m.y)) return;
+      if (!(p.inventory[m.item] > 0) || !canPlace(room, m.item, m.x, m.y)) return;
       p.inventory[m.item]--;
-      p.room.furniture.push({ item: m.item, x: m.x, y: m.y });
+      room.furniture.push({ item: m.item, x: m.x, y: m.y });
       break;
     case 'move': {
-      const f = p.room.furniture[m.index];
-      const rest = { furniture: p.room.furniture.filter((_, i) => i !== m.index) };
+      const f = room.furniture[m.index];
+      const rest = { ...room, furniture: room.furniture.filter((_, i) => i !== m.index) };
       if (!f || !canPlace(rest, f.item, m.x, m.y)) return;
       f.x = m.x;
       f.y = m.y;
       break;
     }
     case 'pickup': {
-      const f = p.room.furniture[m.index];
+      const f = room.furniture[m.index];
       if (!f) return;
-      p.room.furniture.splice(m.index, 1);
+      room.furniture.splice(m.index, 1);
       p.inventory[f.item] = (p.inventory[f.item] ?? 0) + 1;
       break;
     }
     case 'room':
-      p.room.wallpaper = pick(WALLPAPERS, m.wallpaper, p.room.wallpaper);
-      p.room.floor = pick(FLOORS, m.floor, p.room.floor);
-      p.room.pattern = pick(WALL_PATTERNS, m.pattern, p.room.pattern ?? WALL_PATTERNS[0]);
-      p.room.floorStyle = pick(FLOOR_STYLES, m.floorStyle, p.room.floorStyle ?? FLOOR_STYLES[0]);
+      room.wallpaper = pick(WALLPAPERS, m.wallpaper, room.wallpaper);
+      room.floor = pick(FLOORS, m.floor, room.floor);
+      room.pattern = pick(WALL_PATTERNS, m.pattern, room.pattern ?? WALL_PATTERNS[0]);
+      room.floorStyle = pick(FLOOR_STYLES, m.floorStyle, room.floorStyle ?? FLOOR_STYLES[0]);
       break;
     case 'flip': {
-      const f = p.room.furniture[m.index];
+      const f = room.furniture[m.index];
       if (!f) return;
       f.flip = !f.flip;
       break;
     }
     case 'restyle': {
-      const f = p.room.furniture[m.index];
+      const f = room.furniture[m.index];
       if (!f || !Number.isInteger(m.v) || m.v < 0 || m.v >= colorsFor(f.item).length) return;
       f.v = m.v;
       break;
     }
+    case 'shape': {
+      const f = room.furniture[m.index];
+      if (!f || !Number.isInteger(m.s) || m.s < 0 || m.s >= (ITEMS[f.item].looks?.length ?? 1)) return;
+      f.s = m.s;
+      break;
+    }
     case 'expand': {
-      const next = (p.room.level ?? 0) + 1;
+      const next = (room.level ?? 0) + 1;
       if (next >= EXPAND_COST.length || p.coins < EXPAND_COST[next]) return;
       p.coins -= EXPAND_COST[next];
-      p.room.level = next;
+      room.level = next;
+      break;
+    }
+    case 'add_room': {
+      const n = p.rooms.length;
+      if (n >= MAX_ROOMS || p.coins < ROOM_COST[n]) return;
+      p.coins -= ROOM_COST[n];
+      p.rooms.push(newRoom());
       break;
     }
     case 'adopt': {
@@ -230,11 +265,28 @@ function handle(p, m) {
       p.pets.push({ kind: m.kind });
       break;
     }
+    case 'buy_acc': {
+      const acc = PET_ACCS[m.acc];
+      p.petAccs ??= [];
+      if (!acc || p.petAccs.includes(m.acc) || p.coins < acc.price) return;
+      p.coins -= acc.price;
+      p.petAccs.push(m.acc);
+      break;
+    }
+    // Dress up a pet: a free coat colour, and an accessory you own (or '' for none).
+    case 'pet_style': {
+      const pet = p.pets?.[m.slot];
+      if (!pet) return;
+      if (Number.isInteger(m.coat) && m.coat >= 0 && m.coat < PETS[pet.kind].coats.length) pet.coat = m.coat;
+      if (m.acc === '' || (p.petAccs ?? []).includes(m.acc)) pet.acc = m.acc || undefined;
+      break;
+    }
     case 'todo_add': {
       const h = db.houses[p.house];
       const text = cleanText(m.text, 120);
       h.todos ??= [];
-      if (!text || h.todos.length >= 60) return;
+      if (!text) return;
+      if (h.todos.length >= 60) return send(sockets.get(p.id), { t: 'error', text: 'The house list is full (60). Clear some done ones first.' });
       h.todos.push({ id: nextId++, text, done: false, by: p.name });
       break;
     }
@@ -249,11 +301,49 @@ function handle(p, m) {
       h.todos = (h.todos ?? []).filter((x) => x.id !== m.id);
       break;
     }
+    // Personal to-dos: private to one player, never shared with the house.
+    case 'ptodo_add': {
+      const text = cleanText(m.text, 120);
+      p.todos ??= [];
+      if (!text) return;
+      if (p.todos.length >= 60) return send(sockets.get(p.id), { t: 'error', text: 'Your list is full (60). Clear some done ones first.' });
+      p.todos.push({ id: nextId++, text, done: false });
+      break;
+    }
+    case 'ptodo_toggle': {
+      const t = p.todos?.find((x) => x.id === m.id);
+      if (!t) return;
+      t.done = !t.done;
+      break;
+    }
+    case 'ptodo_del': {
+      p.todos = (p.todos ?? []).filter((x) => x.id !== m.id);
+      break;
+    }
+    // Private messages: stored on both players' records, so each keeps the thread
+    // even after leaving the house. Only housemates can be messaged.
+    case 'dm': {
+      const to = db.players[m.to];
+      const text = cleanText(m.text, 200);
+      if (!to || !text || to.id === p.id || !db.houses[p.house]?.members.includes(to.id)) return;
+      const now = Date.now();
+      if (now - (lastDm.get(p.id) ?? 0) < 600) return send(sockets.get(p.id), { t: 'error', text: 'Slow down a little — that message was not sent.' });
+      lastDm.set(p.id, now);
+      const msg = { id: nextId++, from: p.id, by: p.name, text, at: now };
+      p.dm ??= {};
+      to.dm ??= {};
+      p.dm[to.id] = [...(p.dm[to.id] ?? []), msg].slice(-50);
+      to.dm[p.id] = [...(to.dm[p.id] ?? []), msg].slice(-50);
+      trimDmThreads(p.dm);
+      trimDmThreads(to.dm);
+      break;
+    }
     case 'chat': {
       const h = db.houses[p.house];
       const text = cleanText(m.text, 200);
       const now = Date.now();
-      if (!text || now - (lastChat.get(p.id) ?? 0) < 600) return;
+      if (!text) return;
+      if (now - (lastChat.get(p.id) ?? 0) < 600) return send(sockets.get(p.id), { t: 'error', text: 'Slow down a little — that message was not sent.' });
       lastChat.set(p.id, now);
       h.chat ??= [];
       h.chat.push({ id: nextId++, from: p.id, by: p.name, text, at: now });
@@ -272,7 +362,7 @@ function newPlayer(id, name) {
     id, name: cleanName(name), coins: 30, totalMinutes: 0, focus: null,
     look: { skin: SKINS[0], hair: HAIRS[0], shirt: SHIRTS[0], style: STYLES[0], face: FACES[0], outfit: OUTFITS[0] },
     inventory: {}, pets: [],
-    room: { wallpaper: WALLPAPERS[0], floor: FLOORS[0], furniture: [{ item: 'chair', x: 4, y: 3 }, { item: 'desk', x: 4, y: 4 }] },
+    rooms: [{ wallpaper: WALLPAPERS[0], floor: FLOORS[0], furniture: [{ item: 'chair', x: 4, y: 3 }, { item: 'desk', x: 4, y: 4 }] }],
   };
 }
 
@@ -414,9 +504,10 @@ wss.on('connection', (ws) => {
       if (!id || !db.players[id]) { send(ws, { t: 'auth', ok: false }); ws.close(); return; }
       p = db.players[id];
       // Old saves: drop furniture types that no longer exist; the old cat decoration becomes a real pet.
-      const hadCat = p.room.furniture.some((f) => f.item === 'cat') || p.inventory.cat > 0;
-      p.room.furniture = p.room.furniture.filter((f) => ITEMS[f.item]);
+      const hadCat = p.rooms.some((r) => r.furniture.some((f) => f.item === 'cat')) || p.inventory.cat > 0;
+      for (const r of p.rooms) r.furniture = r.furniture.filter((f) => ITEMS[f.item]);
       for (const k of Object.keys(p.inventory)) if (!ITEMS[k]) delete p.inventory[k];
+      if (!STYLES.includes(p.look.style)) p.look.style = STYLES[0]; // retired hairstyles fall back to the default
       p.pets ??= hadCat ? [{ kind: 'cat' }] : [];
       if (!db.houses[p.house]) createHouse(p);
       sockets.get(p.id)?.close();

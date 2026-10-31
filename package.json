@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "concurrently -k -n server,web \"node --env-file-if-exists=.env --env-file-if-exists=.env.local --watch server/index.js\" \"vite --host\"",
+    "dev:all": "npm run dev",
     "build": "tsc --noEmit && vite build",
     "start": "node --env-file-if-exists=.env --env-file-if-exists=.env.local server/index.js",
     "test": "node --test shared/game.test.js shared/stats.test.js server/store.test.js"

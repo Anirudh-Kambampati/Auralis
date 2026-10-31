@@ -61,6 +61,7 @@
             <label id="authUserLabel"><span id="authUserText">Username</span> <input id="authUser" autocomplete="username" required minlength="3" maxlength="254" /></label>
             <label id="authEmailLabel">Email <input id="authEmail" type="email" autocomplete="email" required maxlength="254" /></label>
             <label>Password <input id="authPass" type="password" autocomplete="new-password" required minlength="8" maxlength="200" /></label>
+            <label id="authConfirmLabel">Confirm password <input id="authConfirm" type="password" autocomplete="new-password" required minlength="8" maxlength="200" /></label>
             <p class="auth-error" id="authError" role="alert" hidden></p>
             <button type="submit" id="authSubmit">Create my room</button>
             <p class="hint" id="authHint">Already studying with us? Switch to Log in.</p>
@@ -89,12 +90,17 @@
     <section id="panel" hidden></section>
     <aside id="side">
       <section class="side-card todos">
-        <header class="side-head"><img id="todoIcon" alt="" /><h2>House to-dos</h2><button class="close" id="closeSide" aria-label="Close">✕</button></header>
+        <header class="side-head"><img id="todoIcon" alt="" /><h2>House to-dos</h2><button class="fold" id="fold-todos" aria-expanded="true" aria-controls="todoList" aria-label="Collapse house to-dos">▾</button><button class="close" id="closeSide" aria-label="Close">✕</button></header>
         <ul id="todoList"></ul>
         <form id="todoForm" class="row"><input id="todoInput" maxlength="120" placeholder="Add a to-do…" aria-label="New to-do" /><button>Add</button></form>
       </section>
+      <section class="side-card mine">
+        <header class="side-head"><img data-icon="clock" alt="" /><h2>My to-dos</h2><button class="fold" id="fold-personal" aria-expanded="true" aria-controls="myTodoList" aria-label="Collapse my to-dos">▾</button></header>
+        <ul id="myTodoList"></ul>
+        <form id="myTodoForm" class="row"><input id="myTodoInput" maxlength="120" placeholder="Add a private to-do…" aria-label="New private to-do" /><button>Add</button></form>
+      </section>
       <section class="side-card chat">
-        <header class="side-head"><img data-icon="chat" alt="" /><h2>Chat</h2></header>
+        <header class="side-head"><img data-icon="chat" alt="" /><h2>Chat</h2><select id="chatPeer" aria-label="Who to chat with"></select><button class="fold" id="fold-chat" aria-expanded="true" aria-controls="chatLog" aria-label="Collapse chat">▾</button></header>
         <div id="chatLog" aria-live="polite"></div>
         <form id="chatForm" class="row"><input id="chatInput" maxlength="200" placeholder="Say something…" aria-label="Chat message" /><button>Send</button></form>
       </section>
@@ -117,6 +123,10 @@
       <button data-panel="house" aria-label="House" title="House"><img data-icon="house" alt="" /></button>
       <button data-panel="social" aria-label="To-dos and chat" title="To-dos and chat"><img data-icon="chat" alt="" /></button>
     </nav>
+    <div id="zoom">
+      <button id="zoomIn" aria-label="Zoom in" title="Zoom in (+) ">+</button>
+      <button id="zoomOut" aria-label="Zoom out" title="Zoom out (-)">−</button>
+    </div>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>
