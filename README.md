@@ -42,6 +42,10 @@ npm run build && npm start   # production: one server on :8787 serves the game, 
 - `node scripts/seed-dev-accounts.js` creates two local test accounts for trying multiplayer.
 - `node --env-file=.env.local scripts/e2e-neon.js` runs the end-to-end check against Neon while the server is running.
 
+## Deploy
+
+The server runs on Render and the website on Vercel, both using Neon. Step-by-step guide: [docs/deploy.md](docs/deploy.md).
+
 ## Docs
 
 - [Architecture](docs/architecture.md): the pieces and how they fit together
