@@ -1,28 +1,28 @@
 import {
-  buildGrid, walkable, canPlace, roomSize, colorsFor, ITEMS, PETS, MAX_PETS, EXPAND_COST, ROOM_SIZES,
+  SHELVES, buildGrid, walkable, canPlace, roomSize, MAX_ROOMS, ROOM_COST, colorsFor, ITEMS, PETS, PET_ACCS, MAX_PETS, EXPAND_COST, ROOM_SIZES,
   WALLPAPERS, WALL_PATTERNS, FLOORS, FLOOR_STYLES, SKINS, HAIRS, SHIRTS, STYLES, FACES, OUTFITS, FOCUS_LENGTHS,
-  COLS, WALL_H, WALL, FLOOR, DOOR, BLOCKED,
+  WALL_H, WALL, FLOOR, DOOR, BLOCKED, VOID,
 } from '../shared/game.js';
 import {
-  T, OVERHANG, drawSeated, drawSeam, drawFloor, drawWall, drawWallFace, drawWallTop, drawDoor, drawWindow, drawPainting, drawFurniture, drawAvatar,
+  T, OVERHANG, SURFACE, drawSeated, drawActing, drawSeam, drawFloor, drawWall, drawWallFace, drawWallTop, drawDoor, drawWindow, drawPainting, drawFurniture, drawAvatar, drawDeskLamp, drawGlow, drawUsing, skyNow, NIGHT_TINT,
   coinURL, uiIconURL, drawPaper, paintBlockText, drawWindow as drawWin, type Look,
 } from './draw';
 import { drawPet, petPos, petIconURL, seedOf } from './pets';
 import { chart, streak, rangeTitle, shift, hm, RANGES } from '../shared/stats.js';
 import './style.css';
 
-type Furniture = { item: string; x: number; y: number; v?: number; flip?: boolean };
+type Furniture = { item: string; x: number; y: number; v?: number; s?: number; flip?: boolean };
 type Room = { wallpaper: string; floor: string; pattern?: string; floorStyle?: string; level?: number; furniture: Furniture[] };
 type Member = {
-  id: string; name: string; look: Look; room: Room; focus: { minutes: number; endsAt: number } | null;
-  totalMinutes: number; online: boolean; pos: { x: number; y: number } | null; pets: { kind: string }[];
+  id: string; name: string; look: Look; rooms: Room[]; focus: { minutes: number; endsAt: number } | null;
+  totalMinutes: number; online: boolean; pos: { x: number; y: number } | null; pets: { kind: string; coat?: number; acc?: string }[];
 };
 type Todo = { id: number; text: string; done: boolean; by: string };
 type Chat = { id: number; from: string; by: string; text: string; at: number };
 type Session = { at: number; minutes: number; tag: string };
-type Me = { id: string; coins: number; inventory: Record<string, number>; sessions: Session[]; subjects: string[]; hiddenSubjects: string[] };
+type Me = { id: string; coins: number; inventory: Record<string, number>; sessions: Session[]; subjects: string[]; hiddenSubjects: string[]; todos: Todo[]; dm: Record<string, Chat[]>; petAccs?: string[] };
 type Board = { scope: string; period: string; rows: { name: string; me: boolean; minutes: number }[] };
-type Avatar = { x: number; y: number; tx: number; ty: number; up: boolean; dist: number };
+type Avatar = { x: number; y: number; tx: number; ty: number; up: boolean; dist: number; use?: string };
 type ItemKey = keyof typeof ITEMS;
 type PetKey = keyof typeof PETS;
 
@@ -40,8 +40,9 @@ const apiBase = import.meta.env.VITE_API ?? '';
 let members: Member[] = [];
 let todos: Todo[] = [];
 let chat: Chat[] = [];
+let dmPeer: string | null = null; // null = talking to the whole house
 let houseCode = '';
-let me: Me = { id: myId, coins: 0, inventory: {}, sessions: [], subjects: [], hiddenSubjects: [] };
+let me: Me = { id: myId, coins: 0, inventory: {}, sessions: [], subjects: [], hiddenSubjects: [], todos: [], dm: {} };
 let statsTab = 'mine';
 let statsRange = 'week';
 let statsAnchor = Date.now();
@@ -61,6 +62,8 @@ let moving: number | null = null; // index of the furniture picked up in Decorat
 let drag: { index: number; gx: number; gy: number; lx: number; ly: number; moved: boolean } | null = null;
 let doneSentFor = 0;
 let view = { ox: 0, oy: 0, scale: 1 };
+// Extra integer scale steps on top of the fitted view (+ zooms in, - zooms out).
+let zoom = Math.max(-3, Math.min(4, Number(localStorage.getItem('auralis.zoom')) || 0));
 let cam: { x: number; y: number; scale: number } | null = null; // camera target in art pixels, eased
 let camRoom = 0;
 
@@ -84,27 +87,51 @@ function onMessage(m: any) {
     myId = m.me.id;
     if (m.house.code !== houseCode) avatars.delete(myId); // moved house: start in my own room
     const wasFocusing = !!myMember()?.focus;
+    const oldGrid = grid, oldSlots = slots.map((x) => `${x.m.id}:${x.ri}`);
     houseCode = m.house.code;
     members = m.house.members;
     todos = m.house.todos;
     me = m.me;
-    grid = buildGrid(members.map((x) => x.room));
-    petSpots = members.map((_, i) => {
+    noteNewDms();
+    slots = members.flatMap((mem) => mem.rooms.map((room, ri) => ({ m: mem, room, ri })));
+    if (editRoom >= (myMember()?.rooms.length ?? 1)) editRoom = 0;
+    grid = buildGrid(slots.map((x) => x.room));
+    // Someone joined, left or grew their room, so rooms may sit elsewhere in the grid now:
+    // move everyone along with the room they were standing in.
+    for (const [id, a] of avatars) {
+      const x = Math.round(a.tx), y = Math.round(a.ty);
+      const ownerAt = (cx: number, cy: number) => (cx >= 0 && cy >= 0 && cx < oldGrid.w && cy < oldGrid.h ? oldGrid.owner[cy * oldGrid.w + cx] : -1);
+      const was = [ownerAt(x, y), ownerAt(x - 1, y), ownerAt(x, y - 1)].find((k) => k >= 0) ?? -1;
+      const now = slots.findIndex((x) => `${x.m.id}:${x.ri}` === oldSlots[was]);
+      if (was < 0 || now < 0) continue;
+      const dx = grid.origins[now].x - oldGrid.origins[was].x, dy = grid.origins[now].y - oldGrid.origins[was].y;
+      if (!dx && !dy) continue;
+      a.x += dx; a.tx += dx; a.y += dy; a.ty += dy;
+      if (id === myId) { path = []; seat = null; send({ t: 'pos', x: a.tx, y: a.ty }); }
+    }
+    petSpots = slots.map((_, i) => {
       const spots = [];
       for (let y = 0; y < grid.h; y++) for (let x = 0; x < grid.w; x++) if (grid.owner[y * grid.w + x] === i && grid.at(x, y) === FLOOR) spots.push({ x, y });
       return spots;
     });
-    chairs = new Map();
-    members.forEach((mem, i) => {
+    acts = new Map();
+    petToys = slots.map(({ room }, i) => {
       const o = grid.origins[i];
-      for (const f of mem.room.furniture) if (f.item === 'chair') chairs.set(chairKey(o.x + f.x, o.y + f.y), furnColor(f));
+      const toys = [];
+      for (const f of room.furniture) {
+        const it = ITEMS[f.item as ItemKey] as { w: number; h: number; act?: string; pet?: string };
+        if (!it) continue;
+        if (it.act) for (let y = 0; y < it.h; y++) for (let x = 0; x < it.w; x++) acts.set(tileKey(o.x + f.x + x, o.y + f.y + y), { item: f.item, act: it.act, col: furnColor(f) });
+        if (it.pet) toys.push({ x: o.x + f.x, y: o.y + f.y, act: it.pet });
+      }
+      return toys;
     });
-    const canStand = (x: number, y: number) => walkable(grid.at(x, y)) || chairs.has(chairKey(x, y));
+    const canStand = (x: number, y: number) => walkable(grid.at(x, y)) || acts.has(tileKey(x, y));
     for (const mem of members) {
       let a = avatars.get(mem.id);
       const spot = mem.id !== myId && mem.pos && canStand(mem.pos.x, mem.pos.y) ? mem.pos : null;
       if (!a || !canStand(Math.round(a.tx), Math.round(a.ty))) {
-        const s = spot ?? roomSpawn(members.indexOf(mem));
+        const s = spot ?? roomSpawn(slotOf(mem.id));
         a = { x: s.x, y: s.y, tx: s.x, ty: s.y, up: false, dist: 0 };
         avatars.set(mem.id, a);
         if (mem.id === myId) { path = []; send({ t: 'pos', x: s.x, y: s.y }); }
@@ -122,7 +149,7 @@ function onMessage(m: any) {
     if (openPanel && openPanel !== 'social') renderPanel();
   } else if (m.t === 'pos') {
     const a = avatars.get(m.id);
-    if (a) { a.tx = m.x; a.ty = m.y; }
+    if (a) { a.tx = m.x; a.ty = m.y; a.use = m.use; }
   } else if (m.t === 'leaderboard') {
     board = m;
     if (openPanel === 'stats') renderPanel();
@@ -140,7 +167,10 @@ function receiveChat(list: Chat[]) {
     if (c.id <= lastChatId) continue;
     if (!first) {
       bubbles.set(c.from, { text: c.text, until: Date.now() + 6000 });
-      if (c.from !== myId && !document.body.classList.contains('side-open')) unread = true;
+      if (c.from !== myId) {
+        if (!document.body.classList.contains('side-open') || dmPeer) unread = true;
+        noteUnreadChat();
+      }
     }
   }
   chat = list;
@@ -150,25 +180,38 @@ function receiveChat(list: Chat[]) {
 // ---------- house helpers ----------
 const myIndex = () => members.findIndex((m) => m.id === myId);
 const myMember = () => members[myIndex()];
+// Every room in the house in grid order: each housemate's rooms, first room first.
+type Slot = { m: Member; room: Room; ri: number };
+let slots: Slot[] = [];
+let editRoom = 0; // which of my rooms Decorate and the room shop work on
+const slotOf = (id: string, ri = 0) => slots.findIndex((x) => x.m.id === id && x.ri === ri);
+const mySlot = () => slotOf(myId, editRoom);
+const myRoom = () => myMember()?.rooms[editRoom] ?? myMember()?.rooms[0];
 const furnColor = (f: Furniture) => (f.v === undefined ? undefined : colorsFor(f.item)[f.v]);
 
-let chairs = new Map<number, string | undefined>(); // chair tile -> its colour
-const chairKey = (x: number, y: number) => y * 10000 + x;
-let seat: { x: number; y: number } | null = null; // chair to sit on once the walk there ends
+// Tiles of furniture a character can use (chairs, sofas, gym balls, treadmills...) and what they do there.
+let acts = new Map<number, { item: string; act: string; col?: string }>();
+let petToys: { x: number; y: number; act: string }[][] = []; // per room: cat towers, beds, balls...
+const tileKey = (x: number, y: number) => y * 10000 + x;
+let seat: { x: number; y: number } | null = null; // furniture to step onto once the walk there ends
+let useNext: string | null = null; // what to do once the walk ends in front of a piece of furniture
+let restUntil = 0; // pause before wandering on: short after a walk, longer while using furniture
+let quietUntil = 0; // longer pause after you click or steer, so the sprite obeys you
 
-// Walk to my own chair (preferring one just behind a desk) and sit down facing the room.
+// Walk to my own chair (preferring one just behind a desk, in any of my rooms) and sit down facing the room.
 function goSit() {
-  const i = myIndex();
-  const room = members[i]?.room;
   const a = avatars.get(myId);
-  if (!room || !a) return;
-  const own = room.furniture.filter((f) => f.item === 'chair');
-  const atDesk = (c: Furniture) =>
-    room.furniture.some((d) => d.item === 'desk' && c.x >= d.x && c.x < d.x + ITEMS.desk.w && c.y + 1 === d.y);
-  const c = own.find(atDesk) ?? own[0];
-  if (!c) return;
-  const o = grid.origins[i];
-  const cx = o.x + c.x, cy = o.y + c.y;
+  const mine = myMember();
+  if (!mine || !a) return;
+  const it = (f: Furniture) => ITEMS[f.item as ItemKey] as { w: number; chair?: boolean; table?: boolean } | undefined;
+  const chairs = mine.rooms.flatMap((room, ri) => room.furniture.filter((f) => it(f)?.chair).map((c) => ({
+    c, i: slotOf(myId, ri),
+    desk: room.furniture.some((d) => it(d)?.table && c.x >= d.x && c.x < d.x + it(d)!.w && c.y + 1 === d.y),
+  })));
+  const pick = chairs.find((x) => x.desk) ?? chairs[0];
+  if (!pick || pick.i < 0) return;
+  const o = grid.origins[pick.i];
+  const cx = o.x + pick.c.x, cy = o.y + pick.c.y;
   if (a.tx === cx && a.ty === cy) return;
   const p = bfs({ x: a.tx, y: a.ty }, (x, y) => Math.abs(x - cx) + Math.abs(y - cy) === 1);
   if (!p) return;
@@ -178,7 +221,7 @@ function goSit() {
 
 function standUp() {
   const a = avatars.get(myId);
-  if (!a || !chairs.has(chairKey(a.tx, a.ty))) return;
+  if (!a || !acts.has(tileKey(a.tx, a.ty))) return;
   const s = nearestWalkable(a.tx, a.ty - 1);
   walkTo(s.x, s.y);
 }
@@ -218,10 +261,83 @@ function nearestWalkable(x: number, y: number) {
 
 function walkTo(x: number, y: number) {
   const a = avatars.get(myId);
-  if (!a || !walkable(grid.at(x, y))) return;
+  if (!a) return;
+  // Taps on the paper around the house, or outside it entirely, are ignored.
+  if (x < 0 || y < 0 || x >= grid.w || y >= grid.h) return;
+  if (grid.at(x, y) === VOID) return;
+  const target = walkable(grid.at(x, y)) ? { x, y } : nearestWalkable(x, y);
   seat = null;
-  const p = bfs({ x: a.tx, y: a.ty }, (cx, cy) => cx === x && cy === y);
+  useNext = null;
+  quietUntil = Date.now() + 2500;
+  const p = bfs({ x: a.tx, y: a.ty }, (cx, cy) => cx === target.x && cy === target.y);
+  if (p && p.length > 1) path = p.slice(1);
+}
+
+// When nothing else is going on, keep busy: walk somewhere new, or go use a sofa, gym ball, treadmill...
+function wander() {
+  const a = avatars.get(myId);
+  if (!a) return;
+  if (myMember()?.focus) return; // studying at the desk: stay put
+  if (path.length || seat) return;
+  if (a.x !== a.tx || a.y !== a.ty) return; // still sliding into a tile
+  if (Date.now() < restUntil || Date.now() < quietUntil) return;
+  // Anywhere floor connects, including through the doors into housemates' rooms.
+  const pass = (x: number, y: number) => walkable(grid.at(x, y));
+  // Collect every reachable floor tile in the house. Starting on furniture is fine: we step off it.
+  const start = { x: a.tx, y: a.ty };
+  const seen = new Set([tileKey(start.x, start.y)]);
+  const spots: { x: number; y: number }[] = [];
+  const queue = [start];
+  while (queue.length) {
+    const c = queue.shift()!;
+    if (c !== start) spots.push(c);
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      const n = { x: c.x + dx, y: c.y + dy };
+      const k = tileKey(n.x, n.y);
+      if (seen.has(k) || !pass(n.x, n.y)) continue;
+      seen.add(k);
+      queue.push(n);
+    }
+  }
+  // Furniture to use: next to a reachable tile and nobody else on it.
+  const taken = new Set([...avatars].filter(([id]) => id !== myId).map(([, o]) => tileKey(o.tx, o.ty)));
+  const near = (x: number, y: number) => [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => seen.has(tileKey(x + dx, y + dy)) && pass(x + dx, y + dy));
+  const usable = [...acts.keys()].map((k) => ({ x: k % 10000, y: Math.floor(k / 10000) }))
+    .filter((u) => !taken.has(tileKey(u.x, u.y)) && !(u.x === start.x && u.y === start.y) && near(u.x, u.y));
+  // Things to use from the front: plants to water, shelves to read at, stoves, instruments...
+  const fronts: { x: number; y: number; use: string }[] = [];
+  slots.forEach(({ room }, i) => {
+    const o = grid.origins[i];
+    for (const f of room.furniture) {
+      const it = ITEMS[f.item as ItemKey] as { w: number; h: number; use?: string };
+      if (!it?.use) continue;
+      for (let k = 0; k < it.w; k++) {
+        const fx = o.x + f.x + k, fy = o.y + f.y + it.h;
+        if ((seen.has(tileKey(fx, fy)) || (fx === start.x && fy === start.y)) && !taken.has(tileKey(fx, fy))) fronts.push({ x: fx, y: fy, use: it.use });
+      }
+    }
+  });
+  if (fronts.length && Math.random() < 0.45) {
+    const u = fronts[Math.floor(Math.random() * fronts.length)];
+    if (u.x === start.x && u.y === start.y) {
+      a.use = u.use; a.up = true;
+      send({ t: 'pos', x: u.x, y: u.y, use: u.use });
+      restUntil = Date.now() + 4000 + Math.random() * 4000;
+      return;
+    }
+    const p = bfs(start, (cx, cy) => cx === u.x && cy === u.y, pass);
+    if (p) { path = p.slice(1); useNext = u.use; return; }
+  }
+  if (usable.length && Math.random() < 0.55) {
+    const u = usable[Math.floor(Math.random() * usable.length)];
+    const p = bfs(start, (cx, cy) => pass(cx, cy) && Math.abs(cx - u.x) + Math.abs(cy - u.y) === 1, pass);
+    if (p) { path = p.slice(1); seat = u; return; }
+  }
+  if (!spots.length) { restUntil = Date.now() + 2000; return; }
+  const t = spots[Math.floor(Math.random() * spots.length)];
+  const p = bfs(start, (cx, cy) => cx === t.x && cy === t.y, pass);
   if (p) path = p.slice(1);
+  else restUntil = Date.now() + 2000;
 }
 
 function furnitureAt(room: Room, lx: number, ly: number) {
@@ -249,21 +365,23 @@ canvas.addEventListener('pointerdown', (e) => {
   const { tx, ty } = tileAt(e);
   const mine = myMember();
   if (openPanel === 'decorate' && mine) {
-    const o = grid.origins[myIndex()];
+    const tapped = slots[grid.owner[ty * grid.w + tx]];
+    if (!placing && !drag && tapped?.m.id === myId && tapped.ri !== editRoom) { editRoom = tapped.ri; moving = null; renderPanel(); return; }
+    const o = grid.origins[mySlot()];
     const lx = tx - o.x, ly = ty - o.y;
-    const i = furnitureAt(mine.room, lx, ly);
+    const i = furnitureAt(myRoom()!, lx, ly);
     if (placing) {
-      if (canPlace(mine.room, placing, lx, ly)) { send({ t: 'place', item: placing, x: lx, y: ly }); placing = null; }
+      if (canPlace(myRoom()!, placing, lx, ly)) { send({ t: 'place', r: editRoom, item: placing, x: lx, y: ly }); placing = null; }
       else toast('That spot is taken or outside your room.');
     } else if (i >= 0) {
       // Grab it: drag to move, or just tap to select it.
-      const f = mine.room.furniture[i];
+      const f = myRoom()!.furniture[i];
       moving = i;
       drag = { index: i, gx: lx - f.x, gy: ly - f.y, lx: f.x, ly: f.y, moved: false };
       canvas.setPointerCapture(e.pointerId);
     } else if (moving !== null) {
-      const f = mine.room.furniture[moving];
-      if (f && canPlace(without(mine.room, moving), f.item, lx, ly)) send({ t: 'move', index: moving, x: lx, y: ly });
+      const f = myRoom()!.furniture[moving];
+      if (f && canPlace(without(myRoom()!, moving), f.item, lx, ly)) send({ t: 'move', r: editRoom, index: moving, x: lx, y: ly });
       else toast("It doesn't fit there.");
     }
     renderPanel();
@@ -272,10 +390,32 @@ canvas.addEventListener('pointerdown', (e) => {
   walkTo(tx, ty);
 });
 
+// Zoom: the buttons, Ctrl/Cmd + wheel, or + and - on the keyboard.
+const zoomInBtn = $<HTMLButtonElement>('#zoomIn'), zoomOutBtn = $<HTMLButtonElement>('#zoomOut');
+function setZoom(next: number) {
+  zoom = Math.max(-3, Math.min(4, next));
+  localStorage.setItem('auralis.zoom', String(zoom));
+  zoomInBtn.disabled = zoom >= 4;
+  zoomOutBtn.disabled = zoom <= -3;
+}
+zoomInBtn.addEventListener('click', () => setZoom(zoom + 1));
+zoomOutBtn.addEventListener('click', () => setZoom(zoom - 1));
+canvas.addEventListener('wheel', (e) => {
+  if (!e.ctrlKey && !e.metaKey) return;
+  e.preventDefault();
+  setZoom(zoom + (e.deltaY < 0 ? 1 : -1));
+}, { passive: false });
+addEventListener('keydown', (e) => {
+  if ((e.target as HTMLElement).tagName === 'INPUT') return;
+  if (e.key === '+' || e.key === '=') { e.preventDefault(); setZoom(zoom + 1); }
+  else if (e.key === '-' || e.key === '_') { e.preventDefault(); setZoom(zoom - 1); }
+});
+setZoom(zoom);
+
 canvas.addEventListener('pointermove', (e) => {
   if (!drag) return;
   const { tx, ty } = tileAt(e);
-  const o = grid.origins[myIndex()];
+  const o = grid.origins[mySlot()];
   const lx = tx - o.x - drag.gx, ly = ty - o.y - drag.gy;
   if (lx !== drag.lx || ly !== drag.ly) { drag.lx = lx; drag.ly = ly; drag.moved = true; }
 });
@@ -283,9 +423,9 @@ canvas.addEventListener('pointermove', (e) => {
 canvas.addEventListener('pointerup', () => {
   const mine = myMember();
   if (!drag || !mine) { drag = null; return; }
-  const f = mine.room.furniture[drag.index];
+  const f = myRoom()!.furniture[drag.index];
   if (drag.moved && f) {
-    if (canPlace(without(mine.room, drag.index), f.item, drag.lx, drag.ly)) send({ t: 'move', index: drag.index, x: drag.lx, y: drag.ly });
+    if (canPlace(without(myRoom()!, drag.index), f.item, drag.lx, drag.ly)) send({ t: 'move', r: editRoom, index: drag.index, x: drag.lx, y: drag.ly });
     else toast("It doesn't fit there.");
   }
   drag = null;
@@ -297,6 +437,7 @@ addEventListener('keydown', (e) => {
   if (!a || !d || (e.target as HTMLElement).tagName === 'INPUT') return;
   const n = path[path.length - 1] ?? { x: a.tx, y: a.ty };
   if (walkable(grid.at(n.x + d[0], n.y + d[1]))) path = [...path.slice(0, 1), { x: n.x + d[0], y: n.y + d[1] }];
+  quietUntil = Date.now() + 2500; // I'm steering: no wandering on top of it
 });
 
 // ---------- loop ----------
@@ -310,16 +451,25 @@ function frame(t: number) {
 }
 
 function step(dt: number) {
-  const speed = 4.5; // tiles per second
+  const speed = 3.2; // tiles per second
   for (const [id, a] of avatars) {
     if (id === myId && a.x === a.tx && a.y === a.ty && path.length) {
       const n = path.shift()!;
       a.up = n.y < a.ty;
       a.tx = n.x; a.ty = n.y;
-      send({ t: 'pos', x: n.x, y: n.y });
+      a.use = path.length ? undefined : useNext ?? undefined;
+      if (a.use) a.up = true; // face the thing being used
+      send({ t: 'pos', x: n.x, y: n.y, use: a.use });
+      if (!path.length) {
+        // Watering, reading, cooking... takes a few seconds; otherwise barely a breath, then off again.
+        restUntil = Date.now() + (useNext ? 4000 + Math.random() * 4000 : 150 + Math.random() * 450);
+        useNext = null;
+      }
     } else if (id === myId && seat && a.x === a.tx && a.y === a.ty) {
       a.tx = seat.x; a.ty = seat.y; a.up = true;
       send({ t: 'pos', x: seat.x, y: seat.y });
+      // Lounging lasts a while; a workout or a bounce a little less.
+      restUntil = Date.now() + (acts.get(tileKey(seat.x, seat.y))?.act === 'sit' ? 8000 + Math.random() * 7000 : 5000 + Math.random() * 5000);
       seat = null;
     }
     const dx = a.tx - a.x, dy = a.ty - a.y;
@@ -332,6 +482,7 @@ function step(dt: number) {
       a.dist += m;
     }
   }
+  wander();
   const focus = myMember()?.focus;
   if (focus && Date.now() >= focus.endsAt && doneSentFor !== focus.endsAt) {
     doneSentFor = focus.endsAt;
@@ -365,7 +516,8 @@ function render(t: number) {
   const ri = Math.min(camRoom, grid.origins.length - 1);
   const o = grid.origins[ri] ?? { x: 1, y: WALL_H }, size = grid.sizes[ri] ?? roomSize(undefined);
   const roomW = (size.w + 2) * T, roomH = (size.h + WALL_H + 1) * T; // room plus its walls
-  const scale = Math.max(1, Math.floor(Math.min(aw / (roomW + T), ah / (roomH + T / 2))));
+  const fit = Math.max(1, Math.floor(Math.min(aw / (roomW + T), ah / (roomH + T / 2))));
+  const scale = Math.min(10, Math.max(1, fit + zoom));
   const vw = aw / scale, vh = ah / scale;
   // Centre the whole room when it fits on screen; otherwise follow the player.
   const fits = roomW <= vw && roomH <= vh;
@@ -388,13 +540,13 @@ function render(t: number) {
     for (let x = 0; x < grid.w; x++) {
       const k = grid.at(x, y);
       const px = x * T, py = y * T;
-      const room = (dy: number) => members[grid.owner[(y + dy) * grid.w + x]]?.room;
+      const room = (dy: number) => slots[grid.owner[(y + dy) * grid.w + x]]?.room;
       if (k === FLOOR || k === BLOCKED) {
         const r = room(0);
         drawFloor(ctx, px, py, r?.floor ?? FLOORS[0], x, y, r?.floorStyle);
       } else if (k === DOOR) {
         // An opening between side-by-side rooms shows both floors; a doorway between rows is plain wood.
-        const l = room(0) ?? members[grid.owner[y * grid.w + x - 1]]?.room, rr = members[grid.owner[y * grid.w + x + 1]]?.room;
+        const l = room(0) ?? slots[grid.owner[y * grid.w + x - 1]]?.room, rr = slots[grid.owner[y * grid.w + x + 1]]?.room;
         if (l && rr) drawSeam(ctx, px, py, x, y, l, rr);
         else drawDoor(ctx, px, py, x, y);
       }
@@ -428,78 +580,108 @@ function render(t: number) {
     }
   }
 
+  // Windows, the night tint and lamps follow the viewer's local clock.
+  const sky = skyNow();
+  const dark = sky !== 'day';
   // Top-row rooms get windows to the outside (more as the room grows); inner rooms get a painting.
-  members.forEach((_, i) => {
+  slots.forEach((_, i) => {
     const o = grid.origins[i], s = grid.sizes[i];
     const wy = (o.y - WALL_H) * T;
-    if (i < COLS) for (let lx = 1; lx + 2 <= s.w - 1; lx += 6) drawWindow(ctx, (o.x + lx) * T, wy, 'day');
+    if (i < grid.cols) for (let lx = 1; lx + 2 <= s.w - 1; lx += 6) drawWindow(ctx, (o.x + lx) * T, wy, sky);
     else drawPainting(ctx, (o.x + 1) * T, wy + 8);
   });
 
   // Rugs under everything, then furniture, pets and avatars sorted by their bottom edge.
   const sprites: { y: number; draw: () => void }[] = [];
-  // Chairs someone is studying in are drawn by drawSeated, wrapped around the player.
+  // Chairs someone sits in are drawn by drawSeated, wrapped around the sitter.
   const occupied = new Set<number>();
   for (const m of members) {
     const a = avatars.get(m.id);
-    if (a && m.focus && (m.online || m.id === myId) && a.x === a.tx && a.y === a.ty && chairs.has(chairKey(a.x, a.y))) {
-      occupied.add(chairKey(a.x, a.y));
-    }
+    if (a && (m.online || m.id === myId) && a.x === a.tx && a.y === a.ty && acts.has(tileKey(a.x, a.y))) occupied.add(tileKey(a.x, a.y));
   }
-  members.forEach((m, i) => {
+  slots.forEach(({ m, room, ri }, i) => {
     const o = grid.origins[i];
-    m.room.furniture.forEach((f, idx) => {
-      const it = ITEMS[f.item as ItemKey];
-      if (!it || (f.item === 'chair' && occupied.has(chairKey(o.x + f.x, o.y + f.y)))) return;
-      const dragged = drag?.moved && m.id === myId && drag.index === idx;
+    room.furniture.forEach((f, idx) => {
+      const it = ITEMS[f.item as ItemKey] as (typeof ITEMS)[ItemKey] & { chair?: boolean; top?: boolean };
+      if (!it || (it.chair && occupied.has(tileKey(o.x + f.x, o.y + f.y)))) return;
+      const dragged = drag?.moved && m.id === myId && ri === editRoom && drag.index === idx;
+      // Drinks and toys stand on top of whatever table they were put on.
+      const under = it.top ? room.furniture.find((g) => {
+        const gi = ITEMS[g.item as ItemKey];
+        return gi?.solid && f.x >= g.x && f.x < g.x + gi.w && f.y >= g.y && f.y < g.y + gi.h;
+      }) : undefined;
+      const lift = under ? SURFACE[under.item] ?? 0 : 0;
       const draw = () => {
         if (dragged) ctx.globalAlpha = 0.35;
-        drawFurniture(ctx, f.item, (o.x + f.x) * T, (o.y + f.y) * T, t, furnColor(f), f.flip, it.w);
+        drawFurniture(ctx, f.item, (o.x + f.x) * T, (o.y + f.y) * T - lift, t, furnColor(f), f.flip, it.w, f.s);
         ctx.globalAlpha = 1;
       };
-      if (!it.solid) draw();
+      if (it.top) sprites.push({ y: o.y + f.y + 0.6, draw });
+      else if (!it.solid) draw();
       else sprites.push({ y: o.y + f.y + it.h - 0.5, draw });
     });
-    m.pets?.forEach((p, slot) => {
+    if (ri === 0) m.pets?.forEach((p, slot) => { // pets live in their owner's first room
       const spots = petSpots[i];
       if (!spots?.length) return;
-      const pos = petPos(seedOf(m.id, slot), now, spots);
-      sprites.push({ y: pos.y + 0.9, draw: () => drawPet(ctx, p.kind, Math.round(pos.x * T), Math.round(pos.y * T), pos.moving, pos.left, now) });
+      const pos = petPos(seedOf(m.id, slot), now, spots, petToys[i]);
+      sprites.push({ y: pos.y + 0.9, draw: () => drawPet(ctx, p.kind, Math.round(pos.x * T), Math.round(pos.y * T), pos.moving, pos.left, now, pos.act, p.coat, p.acc) });
     });
   });
-  const labels: { x: number; y: number; m: Member; seated: boolean }[] = [];
+  const labels: { x: number; y: number; m: Member; seated: boolean; lift: number }[] = [];
+  const lights: { x: number; y: number; rad: number; alpha: number }[] = [];
   for (const m of members) {
     const a = avatars.get(m.id);
     if (!a || (!m.online && m.id !== myId)) continue;
     const walking = a.x !== a.tx || a.y !== a.ty;
-    const seated = !!m.focus && !walking && occupied.has(chairKey(a.x, a.y));
+    const act = walking ? undefined : acts.get(tileKey(a.x, a.y));
+    const seated = !!m.focus && !!act && !!(ITEMS[act.item as ItemKey] as { chair?: boolean }).chair; // studying at a desk
     const stepFrame = walking ? 1 + (Math.floor(a.dist * 4) % 2) : 0;
     const ax = Math.round(a.x * T), ay = Math.round(a.y * T);
-    const chairCol = chairs.get(chairKey(a.x, a.y));
     sprites.push({
       y: a.y + 0.99,
-      draw: () => (seated ? drawSeated(ctx, m.look, ax, ay, t, chairCol) : drawAvatar(ctx, m.look, ax, ay, stepFrame, a.up)),
+      draw: () => (act ? drawActing(ctx, m.look, act.act, act.item, ax, ay, t, act.col, seated)
+        : a.use && !walking ? drawUsing(ctx, m.look, a.use, ax, ay, t)
+        : drawAvatar(ctx, m.look, ax, ay, stepFrame, a.up)),
     });
-    labels.push({ x: a.x, y: a.y, m, seated });
+    labels.push({ x: a.x, y: a.y, m, seated, lift: seated ? 30 : act ? 12 : 7 });
+    // Studying after dark: a desk lamp clicks on, on the table in front of the chair.
+    if (seated && dark) {
+      sprites.push({ y: a.y + 1.6, draw: () => drawDeskLamp(ctx, ax + 10, ay + T + 4) });
+      lights.push({ x: ax + 15, y: ay + T - 4, rad: 34, alpha: 0.5 });
+    }
   }
   sprites.sort((p, q) => p.y - q.y).forEach((s) => s.draw());
 
+  if (dark) {
+    ctx.fillStyle = NIGHT_TINT[sky];
+    for (let y = 0; y < grid.h; y++) for (let x = 0; x < grid.w; x++) if (grid.at(x, y)) ctx.fillRect(x * T, y * T, T, T);
+    slots.forEach(({ room }, i) => {
+      const o = grid.origins[i];
+      for (const f of room.furniture) {
+        const glow = GLOWS[f.item];
+        if (glow) lights.push({ x: (o.x + f.x) * T + glow.dx, y: (o.y + f.y) * T + glow.dy, rad: glow.rad, alpha: glow.alpha });
+      }
+    });
+    const flicker = 0.03 * Math.sin(t / 700);
+    for (const l of lights) drawGlow(ctx, l.x, l.y, l.rad, (sky === 'night' ? l.alpha : l.alpha * 0.5) + flicker);
+  }
+
   const mine = myMember();
   if (openPanel === 'decorate' && mine) {
-    const o = grid.origins[myIndex()], s = grid.sizes[myIndex()];
+    const o = grid.origins[mySlot()], s = grid.sizes[mySlot()];
     ctx.strokeStyle = placing ? '#ffe08a' : '#ffffffaa';
     ctx.lineWidth = 1;
     ctx.setLineDash([3, 2]);
     ctx.strokeRect(o.x * T + 0.5, o.y * T + 0.5, s.w * T - 1, s.h * T - 1);
     ctx.setLineDash([]);
-    const f = moving !== null ? mine.room.furniture[moving] : null;
+    const f = moving !== null ? myRoom()!.furniture[moving] : null;
     const it = f && ITEMS[f.item as ItemKey];
     if (f && it) {
       const gx = drag?.moved ? drag.lx : f.x, gy = drag?.moved ? drag.ly : f.y;
       if (drag?.moved) {
         // Ghost of the piece being dragged, outlined green where it fits and red where it doesn't.
-        drawFurniture(ctx, f.item, (o.x + gx) * T, (o.y + gy) * T, t, furnColor(f), f.flip, it.w);
-        ctx.strokeStyle = canPlace(without(mine.room, moving!), f.item, gx, gy) ? '#6fcf8a' : '#e06a5a';
+        drawFurniture(ctx, f.item, (o.x + gx) * T, (o.y + gy) * T, t, furnColor(f), f.flip, it.w, f.s);
+        ctx.strokeStyle = canPlace(without(myRoom()!, moving!), f.item, gx, gy) ? '#6fcf8a' : '#e06a5a';
       } else ctx.strokeStyle = '#f2c14e';
       ctx.lineWidth = 2;
       ctx.strokeRect((o.x + gx) * T + 1, (o.y + gy) * T + 1, it.w * T - 2, it.h * T - 2);
@@ -509,9 +691,9 @@ function render(t: number) {
   // Text in device pixels so it stays crisp.
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.textAlign = 'center';
-  for (const { x, y, m, seated } of labels) {
+  for (const { x, y, m, seated, lift } of labels) {
     // A studying player gets a bigger timer bubble floating over their desk.
-    const sx = (view.ox + x * T + 8) * scale, sy = (view.oy + y * T - (seated ? 30 : 7)) * scale;
+    const sx = (view.ox + x * T + 8) * scale, sy = (view.oy + y * T - lift) * scale;
     const fs = Math.max(12, (seated ? 4.5 : 3) * scale);
     ctx.font = `600 ${fs}px 'Fredoka', system-ui, sans-serif`;
     const text = m.focus ? `📖 ${fmt(m.focus.endsAt - now)}` : m.name;
@@ -554,6 +736,31 @@ function render(t: number) {
   }
 }
 
+// Things that light up the room at night: offset of the light from the item's top-left, size and strength.
+const GLOWS: Record<string, { dx: number; dy: number; rad: number; alpha: number }> = {
+  lamp: { dx: 8, dy: -4, rad: 40, alpha: 0.32 },
+  fireplace: { dx: 16, dy: 6, rad: 48, alpha: 0.4 },
+  pumpkin: { dx: 8, dy: 8, rad: 22, alpha: 0.3 },
+  christmasTree: { dx: 8, dy: -6, rad: 28, alpha: 0.25 },
+  tv: { dx: 16, dy: -6, rad: 30, alpha: 0.2 },
+  arcade: { dx: 8, dy: -8, rad: 24, alpha: 0.22 },
+  aquarium: { dx: 16, dy: -4, rad: 26, alpha: 0.18 },
+  gamingDesk: { dx: 16, dy: -2, rad: 26, alpha: 0.2 },
+  arcLamp: { dx: 8, dy: -8, rad: 36, alpha: 0.3 },
+  bedsideLamp: { dx: 8, dy: 4, rad: 22, alpha: 0.25 },
+  candles: { dx: 8, dy: 6, rad: 22, alpha: 0.25 },
+  neonHeart: { dx: 8, dy: -4, rad: 26, alpha: 0.25 },
+  fairyJar: { dx: 8, dy: 8, rad: 18, alpha: 0.22 },
+  floorCandle: { dx: 8, dy: 0, rad: 22, alpha: 0.25 },
+  snowflakeLamp: { dx: 8, dy: -6, rad: 24, alpha: 0.22 },
+  lanternString: { dx: 8, dy: -8, rad: 26, alpha: 0.25 },
+  diya: { dx: 8, dy: 8, rad: 18, alpha: 0.25 },
+  ghost: { dx: 8, dy: -2, rad: 20, alpha: 0.15 },
+  menorah: { dx: 8, dy: 4, rad: 20, alpha: 0.25 },
+  heater: { dx: 8, dy: 0, rad: 24, alpha: 0.25 },
+  discoBall: { dx: 8, dy: -6, rad: 26, alpha: 0.2 },
+};
+
 const fmt = (ms: number) => {
   const s = Math.max(0, Math.ceil(ms / 1000));
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
@@ -572,12 +779,9 @@ const TAG_COLORS = ['#9db4ee', '#f4a6b8', '#8fd0a8', '#ffd27a', '#b89af0', '#f2b
 
 // Shop shelves, each shown by one of its items (or a pet / the house icon) on the category rail.
 const SHOP_TABS: { id: string; label: string; items?: ItemKey[] }[] = [
-  { id: 'cozy', label: 'Seating', items: ['beanbag', 'armchair', 'sofa', 'bed'] },
-  { id: 'tables', label: 'Tables', items: ['coffeeTable', 'bookshelf', 'wardrobe'] },
-  { id: 'plants', label: 'Plants', items: ['cactus', 'plant', 'sunflower', 'bonsai'] },
-  { id: 'decor', label: 'Decor', items: ['books', 'lamp', 'globe', 'rug', 'roundRug', 'mirror', 'plush', 'easel'] },
-  { id: 'fun', label: 'Hobbies', items: ['recordPlayer', 'guitar', 'aquarium', 'piano'] },
+  ...SHELVES.map((sh) => ({ ...sh, items: (Object.keys(ITEMS) as ItemKey[]).filter((k) => (ITEMS[k] as { shelf?: string }).shelf === sh.id) })),
   { id: 'pets', label: 'Pets' },
+  { id: 'petacc', label: 'Pet style' },
   { id: 'room', label: 'Room size' },
 ];
 
@@ -654,18 +858,19 @@ function copyCode() {
 $('#code').addEventListener('click', copyCode);
 
 const icons = new Map<string, string>();
-function icon(item: string, cls = 'icon') {
-  if (!icons.has(item)) {
+function icon(item: string, cls = 'icon', style = 0) {
+  const key = `${item}|${style}`;
+  if (!icons.has(key)) {
     const it = ITEMS[item as ItemKey];
     const c = document.createElement('canvas');
     const top = OVERHANG[item] ?? 0;
     c.width = it.w * T; c.height = it.h * T + top;
-    drawFurniture(c.getContext('2d')!, item, 0, top, 0);
-    icons.set(item, c.toDataURL());
+    drawFurniture(c.getContext('2d')!, item, 0, top, 0, undefined, false, 1, style);
+    icons.set(key, c.toDataURL());
   }
-  return `<img class="${cls}" src="${icons.get(item)}" alt="">`;
+  return `<img class="${cls}" src="${icons.get(key)}" alt="">`;
 }
-const petIcon = (kind: string, cls = 'icon') => `<img class="${cls}" src="${petIconURL(kind)}" alt="">`;
+const petIcon = (kind: string, cls = 'icon', coat = 0, acc?: string) => `<img class="${cls}" src="${petIconURL(kind, coat, acc)}" alt="">`;
 
 function avatarPreview(look: Look) {
   const c = document.createElement('canvas');
@@ -685,15 +890,20 @@ const esc = (s: string) => s.replace(/[&<>"]/g, (ch) => `&#${ch.charCodeAt(0)};`
 function shopBody(mine: Member) {
   const tab = SHOP_TABS.find((x) => x.id === shopTab) ?? SHOP_TABS[0];
   const rail = SHOP_TABS.map((x) => {
-    const pic = x.items ? icon(x.items[0], 'rail-icon') : x.id === 'pets' ? petIcon('cat', 'rail-icon') : `<img class="rail-icon" src="${uiIconURL('house')}" alt="">`;
+    const pic = x.items ? icon(x.items[0], 'rail-icon') : x.id === 'pets' ? petIcon('cat', 'rail-icon') : x.id === 'petacc' ? petIcon('bunny', 'rail-icon', 0, 'bow') : `<img class="rail-icon" src="${uiIconURL('house')}" alt="">`;
     return `<button class="rail-btn${x.id === tab.id ? ' on' : ''}" data-act="tab" data-v="${x.id}">${pic}<span>${x.label}</span></button>`;
   }).join('');
   let shelf = '';
   if (tab.items) {
     shelf = tab.items.map((k) => {
       const it = ITEMS[k];
-      return `<div class="card"><b>${it.name}</b>${icon(k)}<button data-act="buy" data-v="${k}" ${me.coins < it.price ? 'disabled' : ''}>${coin()} ${it.price}</button></div>`;
+      const looks = (it as { looks?: string[] }).looks;
+      return `<div class="card"><b>${it.name}</b>${icon(k)}${looks ? `<small class="hint">${looks.length} styles</small>` : ''}<button data-act="buy" data-v="${k}" ${me.coins < it.price ? 'disabled' : ''}>${coin()} ${it.price}</button></div>`;
     }).join('');
+  } else if (tab.id === 'petacc') {
+    const owned = me.petAccs ?? [];
+    shelf = Object.entries(PET_ACCS).map(([k, a]) => `<div class="card pet"><b>${a.name}</b>${petIcon(mine.pets[0]?.kind ?? 'cat', 'icon pet-icon', 0, k)}
+      ${owned.includes(k) ? '<span class="tag">Owned</span>' : `<button data-act="buyacc" data-v="${k}" ${me.coins < a.price ? 'disabled' : ''}>${coin()} ${a.price}</button>`}</div>`).join('');
   } else if (tab.id === 'pets') {
     const full = mine.pets.length >= MAX_PETS;
     shelf = Object.entries(PETS).map(([k, p]) => {
@@ -703,37 +913,52 @@ function shopBody(mine: Member) {
         <small class="hint">${full ? 'Room is full of pets' : need > 0 ? `${need} more to go` : 'Ready to adopt!'}</small></div>`;
     }).join('');
   } else {
-    const level = mine.room.level ?? 0;
+    const level = myRoom()!.level ?? 0;
+    const owned = mine.rooms.length;
+    const next = owned < MAX_ROOMS ? `<div class="card room-card"><b>Another room</b><div class="room-mini" style="--w:10;--h:8"></div>
+        <small>Room ${owned + 1} of ${MAX_ROOMS}</small><button data-act="addroom" ${me.coins < ROOM_COST[owned] ? 'disabled' : ''}>${coin()} ${ROOM_COST[owned]}</button></div>` : '';
     shelf = ROOM_SIZES.map((s, i) => {
       const state = i <= level ? '<span class="tag">Owned</span>'
         : i === level + 1 ? `<button data-act="expand" ${me.coins < EXPAND_COST[i] ? 'disabled' : ''}>${coin()} ${EXPAND_COST[i]}</button>`
         : `<small class="hint">${coin()} ${EXPAND_COST[i]}</small>`;
       return `<div class="card room-card"><b>${['Cozy', 'Roomy', 'Spacious', 'Grand'][i]}</b>
         <div class="room-mini" style="--w:${s.w};--h:${s.h}"></div><small>${s.w} × ${s.h} tiles</small>${state}</div>`;
-    }).join('');
+    }).join('') + next;
+    shelf = roomPicker(mine) + shelf;
   }
-  const note = tab.id === 'pets' ? `<p class="hint">Pets wander your room and your housemates can see them. Up to ${MAX_PETS} pets.</p>`
-    : tab.id === 'room' ? '<p class="hint">Upgrades add floor space. Your furniture stays where it is.</p>' : '';
+  const note = tab.id === 'work' ? '<p class="hint">Drinks can go on any table. Your buddy studies at a desk chair behind a table.</p>'
+    : tab.id === 'fitness' ? '<p class="hint">When your buddy wanders past, they hop on and work out.</p>'
+    : tab.id === 'petstuff' ? '<p class="hint">Your pets climb, nap and chase the ball on their own.</p>'
+    : tab.id === 'petacc' ? '<p class="hint">Buy once, then dress up any of your pets from the You panel.</p>'
+    : tab.id === 'pets' ? `<p class="hint">Pets wander your room and your housemates can see them. Up to ${MAX_PETS} pets.</p>`
+    : tab.id === 'room' ? `<p class="hint">Upgrades add floor space to the room you pick. Up to ${MAX_ROOMS} rooms each; new rooms join the house next to your others.</p>` : '';
   return `<div class="shop"><nav class="rail">${rail}</nav><div class="shelf">${note}<div class="grid">${shelf}</div></div></div>`;
 }
 
+// Chips to choose which of my rooms Decorate and the room shop work on.
+const roomPicker = (mine: Member) => mine.rooms.length < 2 ? '' : `<div class="row room-pick">${mine.rooms.map((_, ri) =>
+  `<button class="${ri === editRoom ? 'on' : 'off'}" data-act="editroom" data-v="${ri}">Room ${ri + 1}</button>`).join('')}</div>`;
+
 function decorateBody(mine: Member) {
   const inv = Object.entries(me.inventory).filter(([k, n]) => n > 0 && ITEMS[k as ItemKey]);
-  const sel = moving !== null ? mine.room.furniture[moving] : null;
+  const sel = moving !== null ? myRoom()!.furniture[moving] : null;
   if (!sel) moving = null;
   const palette = sel ? colorsFor(sel.item) : [];
+  const looks: string[] = sel ? (ITEMS[sel.item as ItemKey] as { looks?: string[] }).looks ?? [] : [];
   const selBar = sel ? `<div class="selected">${icon(sel.item)}<b>${ITEMS[sel.item as ItemKey].name}</b>
       <button class="off" data-act="flip" title="Turn it to face the other way">↔ Turn</button>
       <button class="off" data-act="putaway">Put away</button><button data-act="deselect">Done</button></div>
+      ${looks.length ? `<h3>Style</h3><div class="row styles">${looks.map((name, k) =>
+        `<button class="${(sel.s ?? 0) === k ? 'on' : 'off'}" data-act="shape" data-v="${k}">${icon(sel.item, 'chip-icon', k)}${name}</button>`).join('')}</div>` : ''}
       ${palette.length ? `<h3>Colour</h3>${swatches('recolor', palette, sel.v ?? -1, true)}` : ''}` : '';
   const hint = placing ? `Tap a spot in your room to place the <b>${ITEMS[placing].name}</b>.`
     : sel ? 'Drag it, or tap a new spot to move it there.' : 'Drag any furniture to move it, or tap it for more options.';
-  return `${selBar}<p class="hint">${hint}</p>
+  return `${roomPicker(mine)}${selBar}<p class="hint">${hint}</p>
     ${inv.length ? `<h3>Storage</h3><div class="grid">${inv.map(([k, n]) => `<div class="card${placing === k ? ' on' : ''}"><b>${ITEMS[k as ItemKey].name} ×${n}</b>${icon(k)}<button data-act="place" data-v="${k}">Place</button></div>`).join('')}</div>` : '<p class="hint">Storage is empty. Visit the Shop!</p>'}
-    <h3>Wallpaper</h3>${swatches('wallpaper', WALLPAPERS, mine.room.wallpaper)}
-    <h3>Pattern</h3>${choices('pattern', WALL_PATTERNS, mine.room.pattern ?? 'plain')}
-    <h3>Floor</h3>${swatches('floor', FLOORS, mine.room.floor)}
-    <h3>Floor style</h3>${choices('floorStyle', FLOOR_STYLES, mine.room.floorStyle ?? 'planks')}
+    <h3>Wallpaper</h3>${swatches('wallpaper', WALLPAPERS, myRoom()!.wallpaper)}
+    <h3>Pattern</h3>${choices('pattern', WALL_PATTERNS, myRoom()!.pattern ?? 'plain')}
+    <h3>Floor</h3>${swatches('floor', FLOORS, myRoom()!.floor)}
+    <h3>Floor style</h3>${choices('floorStyle', FLOOR_STYLES, myRoom()!.floorStyle ?? 'planks')}
     <p class="hint">Want more space? Get a bigger room in the Shop.</p>
     <h3>Snapshots</h3>
     <button class="off" data-act="snapshot">📸 Save a picture of my room</button>
@@ -816,7 +1041,13 @@ function panelBody(mine: Member) {
         <label>Name <input id="name" maxlength="16" value="${esc(mine.name)}"></label>
         <p class="hint">Total focus: <b>${mine.totalMinutes}</b> min</p>
         <button class="off small-chip" data-act="logout">Log out</button></div></div>
-      ${mine.pets.length ? `<h3>Your pets</h3><div class="row">${mine.pets.map((p) => `<span class="pet-chip">${petIcon(p.kind, 'chip-icon')}${PETS[p.kind as PetKey]?.name ?? p.kind}</span>`).join('')}</div>` : ''}
+      ${mine.pets.length ? `<h3>Your pets</h3>${mine.pets.map((p, slot) => {
+        const coats = PETS[p.kind as PetKey]?.coats ?? [];
+        const accs = me.petAccs ?? [];
+        return `<div class="pet-row"><span class="pet-chip">${petIcon(p.kind, 'chip-icon', p.coat, p.acc)}${PETS[p.kind as PetKey]?.name ?? p.kind}</span>
+          <div class="swatches">${coats.map((c, k) => `<button class="swatch${(p.coat ?? 0) === k ? ' on' : ''}" style="background:${c}" data-act="petcoat" data-slot="${slot}" data-v="${k}" aria-label="Coat ${k + 1}"></button>`).join('')}</div>
+          ${accs.length ? `<div class="row">${['', ...accs].map((a) => `<button class="${(p.acc ?? '') === a ? 'on' : 'off'}" data-act="petacc" data-slot="${slot}" data-v="${a}">${a ? PET_ACCS[a as keyof typeof PET_ACCS].name : 'None'}</button>`).join('')}</div>` : ''}</div>`;
+      }).join('')}${(me.petAccs ?? []).length ? '' : '<p class="hint">Get bows, hats and more for your pets in Shop → Pet style.</p>'}` : ''}
       <h3>Face</h3>${choices('face', FACES, mine.look.face)}
       <h3>Outfit</h3>${choices('outfit', OUTFITS, mine.look.outfit)}
       <h3>Outfit colour</h3>${swatches('shirt', SHIRTS, mine.look.shirt)}
@@ -854,7 +1085,7 @@ panel.addEventListener('click', (e) => {
   const mine = myMember();
   if (!b || !mine) return;
   const v = b.dataset.v!;
-  const room = mine.room;
+  const room = myRoom()!;
   switch (b.dataset.act) {
     case 'close': setPanel(null); break;
     case 'focus': {
@@ -884,15 +1115,21 @@ panel.addEventListener('click', (e) => {
     case 'cancel': armGiveUp(b, 'Give up'); break;
     case 'tab': shopTab = v; renderPanel(); panel.querySelector('.pb')!.scrollTop = 0; break;
     case 'buy': send({ t: 'buy', item: v }); toast(`${icon(v)} Bought <b>${ITEMS[v as ItemKey].name}</b>! Place it from Decorate.`); break;
+    case 'buyacc': send({ t: 'buy_acc', acc: v }); toast(`Bought the <b>${PET_ACCS[v as keyof typeof PET_ACCS].name}</b>! Put it on a pet from the You panel.`); break;
+    case 'petcoat': send({ t: 'pet_style', slot: Number(b.dataset.slot), coat: Number(v) }); break;
+    case 'petacc': send({ t: 'pet_style', slot: Number(b.dataset.slot), acc: v }); break;
     case 'adopt': send({ t: 'adopt', kind: v }); toast(`${petIcon(v)} Welcome home, <b>${PETS[v as PetKey].name}</b>!`, 'reward'); break;
-    case 'expand': send({ t: 'expand' }); toast('Your room just got bigger!', 'reward'); break;
+    case 'addroom': send({ t: 'add_room' }); editRoom = mine.rooms.length; toast('A new room! Find it next to your others.', 'reward'); break;
+    case 'editroom': editRoom = Number(v); moving = null; placing = null; renderPanel(); break;
+    case 'expand': send({ t: 'expand', r: editRoom }); toast('Your room just got bigger!', 'reward'); break;
     case 'place': placing = v as ItemKey; moving = null; renderPanel(); break;
-    case 'putaway': if (moving !== null) send({ t: 'pickup', index: moving }); moving = null; renderPanel(); break;
+    case 'putaway': if (moving !== null) send({ t: 'pickup', r: editRoom, index: moving }); moving = null; renderPanel(); break;
     case 'deselect': moving = null; renderPanel(); break;
-    case 'flip': if (moving !== null) send({ t: 'flip', index: moving }); break;
-    case 'recolor': if (moving !== null) send({ t: 'restyle', index: moving, v: Number(v) }); break;
+    case 'flip': if (moving !== null) send({ t: 'flip', r: editRoom, index: moving }); break;
+    case 'recolor': if (moving !== null) send({ t: 'restyle', r: editRoom, index: moving, v: Number(v) }); break;
+    case 'shape': if (moving !== null) send({ t: 'shape', r: editRoom, index: moving, s: Number(v) }); break;
     case 'wallpaper': case 'floor': case 'pattern': case 'floorStyle':
-      send({ t: 'room', wallpaper: room.wallpaper, floor: room.floor, pattern: room.pattern, floorStyle: room.floorStyle, [b.dataset.act]: v }); break;
+      send({ t: 'room', r: editRoom, wallpaper: room.wallpaper, floor: room.floor, pattern: room.pattern, floorStyle: room.floorStyle, [b.dataset.act]: v }); break;
     case 'skin': case 'hair': case 'shirt': case 'style': case 'face': case 'outfit':
       send({ t: 'look', name: mine.name, look: { ...mine.look, [b.dataset.act]: v } }); break;
     case 'copy': copyCode(); break;
@@ -908,6 +1145,11 @@ const requestBoard = () => send({ t: 'leaderboard', scope: boardScope, period: b
 function setPanel(name: string | null) {
   if (name === 'stats' && statsTab === 'board') requestBoard();
   if (name === 'decorate' && token) snapshotsApi().catch(() => {});
+  if (name === 'decorate') {
+    const a = avatars.get(myId);
+    const here = a ? slots[grid.owner[Math.round(a.ty) * grid.w + Math.round(a.tx)]] : undefined;
+    if (here?.m.id === myId) editRoom = here.ri;
+  }
   openPanel = name;
   placing = null;
   moving = null;
@@ -923,41 +1165,148 @@ document.querySelectorAll<HTMLButtonElement>('#dock button').forEach((b) =>
     setPanel(openPanel === b.dataset.panel ? null : b.dataset.panel!);
   }));
 
-// ---------- shared to-dos and chat ----------
-function renderSide() {
-  $('#todoList').innerHTML = todos.length
-    ? todos.map((t) => `<li class="${t.done ? 'done' : ''}">
+// ---------- shared to-dos, private to-dos and chat ----------
+function todoHTML(list: Todo[], empty: string) {
+  return list.length
+    ? list.map((t) => `<li class="${t.done ? 'done' : ''}">
         <button class="check" data-todo="toggle" data-id="${t.id}" aria-label="${t.done ? 'Mark not done' : 'Mark done'}">${t.done ? '✓' : ''}</button>
-        <span class="todo-text">${esc(t.text)}<small>${esc(t.by)}</small></span>
+        <span class="todo-text">${esc(t.text)}${t.by ? `<small>${esc(t.by)}</small>` : ''}</span>
         <button class="del" data-todo="del" data-id="${t.id}" aria-label="Delete">✕</button></li>`).join('')
-    : '<li class="empty">Nothing yet. Add something to study!</li>';
+    : `<li class="empty">${empty}</li>`;
+}
+
+// Private threads: unread counts per housemate, and the highest message id seen.
+const dmUnread: Record<string, number> = {};
+const dmSeen: Record<string, number> = {};
+let dmReady = false;
+
+function noteNewDms() {
+  for (const [peer, list] of Object.entries(me.dm ?? {})) {
+    const last = list[list.length - 1];
+    if (!last) continue;
+    // A brand new thread after the first load is genuinely new, so count it.
+    const seen = dmSeen[peer] ?? (dmReady ? 0 : last.id);
+    if (last.id <= seen) continue;
+    const fresh = list.filter((c) => c.id > seen && c.from !== myId).length;
+    // Unread unless that thread is open on screen right now.
+    const onScreen = dmPeer === peer && document.body.classList.contains('side-open');
+    if (dmReady && fresh && !onScreen) {
+      if (dmPeer !== peer) dmUnread[peer] = (dmUnread[peer] ?? 0) + fresh;
+      unread = true;
+      noteUnreadChat();
+    }
+    dmSeen[peer] = last.id;
+  }
+  dmReady = true;
+}
+
+// The chat card's recipient picker: the whole house, or one housemate.
+function syncChatPeer() {
+  const sel = $<HTMLSelectElement>('#chatPeer');
+  const others = members.filter((m) => m.id !== myId);
+  if (dmPeer && !others.some((m) => m.id === dmPeer)) dmPeer = null;
+  // Pending unread counts for people who moved out would be unreachable otherwise.
+  for (const peer of Object.keys(dmUnread)) if (!others.some((m) => m.id === peer)) delete dmUnread[peer];
+  // Only rebuild when the list or an unread count really changed, so an open
+  // picker isn't torn down in the middle of a choice by an unrelated update.
+  const sig = others.map((m) => `${m.id}:${m.name}:${dmUnread[m.id] ?? 0}:${dmPeer === m.id ? 1 : 0}`).join('|');
+  if (sel.dataset.sig !== sig) {
+    sel.dataset.sig = sig;
+    sel.innerHTML = ['<option value="">Everyone in the house</option>']
+      .concat(others.map((m) => `<option value="${m.id}"${dmPeer === m.id ? ' selected' : ''}>${esc(m.name)}${dmUnread[m.id] ? ` (${dmUnread[m.id]})` : ''}</option>`))
+      .join('');
+  }
+  sel.hidden = others.length === 0;
+}
+
+function renderSide() {
+  $('#todoList').innerHTML = todoHTML(todos, 'Nothing yet. Add something to study!');
+  $('#myTodoList').innerHTML = todoHTML(me.todos ?? [], 'Just for you — nobody else can see this.');
+  syncChatPeer();
   const log = $('#chatLog');
+  const msgs = dmPeer ? me.dm?.[dmPeer] ?? [] : chat;
+  const peerName = members.find((m) => m.id === dmPeer)?.name ?? 'them';
   const atBottom = log.scrollHeight - log.scrollTop - log.clientHeight < 40;
-  log.innerHTML = chat.length
-    ? chat.map((c) => `<p class="${c.from === myId ? 'mine' : ''}"><b>${esc(c.by)}</b>${esc(c.text)}</p>`).join('')
-    : '<p class="empty">Say hi to your housemates 👋</p>';
+  log.innerHTML = msgs.length
+    ? msgs.map((c) => `<p class="${c.from === myId ? 'mine' : ''}"><b>${esc(c.by)}</b>${esc(c.text)}</p>`).join('')
+    : dmPeer
+      ? `<p class="empty">Just you and ${esc(peerName)} — nobody else can see this.</p>`
+      : '<p class="empty">Say hi to your housemates 👋</p>';
+  $<HTMLInputElement>('#chatInput').placeholder = dmPeer ? `Message ${peerName}…` : 'Say something…';
+  if (dmPeer) dmUnread[dmPeer] = 0;
   if (atBottom) scrollChat();
 }
 const scrollChat = () => { const log = $('#chatLog'); log.scrollTop = log.scrollHeight; };
 
-$('#todoList').addEventListener('click', (e) => {
-  const b = (e.target as HTMLElement).closest<HTMLButtonElement>('button[data-todo]');
-  if (b) send({ t: b.dataset.todo === 'toggle' ? 'todo_toggle' : 'todo_del', id: Number(b.dataset.id) });
-});
-$('#todoForm').addEventListener('submit', (e) => {
-  e.preventDefault();
-  const input = $<HTMLInputElement>('#todoInput');
-  if (input.value.trim()) send({ t: 'todo_add', text: input.value });
-  input.value = '';
-});
+function wireTodos(list: string, form: string, input: string, kinds: { add: string; toggle: string; del: string }) {
+  $(list).addEventListener('click', (e) => {
+    const b = (e.target as HTMLElement).closest<HTMLButtonElement>('button[data-todo]');
+    if (b) send({ t: b.dataset.todo === 'toggle' ? kinds.toggle : kinds.del, id: Number(b.dataset.id) });
+  });
+  $(form).addEventListener('submit', (e) => {
+    e.preventDefault();
+    const el = $<HTMLInputElement>(input);
+    if (el.value.trim()) send({ t: kinds.add, text: el.value });
+    el.value = '';
+  });
+}
+wireTodos('#todoList', '#todoForm', '#todoInput', { add: 'todo_add', toggle: 'todo_toggle', del: 'todo_del' });
+wireTodos('#myTodoList', '#myTodoForm', '#myTodoInput', { add: 'ptodo_add', toggle: 'ptodo_toggle', del: 'ptodo_del' });
 $('#chatForm').addEventListener('submit', (e) => {
   e.preventDefault();
   const input = $<HTMLInputElement>('#chatInput');
-  if (input.value.trim()) send({ t: 'chat', text: input.value });
+  if (input.value.trim()) send(dmPeer ? { t: 'dm', to: dmPeer, text: input.value } : { t: 'chat', text: input.value });
   input.value = '';
+});
+$('#chatPeer').addEventListener('change', () => {
+  dmPeer = $<HTMLSelectElement>('#chatPeer').value || null;
+  if (dmPeer) dmUnread[dmPeer] = 0;
+  if (!Object.values(dmUnread).some(Boolean)) { unread = false; tickTimers(); } // caught up on everything
+  renderSide();
+  scrollChat();
 });
 $('#closeSide').addEventListener('click', () => setPanel(null));
 $<HTMLImageElement>('#todoIcon').src = uiIconURL('clock');
+
+// Each side card folds down to its header, and remembers that between visits.
+type SideCard = 'todos' | 'personal' | 'chat';
+const folds = (() => {
+  try { return JSON.parse(localStorage.getItem('auralis.folds') ?? '{}') as Record<SideCard, boolean>; }
+  catch { return {} as Record<SideCard, boolean>; }
+})();
+const sideCard: Record<SideCard, HTMLElement> = {
+  todos: document.querySelector('.side-card.todos')!,
+  personal: document.querySelector('.side-card.mine')!,
+  chat: document.querySelector('.side-card.chat')!,
+};
+const sideLabel: Record<SideCard, string> = { todos: 'house to-dos', personal: 'my to-dos', chat: 'chat' };
+
+function applyFold(card: SideCard) {
+  const folded = !!folds[card];
+  const btn = $(`#fold-${card}`);
+  sideCard[card].classList.toggle('folded', folded);
+  btn.setAttribute('aria-expanded', String(!folded));
+  btn.setAttribute('aria-label', `${folded ? 'Expand' : 'Collapse'} ${sideLabel[card]}`);
+  btn.textContent = folded ? '▸' : '▾';
+  if (!folded) btn.classList.remove('dot');
+}
+function toggleFold(card: SideCard) {
+  folds[card] = !folds[card];
+  localStorage.setItem('auralis.folds', JSON.stringify(folds));
+  applyFold(card);
+}
+for (const card of ['todos', 'personal', 'chat'] as SideCard[]) {
+  applyFold(card);
+  $(`#fold-${card}`).addEventListener('click', () => toggleFold(card));
+  // A folded card also opens when you tap anywhere on its header.
+  sideCard[card].querySelector('.side-head')!.addEventListener('click', (e) => {
+    if (folds[card] && !(e.target as HTMLElement).closest('button')) toggleFold(card);
+  });
+}
+// Landing on a new chat message should not stay hidden behind a folded card.
+function noteUnreadChat() {
+  if (folds.chat) $('#fold-chat').classList.add('dot');
+}
 
 // ---------- room snapshots (stored in Neon Object Storage) ----------
 let snapshotList: { key: string; url: string }[] = [];
@@ -971,7 +1320,7 @@ async function snapshotsApi(init?: RequestInit) {
 
 // Crops my room (with its walls) out of the game canvas and uploads it as a PNG.
 async function saveSnapshot() {
-  const i = myIndex();
+  const i = mySlot();
   if (i < 0) return;
   const o = grid.origins[i], s = grid.sizes[i], k = view.scale;
   const x = (view.ox + (o.x - 1) * T) * k, y = (view.oy + (o.y - WALL_H) * T) * k;
@@ -1015,6 +1364,8 @@ document.querySelectorAll<HTMLButtonElement>('#authForm [data-mode]').forEach((b
     // Sign-up asks for a username and an email; log-in takes either one in the first box.
     $('#authEmailLabel').hidden = authMode !== 'signup';
     $<HTMLInputElement>('#authEmail').required = authMode === 'signup';
+    $('#authConfirmLabel').hidden = authMode !== 'signup';
+    $<HTMLInputElement>('#authConfirm').required = authMode === 'signup';
     $('#authUserText').textContent = authMode === 'signup' ? 'Username' : 'Username or email';
     $('#authHint').textContent = authMode === 'signup' ? 'Already studying with us? Switch to Log in.' : 'New here? Switch to Sign up.';
     $('#authError').hidden = true;
@@ -1024,6 +1375,11 @@ $('#authForm').addEventListener('submit', async (e) => {
   e.preventDefault();
   const err = $('#authError');
   const btn = $<HTMLButtonElement>('#authSubmit');
+  if (authMode === 'signup' && $<HTMLInputElement>('#authPass').value !== $<HTMLInputElement>('#authConfirm').value) {
+    err.textContent = "Passwords don't match.";
+    err.hidden = false;
+    return;
+  }
   btn.disabled = true;
   try {
     const res = await fetch(`${apiBase}/api/${authMode}`, {

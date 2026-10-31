@@ -114,6 +114,31 @@ button.danger.armed { background: #c43f3f; animation: shake 0.3s; }
 #dock button.on { background: var(--gold); transform: translateY(-4px); box-shadow: 0 7px 0 var(--ink); }
 #dock img { width: 32px; height: 32px; }
 
+/* ---------- zoom ---------- */
+#zoom {
+  position: fixed;
+  right: calc(16px + var(--right, 0px));
+  bottom: calc(96px + env(safe-area-inset-bottom, 0));
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  transition: right 0.2s;
+}
+#zoom button {
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  font-size: 24px;
+  line-height: 1;
+  background: var(--paper);
+  color: var(--ink);
+  border-radius: 12px;
+  box-shadow: 0 3px 0 var(--ink);
+}
+@media (min-width: 900px) {
+  #zoom { bottom: calc(24px + env(safe-area-inset-bottom, 0)); }
+}
+
 /* ---------- panel ---------- */
 #panel {
   position: fixed;
@@ -327,7 +352,7 @@ label { display: flex; flex-direction: column; gap: 6px; font-weight: 700; }
 .shelf { min-width: 0; }
 .shelf .grid { grid-template-columns: repeat(auto-fill, minmax(112px, 1fr)); }
 .card.pet small { font-size: 12px; text-align: center; }
-.pet-icon { height: 48px; width: 58px; }
+.pet-icon { height: 48px; width: 58px; object-fit: contain; }
 .room-card .tag { padding: 4px 10px; border-radius: 8px; background: var(--theme); font-weight: 700; }
 .room-mini {
   width: calc(var(--w) * 4px);
@@ -339,7 +364,9 @@ label { display: flex; flex-direction: column; gap: 6px; font-weight: 700; }
   outline: 2px solid var(--ink);
 }
 .pet-chip { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px 4px 4px; background: #fff; border: 3px solid var(--ink); border-radius: 10px; font-weight: 600; }
-.chip-icon { width: 30px; height: 25px; }
+.chip-icon { width: 30px; height: 25px; object-fit: contain; }
+.pet-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 10px; }
+.styles button { display: inline-flex; align-items: center; gap: 4px; }
 
 /* ---------- side bar: shared to-dos + chat ---------- */
 #side {
@@ -365,19 +392,40 @@ body.side-open #side { display: flex; }
   box-shadow: 0 5px 0 var(--ink);
   overflow: hidden;
 }
-.side-card.todos { flex: 1 1 50%; }
-.side-card.chat { flex: 1 1 50%; }
+.side-card.todos { flex: 1 1 34%; }
+.side-card.mine { flex: 1 1 34%; }
+.side-card.chat { flex: 1 1 32%; }
 .side-head { display: flex; align-items: center; gap: 8px; padding: 8px 10px 8px 12px; border-bottom: 3px solid var(--ink); background: #ddd3ef; }
 .side-card.todos .side-head { background: #cfdcf5; }
+.side-card.mine .side-head { background: #d8ebcf; }
 .side-head img { width: 24px; height: 24px; }
-.side-head h2 { margin: 0; font-size: 18px; flex: 1; }
+.side-head h2 { margin: 0; font-size: 18px; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#chatPeer { flex: 0 1 auto; min-width: 0; max-width: 44%; height: 32px; padding: 0 4px; font: inherit; font-size: 14px; font-weight: 600; color: var(--ink); background: var(--paper); border: 2px solid var(--ink); border-radius: 8px; }
 .side-head .close { width: 32px; height: 32px; padding: 0; background: var(--paper); color: var(--ink); box-shadow: 0 3px 0 var(--ink); }
+.side-head .fold { position: relative; width: 32px; height: 32px; padding: 0; font-size: 18px; line-height: 1; background: var(--paper); color: var(--ink); box-shadow: 0 3px 0 var(--ink); }
+.side-head .fold.dot::after {
+  content: '';
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  width: 12px;
+  height: 12px;
+  background: var(--coral);
+  border: 2px solid var(--ink);
+  border-radius: 50%;
+}
+/* A folded card keeps its header visible and lets the other card take the space. */
+.side-card.folded { flex: 0 0 auto; }
+/* Needs an id to outrank the #todoList / #myTodoList / #chatLog display rules. */
+#side .side-card.folded > :not(.side-head) { display: none; }
+.side-card.folded .side-head { border-bottom: none; cursor: pointer; }
+.side-card.folded .side-head h2 { color: var(--muted); }
 .side-card form { margin: 0; padding: 8px 10px 10px; border-top: 3px dashed var(--soft); }
 .side-card form button { padding: 8px 12px; }
-#todoList { list-style: none; margin: 0; padding: 8px 10px; overflow-y: auto; display: grid; gap: 6px; align-content: start; flex: 1; }
-#todoList li { display: flex; align-items: center; gap: 8px; padding: 6px 8px; background: #fff; border: 2px solid var(--ink); border-radius: 10px; }
-#todoList li.done .todo-text { text-decoration: line-through; color: var(--muted); }
-#todoList li.empty, #chatLog .empty { border: none; background: none; color: var(--muted); font-size: 14px; }
+#todoList, #myTodoList { list-style: none; margin: 0; padding: 8px 10px; overflow-y: auto; display: grid; gap: 6px; align-content: start; flex: 1; }
+#todoList li, #myTodoList li { display: flex; align-items: center; gap: 8px; padding: 6px 8px; background: #fff; border: 2px solid var(--ink); border-radius: 10px; }
+#todoList li.done .todo-text, #myTodoList li.done .todo-text { text-decoration: line-through; color: var(--muted); }
+#todoList li.empty, #myTodoList li.empty, #chatLog .empty { border: none; background: none; color: var(--muted); font-size: 14px; }
 .todo-text { flex: 1; min-width: 0; overflow-wrap: anywhere; font-weight: 500; }
 .todo-text small { display: block; font-size: 11px; color: var(--muted); }
 .check { width: 26px; height: 26px; padding: 0; flex: none; background: var(--paper); color: var(--ink); box-shadow: 0 2px 0 var(--ink); font-size: 15px; }
@@ -485,7 +533,7 @@ li.done .check { background: #6fcf8a; color: #fff; }
 
 /* ---------- landing page ---------- */
 body.signed-out #hud, body.signed-out #dock, body.signed-out #side, body.signed-out #panel,
-body.signed-out #deck, body.signed-out #game { display: none !important; }
+body.signed-out #deck, body.signed-out #game, body.signed-out #zoom { display: none !important; }
 #landing {
   position: fixed;
   inset: 0;
