@@ -63,14 +63,26 @@ let drag: { index: number; gx: number; gy: number; lx: number; ly: number; moved
 let doneSentFor = 0;
 let view = { ox: 0, oy: 0, scale: 1 };
 // Extra integer scale steps on top of the fitted view (+ zooms in, - zooms out).
-let zoom = Math.max(-3, Math.min(4, Number(localStorage.getItem('auralis.zoom')) || 0));
+// Phones start one step closer, so faces and small things are easier to see; pinch or +/- changes it.
+const savedZoom = localStorage.getItem('auralis.zoom');
+let zoom = Math.max(-3, Math.min(4, savedZoom !== null ? Number(savedZoom) || 0 : innerWidth < 600 ? 1 : 0));
 let cam: { x: number; y: number; scale: number } | null = null; // camera target in art pixels, eased
 let camRoom = 0;
 
 // ---------- network ----------
 let ws: WebSocket;
 const serverUrl = import.meta.env.VITE_SERVER ?? `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws`;
+// Loading screen until the first house state arrives; after a few seconds explain the wait.
+let hintTimer = 0;
+function showLoading(on: boolean) {
+  $('#loading').hidden = !on;
+  clearTimeout(hintTimer);
+  $('#loadHint').hidden = true;
+  if (on) hintTimer = window.setTimeout(() => ($('#loadHint').hidden = false), 5000);
+}
+
 function connect() {
+  if (!houseCode) showLoading(true);
   ws = new WebSocket(serverUrl);
   ws.onopen = () => send({ t: 'hello', token });
   ws.onclose = () => { if (token) setTimeout(connect, 1500); };
@@ -84,6 +96,7 @@ function onMessage(m: any) {
     return;
   }
   if (m.t === 'state') {
+    if (!houseCode) showLoading(false);
     myId = m.me.id;
     if (m.house.code !== houseCode) avatars.delete(myId); // moved house: start in my own room
     const wasFocusing = !!myMember()?.focus;
@@ -361,7 +374,26 @@ function tileAt(e: PointerEvent) {
   };
 }
 
+// Two-finger pinch zooms in whole steps, like the + and - buttons.
+const touches = new Map<number, { x: number; y: number }>();
+let pinchFrom = 0;
+const spread = () => { const [a, b] = [...touches.values()]; return Math.hypot(a.x - b.x, a.y - b.y); };
+canvas.addEventListener('pointermove', (e) => {
+  if (!touches.has(e.pointerId)) return;
+  touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (touches.size !== 2 || !pinchFrom) return;
+  const d = spread();
+  if (d > pinchFrom * 1.3) { setZoom(zoom + 1); pinchFrom = d; }
+  else if (d < pinchFrom / 1.3) { setZoom(zoom - 1); pinchFrom = d; }
+});
+const lift = (e: PointerEvent) => { touches.delete(e.pointerId); if (touches.size < 2) pinchFrom = 0; };
+canvas.addEventListener('pointerup', lift);
+canvas.addEventListener('pointercancel', lift);
+
 canvas.addEventListener('pointerdown', (e) => {
+  touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (touches.size === 2) { pinchFrom = spread(); drag = null; return; } // second finger: it's a pinch, not a tap
+  if (touches.size > 2) return;
   const { tx, ty } = tileAt(e);
   const mine = myMember();
   if (openPanel === 'decorate' && mine) {
@@ -411,6 +443,17 @@ addEventListener('keydown', (e) => {
   else if (e.key === '-' || e.key === '_') { e.preventDefault(); setZoom(zoom - 1); }
 });
 setZoom(zoom);
+
+// In Decorate the cursor shows what a click will do: a target while placing, a hand over your furniture,
+// a closed hand while dragging. Otherwise the stylesheet's walk cursor applies.
+canvas.addEventListener('pointermove', (e) => {
+  let c = '';
+  if (openPanel === 'decorate' && myRoom()) {
+    const { tx, ty } = tileAt(e), o = grid.origins[mySlot()];
+    c = drag?.moved ? 'var(--grabbing)' : placing ? 'var(--place)' : o && furnitureAt(myRoom()!, tx - o.x, ty - o.y) >= 0 ? 'var(--grab)' : '';
+  }
+  if (canvas.style.cursor !== c) canvas.style.cursor = c;
+});
 
 canvas.addEventListener('pointermove', (e) => {
   if (!drag) return;
@@ -1071,11 +1114,14 @@ function renderPanel() {
   if (!openPanel || openPanel === 'social' || !mine) { panel.hidden = true; return; }
   const th = THEMES[openPanel];
   const scroll = panel.querySelector('.pb')?.scrollTop ?? 0;
+  const railX = panel.querySelector('.rail')?.scrollLeft ?? 0; // keep the swiped category strip where it was
   panel.hidden = false;
   panel.style.setProperty('--theme', th.color);
   panel.innerHTML = `<header class="ph"><img src="${uiIconURL(th.icon)}" alt=""><h2>${th.title}</h2>
     <button class="close" data-act="close" aria-label="Close">✕</button></header><div class="pb">${panelBody(mine)}</div>`;
   panel.querySelector('.pb')!.scrollTop = scroll;
+  const rail = panel.querySelector<HTMLElement>('.rail');
+  if (rail) rail.scrollLeft = railX;
   const nameInput = panel.querySelector<HTMLInputElement>('#name');
   nameInput?.addEventListener('change', () => send({ t: 'look', name: nameInput.value, look: mine.look }));
 }
@@ -1113,7 +1159,13 @@ panel.addEventListener('click', (e) => {
     case 'scope': boardScope = v; requestBoard(); renderPanel(); break;
     case 'period': boardPeriod = v; requestBoard(); renderPanel(); break;
     case 'cancel': armGiveUp(b, 'Give up'); break;
-    case 'tab': shopTab = v; renderPanel(); panel.querySelector('.pb')!.scrollTop = 0; break;
+    case 'tab': {
+      shopTab = v; renderPanel(); panel.querySelector('.pb')!.scrollTop = 0;
+      // Centre the chosen category in the strip on narrow screens.
+      const rail = panel.querySelector<HTMLElement>('.rail'), on = rail?.querySelector<HTMLElement>('.rail-btn.on');
+      if (rail && on) rail.scrollLeft = on.offsetLeft - (rail.clientWidth - on.offsetWidth) / 2;
+      break;
+    }
     case 'buy': send({ t: 'buy', item: v }); toast(`${icon(v)} Bought <b>${ITEMS[v as ItemKey].name}</b>! Place it from Decorate.`); break;
     case 'buyacc': send({ t: 'buy_acc', acc: v }); toast(`Bought the <b>${PET_ACCS[v as keyof typeof PET_ACCS].name}</b>! Put it on a pet from the You panel.`); break;
     case 'petcoat': send({ t: 'pet_style', slot: Number(b.dataset.slot), coat: Number(v) }); break;
@@ -1341,8 +1393,14 @@ async function saveSnapshot() {
 // ---------- landing page + accounts ----------
 let authMode: 'signup' | 'login' = 'signup';
 let pendingLook: Look | null = null; // buddy picked on the landing page, applied once the game state arrives
+// The landing and login page can be zoomed like any web page (for reading); the game itself can't, so pinches
+// zoom the room instead of the whole page.
+const viewport = document.querySelector('meta[name=viewport]')!;
 function showLanding(on: boolean) {
+  viewport.setAttribute('content', on ? 'width=device-width, initial-scale=1, viewport-fit=cover'
+    : 'width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover, user-scalable=no');
   document.body.classList.toggle('signed-out', on);
+  document.documentElement.classList.toggle('signed-out', on);
   $('#landing').hidden = !on;
   if (on) requestAnimationFrame(heroFrame);
 }
@@ -1381,6 +1439,7 @@ $('#authForm').addEventListener('submit', async (e) => {
     return;
   }
   btn.disabled = true;
+  document.body.classList.add('busy');
   try {
     const res = await fetch(`${apiBase}/api/${authMode}`, {
       method: 'POST',
@@ -1404,6 +1463,7 @@ $('#authForm').addEventListener('submit', async (e) => {
     err.hidden = false;
   } finally {
     btn.disabled = false;
+    document.body.classList.remove('busy');
   }
 });
 
