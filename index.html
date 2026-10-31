@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
+    <meta name="theme-color" content="#efe6da" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="icon" href="/icon.svg" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&display=swap" rel="stylesheet" />
+    <title>Auralis</title>
+  </head>
+  <body>
+    <section id="landing" hidden>
+      <div class="drift" aria-hidden="true">
+        <img class="d1 coin-d" alt="" /><img class="d2 coin-d" alt="" /><img class="d3 coin-d" alt="" />
+        <span class="d4 star"></span><span class="d5 star"></span><span class="d6 star"></span><span class="d7 star"></span>
+      </div>
+      <div class="land">
+        <header class="land-top">
+          <div class="brand">
+            <img src="/icon.svg" alt="" />
+            <h1 class="bouncy" aria-label="Auralis"><span>A</span><span>u</span><span>r</span><span>a</span><span>l</span><span>i</span><span>s</span></h1>
+          </div>
+          <p class="tagline">Study with your friends in a tiny pixel house. <mark>Focus</mark> together, <mark>earn</mark> coins, <mark>decorate</mark> everything.</p>
+        </header>
+
+        <div class="hero-wrap">
+          <canvas id="heroScene" role="img" aria-label="Friends studying together in a cozy pixel room with a cat, a bunny and a baby dragon"></canvas>
+          <div class="bubble" id="bubbleA"></div>
+          <div class="bubble" id="bubbleB"></div>
+          <div class="bubble" id="bubbleC"></div>
+          <p class="hero-hint">psst… tap the room ✨</p>
+        </div>
+
+        <section class="steps" aria-label="How it works">
+          <div class="step"><img data-icon="clock" alt="" /><b>1. Focus</b><span>Pick a subject, start a timer. Your buddy sits down at their desk.</span></div>
+          <div class="arrow-step" aria-hidden="true">➜</div>
+          <div class="step"><img class="coin-d" alt="" /><b>2. Earn</b><span>Every focused minute is a coin. Study with a friend for +25%.</span></div>
+          <div class="arrow-step" aria-hidden="true">➜</div>
+          <div class="step"><img data-icon="chair" alt="" /><b>3. Decorate</b><span>Furnish your room, make it bigger, adopt a pet you really earned.</span></div>
+        </section>
+
+        <div class="land-grid">
+          <section class="buddy" aria-label="Build your buddy">
+            <h2>Build your buddy</h2>
+            <canvas id="buddyCanvas" role="img" aria-label="Your character preview"></canvas>
+            <p class="buddy-tags" id="buddyTags"></p>
+            <button type="button" id="shuffleBuddy">🎲 Shuffle</button>
+            <p class="hint">Sign up and this buddy is yours. You can change it any time.</p>
+          </section>
+
+          <form class="auth" id="authForm">
+            <div class="sticker">free &amp; cozy</div>
+            <h2 id="authTitle">Move into the house 🏠</h2>
+            <div class="seg">
+              <button type="button" class="on" data-mode="signup">Sign up</button>
+              <button type="button" class="off" data-mode="login">Log in</button>
+            </div>
+            <label id="authUserLabel"><span id="authUserText">Username</span> <input id="authUser" autocomplete="username" required minlength="3" maxlength="254" /></label>
+            <label id="authEmailLabel">Email <input id="authEmail" type="email" autocomplete="email" required maxlength="254" /></label>
+            <label>Password <input id="authPass" type="password" autocomplete="new-password" required minlength="8" maxlength="200" /></label>
+            <p class="auth-error" id="authError" role="alert" hidden></p>
+            <button type="submit" id="authSubmit">Create my room</button>
+            <p class="hint" id="authHint">Already studying with us? Switch to Log in.</p>
+          </form>
+        </div>
+
+        <ul class="features">
+          <li><img data-icon="house" alt="" /><b>Rooms that join up</b><span>Share a code and your rooms open into one big house, each with its own look.</span></li>
+          <li><img data-icon="chat" alt="" /><b>To-dos &amp; chat</b><span>A shared list for the whole house, and speech bubbles over your heads.</span></li>
+          <li><img data-icon="bag" alt="" /><b>25 cozy things</b><span>Sofas, pianos, aquariums, bonsai… recolour them and drag them anywhere.</span></li>
+          <li><img data-icon="chart" alt="" /><b>See your progress</b><span>Day-to-year stats by subject, streaks and a friendly leaderboard.</span></li>
+        </ul>
+        <p class="land-foot">Made with tiny pixels and lots of focus.</p>
+      </div>
+    </section>
+    <canvas id="game"></canvas>
+    <header id="hud">
+      <div class="chip coins"><img class="coin" id="coinIcon" alt="" /><span id="coins">0</span></div>
+      <div class="chip focus" id="focusChip" hidden>
+        <span id="timer"></span>
+        <div class="bar"><i id="progress"></i></div>
+      </div>
+      <button class="chip house" id="code" title="Copy house code"></button>
+    </header>
+    <div id="toast" hidden></div>
+    <section id="panel" hidden></section>
+    <aside id="side">
+      <section class="side-card todos">
+        <header class="side-head"><img id="todoIcon" alt="" /><h2>House to-dos</h2><button class="close" id="closeSide" aria-label="Close">✕</button></header>
+        <ul id="todoList"></ul>
+        <form id="todoForm" class="row"><input id="todoInput" maxlength="120" placeholder="Add a to-do…" aria-label="New to-do" /><button>Add</button></form>
+      </section>
+      <section class="side-card chat">
+        <header class="side-head"><img data-icon="chat" alt="" /><h2>Chat</h2></header>
+        <div id="chatLog" aria-live="polite"></div>
+        <form id="chatForm" class="row"><input id="chatInput" maxlength="200" placeholder="Say something…" aria-label="Chat message" /><button>Send</button></form>
+      </section>
+    </aside>
+    <section id="deck" hidden>
+      <div class="deck-head"><span class="deck-tag">FOCUS</span><span class="deck-note" id="deckNote"></span></div>
+      <canvas class="deck-time" id="deckTime" aria-label="Time left"></canvas>
+      <div class="track"><i id="deckFill"></i><img class="marker" id="deckMarker" alt="" /></div>
+      <div class="deck-actions">
+        <button class="icon-btn danger" id="giveUp"><img data-icon="x" alt="" /><span>Give up</span></button>
+        <button class="icon-btn off" id="hideDeck"><img data-icon="house" alt="" /><span>Room</span></button>
+      </div>
+    </section>
+    <nav id="dock">
+      <button data-panel="focus" aria-label="Focus" title="Focus"><img data-icon="clock" alt="" /></button>
+      <button data-panel="decorate" aria-label="Decorate" title="Decorate"><img data-icon="chair" alt="" /></button>
+      <button data-panel="shop" aria-label="Shop" title="Shop"><img data-icon="bag" alt="" /></button>
+      <button data-panel="avatar" aria-label="Me" title="Me"><img data-icon="face" alt="" /></button>
+      <button data-panel="stats" aria-label="Stats" title="Stats"><img data-icon="chart" alt="" /></button>
+      <button data-panel="house" aria-label="House" title="House"><img data-icon="house" alt="" /></button>
+      <button data-panel="social" aria-label="To-dos and chat" title="To-dos and chat"><img data-icon="chat" alt="" /></button>
+    </nav>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

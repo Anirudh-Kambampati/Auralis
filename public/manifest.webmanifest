@@ -1,0 +1,10 @@
+{
+  "name": "Auralis",
+  "short_name": "Auralis",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#efe6da",
+  "theme_color": "#efe6da",
+  "icons": [{ "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }]
+}

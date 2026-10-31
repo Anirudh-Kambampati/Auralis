@@ -1,0 +1,9 @@
+node_modules/
+dist/
+data.json
+data.json.imported
+auralis.db
+auralis.db-*
+.env
+.neon
+.env.local
