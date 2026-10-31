@@ -1,5 +1,5 @@
 import {
-  SHELVES, buildGrid, walkable, canPlace, roomSize, MAX_ROOMS, ROOM_COST, colorsFor, ITEMS, PETS, PET_ACCS, MAX_PETS, EXPAND_COST, ROOM_SIZES,
+  SHELVES, buildGrid, walkable, canPlace, placeSwaps,roomSize, MAX_ROOMS, ROOM_COST, colorsFor, ITEMS, PETS, PET_ACCS, MAX_PETS, EXPAND_COST, ROOM_SIZES,
   WALLPAPERS, WALL_PATTERNS, FLOORS, FLOOR_STYLES, SKINS, HAIRS, SHIRTS, STYLES, FACES, OUTFITS, FOCUS_LENGTHS,
   WALL_H, WALL, FLOOR, DOOR, BLOCKED, VOID,
 } from '../shared/game.js';
@@ -8,6 +8,10 @@ import {
   coinURL, uiIconURL, drawPaper, paintBlockText, drawWindow as drawWin, type Look,
 } from './draw';
 import { drawPet, petPos, petIconURL, seedOf } from './pets';
+import { toggleSound, soundName } from './sounds';
+import { countUnseen } from './tabBadge';
+import { syncWatch } from './watch';
+import { parseVideo } from '../shared/watch.js';
 import { chart, streak, rangeTitle, shift, hm, RANGES } from '../shared/stats.js';
 import './style.css';
 
@@ -105,6 +109,7 @@ function onMessage(m: any) {
     members = m.house.members;
     todos = m.house.todos;
     me = m.me;
+    syncWatch(m.house.watch ?? null, myId, send);
     noteNewDms();
     slots = members.flatMap((mem) => mem.rooms.map((room, ri) => ({ m: mem, room, ri })));
     if (editRoom >= (myMember()?.rooms.length ?? 1)) editRoom = 0;
@@ -181,6 +186,7 @@ function receiveChat(list: Chat[]) {
     if (!first) {
       bubbles.set(c.from, { text: c.text, until: Date.now() + 6000 });
       if (c.from !== myId) {
+        countUnseen();
         if (!document.body.classList.contains('side-open') || dmPeer) unread = true;
         noteUnreadChat();
       }
@@ -403,7 +409,7 @@ canvas.addEventListener('pointerdown', (e) => {
     const lx = tx - o.x, ly = ty - o.y;
     const i = furnitureAt(myRoom()!, lx, ly);
     if (placing) {
-      if (canPlace(myRoom()!, placing, lx, ly)) { send({ t: 'place', r: editRoom, item: placing, x: lx, y: ly }); placing = null; }
+      if (placeSwaps(myRoom()!, placing, lx, ly)) { send({ t: 'place', r: editRoom, item: placing, x: lx, y: ly }); placing = null; }
       else toast('That spot is taken or outside your room.');
     } else if (i >= 0) {
       // Grab it: drag to move, or just tap to select it.
@@ -418,6 +424,16 @@ canvas.addEventListener('pointerdown', (e) => {
     }
     renderPanel();
     return;
+  }
+  // Clicking something that makes a sound (record player, fireplace, clocks) in any room you can see toggles it, just for you.
+  const si = grid.owner[ty * grid.w + tx], hit = slots[si];
+  const sounding = hit?.room.furniture.find((f) => {
+    const it = ITEMS[f.item as ItemKey], lx = tx - grid.origins[si].x, ly = ty - grid.origins[si].y;
+    return it && soundName(f.item) && lx >= f.x && lx < f.x + it.w && ly >= f.y && ly < f.y + it.h;
+  });
+  if (sounding) {
+    const what = soundName(sounding.item);
+    toast(toggleSound(sounding.item) ? `🔊 ${what} on. Click the ${ITEMS[sounding.item as ItemKey].name.toLowerCase()} again to stop.` : `${what} off.`);
   }
   walkTo(tx, ty);
 });
@@ -658,9 +674,14 @@ function render(t: number) {
         return gi?.solid && f.x >= g.x && f.x < g.x + gi.w && f.y >= g.y && f.y < g.y + gi.h;
       }) : undefined;
       const lift = under ? SURFACE[under.item] ?? 0 : 0;
+      // Tiles of a desk that something stands on: its own built-in laptop/mug there is hidden (bit 1 = left, 2 = right, as drawn).
+      let bare = 0;
+      if (it.solid) for (const g of room.furniture) {
+        if ((ITEMS[g.item as ItemKey] as { top?: boolean } | undefined)?.top &&g.y >= f.y && g.y < f.y + it.h && g.x >= f.x && g.x < f.x + it.w) bare |= 1 << (f.flip ? f.x + it.w - 1 - g.x : g.x - f.x);
+      }
       const draw = () => {
         if (dragged) ctx.globalAlpha = 0.35;
-        drawFurniture(ctx, f.item, (o.x + f.x) * T, (o.y + f.y) * T - lift, t, furnColor(f), f.flip, it.w, f.s);
+        drawFurniture(ctx, f.item, (o.x + f.x) * T, (o.y + f.y) * T - lift, t, furnColor(f), f.flip, it.w, f.s, bare);
         ctx.globalAlpha = 1;
       };
       if (it.top) sprites.push({ y: o.y + f.y + 0.6, draw });
@@ -1246,6 +1267,7 @@ function noteNewDms() {
     const fresh = list.filter((c) => c.id > seen && c.from !== myId).length;
     // Unread unless that thread is open on screen right now.
     const onScreen = dmPeer === peer && document.body.classList.contains('side-open');
+    if (dmReady) countUnseen(fresh);
     if (dmReady && fresh && !onScreen) {
       if (dmPeer !== peer) dmUnread[peer] = (dmUnread[peer] ?? 0) + fresh;
       unread = true;
@@ -1311,6 +1333,14 @@ wireTodos('#myTodoList', '#myTodoForm', '#myTodoInput', { add: 'ptodo_add', togg
 $('#chatForm').addEventListener('submit', (e) => {
   e.preventDefault();
   const input = $<HTMLInputElement>('#chatInput');
+  const watch = /^\/watch\b\s*(.*)$/i.exec(input.value.trim());
+  if (watch) { // easter egg: /watch <link> starts a watch party for the house, /watch stop ends it
+    const url = watch[1];
+    if (!url) toast('Type <b>/watch</b> and a YouTube, Vimeo, Twitch, Dailymotion or .mp4 link.');
+    else if (url.toLowerCase() !== 'stop' && !parseVideo(url)) toast("Can't play that link. Try YouTube, Vimeo, Twitch, Dailymotion or a direct .mp4/.webm link.");
+    else { send({ t: 'watch', url }); input.value = ''; }
+    return;
+  }
   if (input.value.trim()) send(dmPeer ? { t: 'dm', to: dmPeer, text: input.value } : { t: 'chat', text: input.value });
   input.value = '';
 });

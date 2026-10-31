@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  buildGrid, canPlace, focusReward, colorsFor, roomSize, PETS, EXPAND_COST,
+  buildGrid, canPlace, placeSwaps, focusReward, colorsFor, roomSize, PETS, EXPAND_COST,
   DOOR, WALL, FLOOR, BLOCKED, VOID, ROOM_W, colsFor,
 } from './game.js';
 
@@ -96,6 +96,12 @@ test('placement rules', () => {
   assert.equal(canPlace(withCan, 'wine', 1, 0), false);
   assert.equal(canPlace(withCan, 'wine', 0, 0), true);
   assert.equal(canPlace(withCan, 'gymBall', 1, 0), false); // solid still collides with the desk
+  // Workspace pieces swap out the same kind in their spot; other things are still blocked.
+  assert.deepEqual(placeSwaps(withCan, 'orangeJuice', 1, 0), [1]);
+  assert.deepEqual(placeSwaps(withCan, 'workTable', 0, 0), [0]);
+  assert.equal(placeSwaps(withCan, 'teapot', 1, 0), null);
+  assert.equal(placeSwaps(withCan, 'plant', 1, 0), null);
+  assert.deepEqual(placeSwaps(withCan, 'laptop', 0, 0), []);
 });
 
 test('recolour palettes and pet prices', () => {

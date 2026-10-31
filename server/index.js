@@ -8,9 +8,10 @@ import { openStore, checkPassword } from './store.js';
 import { openPgStore } from './store-pg.js';
 import { files, isPng } from './files.js';
 import {
-  ITEMS, WALLPAPERS, FLOORS, SKINS, HAIRS, SHIRTS, STYLES, FACES, OUTFITS, FOCUS_LENGTHS, canPlace, focusReward,
+  ITEMS, WALLPAPERS, FLOORS, SKINS, HAIRS, SHIRTS, STYLES, FACES, OUTFITS, FOCUS_LENGTHS, canPlace, placeSwaps, focusReward,
   WALL_PATTERNS, FLOOR_STYLES, PETS, MAX_PETS, EXPAND_COST, colorsFor, USES, PET_ACCS, MAX_ROOMS, ROOM_COST,
 } from '../shared/game.js';
+import { parseVideo } from '../shared/watch.js';
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const DIST = path.join(root, 'dist');
@@ -33,6 +34,8 @@ const save = () => {
 const sockets = new Map(); // playerId -> ws
 const positions = new Map(); // playerId -> { x, y }
 const lastChat = new Map(); // playerId -> ms, simple flood guard
+// house code -> the video it is watching together: { src, by, byName, playing, pos, at }. Not saved: a restart ends it.
+const watches = new Map();
 const lastDm = new Map(); // playerId -> ms, same guard for private messages
 let nextId = Date.now();
 
@@ -86,7 +89,9 @@ function send(ws, msg) {
 function broadcastHouse(code) {
   const h = db.houses[code];
   if (!h) return;
-  const house = { code, members: h.members.map((id) => publicPlayer(db.players[id])), todos: h.todos ?? [], chat: h.chat ?? [] };
+  const w = watches.get(code);
+  // now lets clients work out how far a playing video has got without trusting their own clocks.
+  const house = { code, members: h.members.map((id) => publicPlayer(db.players[id])), todos: h.todos ?? [], chat: h.chat ?? [], watch: w ? { ...w, now: Date.now() } : null };
   for (const id of h.members) {
     const p = db.players[id];
     // Personal to-dos ride along in `me`, which only this player receives.
@@ -199,11 +204,15 @@ function handle(p, m) {
       p.inventory[m.item] = (p.inventory[m.item] ?? 0) + 1;
       break;
     }
-    case 'place':
-      if (!(p.inventory[m.item] > 0) || !canPlace(room, m.item, m.x, m.y)) return;
+    case 'place': {
+      const out = p.inventory[m.item] > 0 ? placeSwaps(room, m.item, m.x, m.y) : null;
+      if (!out) return;
       p.inventory[m.item]--;
+      for (const f of room.furniture.filter((_, i) => out.includes(i))) p.inventory[f.item] = (p.inventory[f.item] ?? 0) + 1;
+      room.furniture = room.furniture.filter((_, i) => !out.includes(i));
       room.furniture.push({ item: m.item, x: m.x, y: m.y });
       break;
+    }
     case 'move': {
       const f = room.furniture[m.index];
       const rest = { ...room, furniture: room.furniture.filter((_, i) => i !== m.index) };
@@ -349,6 +358,28 @@ function handle(p, m) {
       h.chat.push({ id: nextId++, from: p.id, by: p.name, text, at: now });
       h.chat = h.chat.slice(-50);
       break;
+    }
+    case 'watch': { // /watch <link> starts a watch party for the whole house; /watch stop ends it
+      const h = db.houses[p.house];
+      const stop = String(m.url ?? '').trim().toLowerCase() === 'stop';
+      const src = stop ? null : parseVideo(String(m.url ?? '').slice(0, 600));
+      if (!stop && !src) return send(sockets.get(p.id), { t: 'error', text: "Can't play that link. Try YouTube, Vimeo, Twitch, Dailymotion or a direct .mp4/.webm link." });
+      if (stop && !watches.has(p.house)) return;
+      if (stop) watches.delete(p.house);
+      else watches.set(p.house, { src, by: p.id, byName: p.name, playing: true, pos: src.start, at: Date.now() });
+      h.chat ??= [];
+      h.chat.push({ id: nextId++, from: p.id, by: p.name, text: stop ? '⏹ ended the watch party' : '🎬 started a watch party', at: Date.now() });
+      h.chat = h.chat.slice(-50);
+      break;
+    }
+    case 'watchCtl': { // someone pressed play/pause or seeked: everyone follows
+      const w = watches.get(p.house);
+      if (!w || !Number.isFinite(m.pos) || m.pos < 0 || m.pos > 1e6) return;
+      w.playing = !!m.playing;
+      w.pos = m.pos;
+      w.at = Date.now();
+      broadcastHouse(p.house);
+      return;
     }
     default:
       return;

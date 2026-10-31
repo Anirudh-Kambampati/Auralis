@@ -5,6 +5,7 @@ import crypto from 'node:crypto';
 import zlib from 'node:zlib';
 import pg from 'pg';
 import WebSocket from 'ws';
+import { ITEMS } from '../shared/game.js';
 
 const base = process.env.API ?? 'http://localhost:8787';
 const ok = (label, cond, extra = '') => { console.log(`${cond ? 'PASS' : 'FAIL'}  ${label}${extra ? `  (${extra})` : ''}`); if (!cond) process.exitCode = 1; };
@@ -37,7 +38,8 @@ const first = await nextState(1);
 ok('WebSocket accepts the token', first.me.coins === 30, `coins ${first.me.coins}`);
 ws.send(JSON.stringify({ t: 'buy', item: 'books' }));
 const second = await nextState(2);
-ok('buying updates state', second.me.coins === 20 && second.me.inventory.books === 1);
+const left = 30 - ITEMS.books.price;
+ok('buying updates state', second.me.coins === left && second.me.inventory.books === 1);
 const playerId = first.me.id;
 ws.close();
 
@@ -46,7 +48,7 @@ await new Promise((r) => setTimeout(r, 1500)); // server saves 0.5 s after a cha
 const db = new pg.Client({ connectionString: process.env.DATABASE_URL.replace(/sslmode=(require|prefer|verify-ca)/, 'sslmode=verify-full') });
 await db.connect();
 const row = (await db.query('select data from players where id = $1', [playerId])).rows[0];
-ok('player row saved in Neon Postgres', row?.data?.coins === 20 && row?.data?.inventory?.books === 1);
+ok('player row saved in Neon Postgres', row?.data?.coins === left && row?.data?.inventory?.books === 1);
 const acct = (await db.query('select username, pass from accounts where player_id = $1', [playerId])).rows[0];
 ok('password stored only as a hash', acct?.username === username && !acct.pass.includes(password));
 await db.end();

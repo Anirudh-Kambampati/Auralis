@@ -550,21 +550,25 @@ export const OVERHANG: Record<string, number> = {
 export const SURFACE: Record<string, number> = { desk: 9, workTable: 9, pcDesk: 9, gamingDesk: 9, coffeeTable: 7, miniFridge: 19, counter: 10, sideTable: 7, diningTable: 9, nightstand: 10, dresser: 10, island: 13, consoleTable: 11, standingDesk: 13 };
 
 // col is the owner's chosen colour (undefined = the item's own default).
-type Draw = (c: Ctx, x: number, y: number, t: number, col?: string) => void;
+// bare: tiles of a desk with something placed on them (bit 1 = left, 2 = right); its built-in clutter there isn't drawn.
+type Draw = (c: Ctx, x: number, y: number, t: number, col?: string, bare?: number) => void;
 const DRAW: Record<string, Draw> = {
-  desk(c, x, y, t, col = '#d9a06a') {
+  desk(c, x, y, t, col = '#d9a06a', bare = 0) {
     const Y = y - 6;
     box(c, x + 2, Y + 14, 4, 8, shade(col, -0.2));
     box(c, x + 26, Y + 14, 4, 8, shade(col, -0.2));
     box(c, x, Y + 6, 32, 12, col);
     r(c, x + 1, Y + 14, 30, 3, shade(col, -0.12));
     r(c, x + 14, Y + 15, 4, 1, '#ffe0a8');
-    box(c, x + 5, Y, 13, 9, '#6a6488');
-    // Laptop seen from the front of the desk: we see the lid, the sitter sees the screen.
-    r(c, x + 6, Y + 1, 11, 6, '#8a84a8');
-    r(c, x + 6, Y + 1, 11, 1, '#a49ec0');
-    heart(c, x + 11, Y + 2, '#f4b6c8');
-    box(c, x + 4, Y + 8, 15, 4, '#d8d4e8');
+    if (!(bare & 1)) {
+      box(c, x + 5, Y, 13, 9, '#6a6488');
+      // Laptop seen from the front of the desk: we see the lid, the sitter sees the screen.
+      r(c, x + 6, Y + 1, 11, 6, '#8a84a8');
+      r(c, x + 6, Y + 1, 11, 1, '#a49ec0');
+      heart(c, x + 11, Y + 2, '#f4b6c8');
+      box(c, x + 4, Y + 8, 15, 4, '#d8d4e8');
+    }
+    if (bare & 2) return;
     box(c, x + 21, Y + 5, 5, 6, '#fff4e6');
     r(c, x + 22, Y + 6, 3, 1, '#9a6440');
     r(c, x + 26, Y + 7, 1, 2, OUT);
@@ -577,14 +581,17 @@ const DRAW: Record<string, Draw> = {
   chair(c, x, y, _t, col = CHAIRS.chair.col) { CHAIRS.chair.back(c, x, y, col); CHAIRS.chair.seat(c, x, y, col); },
   officeChair(c, x, y, _t, col = CHAIRS.officeChair.col) { CHAIRS.officeChair.back(c, x, y, col); CHAIRS.officeChair.seat(c, x, y, col); },
   gamingChair(c, x, y, _t, col = CHAIRS.gamingChair.col) { CHAIRS.gamingChair.back(c, x, y, col); CHAIRS.gamingChair.seat(c, x, y, col); },
-  workTable(c, x, y, _t, col = '#f0d2a8') {
+  workTable(c, x, y, _t, col = '#f0d2a8', bare = 0) {
     const Y = y - 6;
     box(c, x + 2, Y + 12, 3, 10, shade(col, -0.2));
     box(c, x + 27, Y + 12, 3, 10, shade(col, -0.2));
     box(c, x, Y + 6, 32, 9, col);
     r(c, x + 1, Y + 12, 30, 2, shade(col, -0.12));
-    box(c, x + 4, Y + 3, 9, 4, '#9db4ee');
-    box(c, x + 5, Y, 8, 4, '#f4a6b8');
+    if (!(bare & 1)) {
+      box(c, x + 4, Y + 3, 9, 4, '#9db4ee');
+      box(c, x + 5, Y, 8, 4, '#f4a6b8');
+    }
+    if (bare & 2) return;
     box(c, x + 23, Y + 1, 5, 6, '#fffaf3');
     r(c, x + 24, Y - 2, 1, 3, '#ffd34d');
     r(c, x + 26, Y - 1, 1, 2, '#8fd0a8');
@@ -1202,17 +1209,58 @@ const DRAW: Record<string, Draw> = {
     r(c, x + 6, Y + 3, 1, 4, 'rgba(255,255,255,0.5)');
   },
   fireplace(c, x, y, t) {
-    const Y = y - 16;
-    box(c, x, Y + 4, 32, 28, '#e8d3c0');
-    for (let k = 0; k < 6; k++) r(c, x + 3 + (k % 3) * 10, Y + 8 + Math.floor(k / 3) * 6, 6, 1, '#d4bca8');
-    box(c, x - 1, Y, 34, 6, '#b07a4e');
-    r(c, x + 8, Y + 14, 16, 16, '#3a2633');
-    const f = Math.floor(t / 150) % 3;
-    r(c, x + 11, Y + 23 - f, 3, 6 + f, '#f28a3a');
-    r(c, x + 15, Y + 20 + f, 3, 9 - f, '#ffd34d');
-    r(c, x + 19, Y + 22 - f, 2, 7 + f, '#e06a5a');
-    r(c, x + 10, Y + 28, 12, 2, '#8a5a3c');
-    box(c, x + 22, Y - 4, 5, 5, '#8fd0a8');
+    const Y = y - 20;
+    // Brick chimney breast, staggered courses with a few lighter and darker bricks.
+    box(c, x, Y, 32, 31, '#b5523f');
+    for (let row = 0; row < 7; row++) {
+      const by = Y + 1 + row * 4;
+      r(c, x + 1, by + 3, 30, 1, '#8a3a30');
+      for (let bx = (row % 2) * 4; bx < 30; bx += 8) {
+        r(c, x + 1 + bx, by, 1, 3, '#8a3a30');
+        const tone = (row * 5 + bx) % 7;
+        if (tone < 2) r(c, x + 2 + bx, by, Math.min(7, 29 - bx), 1, tone ? '#c96a52' : '#a2483a');
+      }
+    }
+    // Arched opening: a ring of lighter bricks, then the dark firebox.
+    const arch = (inset: number, top: number, col: string) => {
+      const steps = [5, 3, 2, 1, 1, 0];
+      for (let k = 0; k < 24 - top; k++) {
+        const s = (steps[k] ?? 0) + inset;
+        r(c, x + 4 + s, Y + top + k, 24 - s * 2, 1, col);
+      }
+    };
+    arch(0, 3, OUT);
+    arch(1, 4, '#d98a6a');
+    for (let k = 0; k < 7; k++) r(c, x + 6 + k * 3 + (k > 3 ? 1 : 0), Y + 4 + [4, 2, 1, 0, 1, 2, 4][k], 1, 2, '#a85a48'); // seams between the arch bricks
+    arch(3, 7, OUT);
+    arch(4, 8, '#2b1418');
+    const glow = 0.5 + 0.5 * Math.sin(t / 180) * Math.sin(t / 77);
+    r(c, x + 8, Y + 20, 16, 7, glow > 0.5 ? '#5a2420' : '#4a1e1e'); // firelight on the back wall
+    for (const [bx, by] of [[9, 14], [15, 14], [21, 14], [12, 18], [18, 18]]) r(c, x + bx, Y + by, 4, 1, '#3c1a1c');
+    // Flames: a red edge, orange body, yellow heart and a pale core, each column flickering on its own.
+    const base = Y + 26;
+    for (let i = 0; i < 14; i++) {
+      const h = Math.max(0, Math.round((12 - Math.abs(i - 6.5) * 1.5) * (0.82 + 0.18 * Math.sin(t / 110 + i * 1.9)) + 1.4 * Math.sin(t / 63 + i * 2.7)));
+      const fx = x + 9 + i;
+      r(c, fx, base - h, 1, h, '#e0533a');
+      if (i > 0 && i < 13 && h > 2) r(c, fx, base - h + 2, 1, h - 2, '#f28a3a');
+      if (i > 2 && i < 11 && h > 5) r(c, fx, base - Math.round(h * 0.6), 1, Math.round(h * 0.6), '#ffd34d');
+      if (i > 4 && i < 9 && h > 7) r(c, fx, base - Math.round(h * 0.3), 1, Math.round(h * 0.3), '#fff3b0');
+    }
+    // Sparks drifting up out of the flames.
+    for (let k = 0; k < 3; k++) {
+      const p = (t / 1100 + k / 3) % 1;
+      if (p < 0.75) r(c, x + 12 + k * 4 + Math.round(Math.sin(t / 200 + k * 2) * 1.5), base - 8 - Math.round(p * 10), 1, 1, p < 0.4 ? '#fff3b0' : '#ffb347');
+    }
+    // Logs, with their cut ends facing us.
+    box(c, x + 8, base - 1, 16, 4, '#6a3a26');
+    box(c, x + 10, base - 3, 12, 3, '#7a4a32');
+    for (const lx of [9, 21]) { r(c, x + lx, base, 2, 2, '#c08a5a'); r(c, x + lx, base, 1, 1, '#e0b080'); }
+    r(c, x + 12, base + 1, 8, 1, glow > 0.3 ? '#f28a3a' : '#c0502e'); // embers between the logs
+    // Hearth: a stone ledge that sticks out in front.
+    box(c, x - 1, Y + 29, 34, 7, '#c66a54');
+    r(c, x, Y + 30, 32, 2, '#d98a6a');
+    for (let bx = 4; bx < 32; bx += 7) r(c, x + bx, Y + 32, 1, 3, '#9a4a3c');
   },
   floorCushion(c, x, y, _t, col = '#ffd27a') {
     box(c, x + 1, y + 6, 14, 9, col);
@@ -1909,15 +1957,15 @@ function recipeDraw(item: string): Draw | undefined {
 for (const [k, [up]] of Object.entries(RECIPES)) OVERHANG[k] ??= up;
 
 // s = which style of the item (see ITEMS[item].looks); 0 is the original.
-export function drawFurniture(c: Ctx, item: string, x: number, y: number, t: number, col?: string, flip = false, w = 1, s = 0) {
+export function drawFurniture(c: Ctx, item: string, x: number, y: number, t: number, col?: string, flip = false, w = 1, s = 0, bare = 0) {
   const draw = (s && ALT[item]?.[s - 1]) || DRAW[item] || recipeDraw(item);
   if (!draw) return;
-  if (!flip) { draw(c, x, y, t, col); return; }
+  if (!flip) { draw(c, x, y, t, col, bare); return; }
   // Turned pieces are mirrored around the middle of their footprint.
   c.save();
   c.translate(x * 2 + w * T, 0);
   c.scale(-1, 1);
-  draw(c, x, y, t, col);
+  draw(c, x, y, t, col, bare);
   c.restore();
 }
 

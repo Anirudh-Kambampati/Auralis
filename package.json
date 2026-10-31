@@ -8,7 +8,7 @@
     "dev:all": "npm run dev",
     "build": "tsc --noEmit && vite build",
     "start": "node --env-file-if-exists=.env --env-file-if-exists=.env.local server/index.js",
-    "test": "node --test shared/game.test.js shared/stats.test.js server/store.test.js"
+    "test": "node --test shared/game.test.js shared/watch.test.js shared/stats.test.js server/store.test.js"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1161.0",
