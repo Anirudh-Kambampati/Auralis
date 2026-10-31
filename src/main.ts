@@ -445,7 +445,7 @@ addEventListener('keydown', (e) => {
 setZoom(zoom);
 
 // In Decorate the cursor shows what a click will do: a target while placing, a hand over your furniture,
-// a closed hand while dragging. Otherwise the stylesheet's walk cursor applies.
+// a closed hand while dragging. Otherwise the normal arrow applies.
 canvas.addEventListener('pointermove', (e) => {
   let c = '';
   if (openPanel === 'decorate' && myRoom()) {
