@@ -1,30 +1,31 @@
 import {
   SHELVES, buildGrid, walkable, canPlace, placeSwaps,roomSize, MAX_ROOMS, ROOM_COST, colorsFor, ITEMS, PETS, PET_ACCS, MAX_PETS, EXPAND_COST, ROOM_SIZES,
   WALLPAPERS, WALL_PATTERNS, FLOORS, FLOOR_STYLES, SKINS, HAIRS, SHIRTS, STYLES, FACES, OUTFITS, FOCUS_LENGTHS,
-  WALL_H, WALL, FLOOR, DOOR, BLOCKED, VOID,
+  WALL_H, WALL, FLOOR, DOOR, BLOCKED, VOID, THIRSTY_MS, isPlant, discounted, GIFT_COINS, activeEvents, nextEvent,
 } from '../shared/game.js';
 import {
   T, OVERHANG, SURFACE, drawSeated, drawActing, drawSeam, drawFloor, drawWall, drawWallFace, drawWallTop, drawDoor, drawWindow, drawPainting, drawFurniture, drawAvatar, drawDeskLamp, drawGlow, drawUsing, skyNow, NIGHT_TINT,
-  coinURL, uiIconURL, drawPaper, paintBlockText, drawWindow as drawWin, type Look,
+  coinURL, uiIconURL, drawPaper, paintBlockText, drawWindow as drawWin, drawDroplet, drawHeart, type Look,
 } from './draw';
 import { drawPet, petPos, petIconURL, seedOf } from './pets';
-import { toggleSound, soundName } from './sounds';
+import { toggleSound, soundName, chime, ping } from './sounds';
 import { countUnseen } from './tabBadge';
 import { syncWatch } from './watch';
 import { parseVideo } from '../shared/watch.js';
 import { chart, streak, rangeTitle, shift, hm, RANGES } from '../shared/stats.js';
 import './style.css';
 
-type Furniture = { item: string; x: number; y: number; v?: number; s?: number; flip?: boolean };
-type Room = { wallpaper: string; floor: string; pattern?: string; floorStyle?: string; level?: number; furniture: Furniture[] };
+type Furniture = { item: string; x: number; y: number; v?: number; s?: number; flip?: boolean; wateredAt?: number; off?: boolean };
+type Room = { wallpaper: string; floor: string; pattern?: string; floorStyle?: string; level?: number; curtains?: boolean; furniture: Furniture[] };
 type Member = {
   id: string; name: string; look: Look; rooms: Room[]; focus: { minutes: number; endsAt: number } | null;
-  totalMinutes: number; online: boolean; pos: { x: number; y: number } | null; pets: { kind: string; coat?: number; acc?: string }[];
+  totalMinutes: number; online: boolean; pos: { x: number; y: number } | null; pets: { kind: string; coat?: number; acc?: string }[]; fedAt?: number;
+  exams?: { subject: string; date: string }[]; // YYYY-MM-DD, soonest first
 };
-type Todo = { id: number; text: string; done: boolean; by: string };
+type Todo = { id: number; text: string; done: boolean; by: string; all?: boolean; ticks?: string[] }; // all: everyone has to tick it
 type Chat = { id: number; from: string; by: string; text: string; at: number };
 type Session = { at: number; minutes: number; tag: string };
-type Me = { id: string; home?: string; visited?: { code: string; ownerName: string | null; online: number }[]; banned?: { id: string; name: string }[]; coins: number; inventory: Record<string, number>; sessions: Session[]; subjects: string[]; hiddenSubjects: string[]; todos: Todo[]; dm: Record<string, Chat[]>; petAccs?: string[] };
+type Me = { id: string; home?: string; visited?: { code: string; ownerName: string | null; online: number }[]; banned?: { id: string; name: string }[]; coins: number; discount?: boolean; notes?: { from: string; text: string; at: number }[]; inventory: Record<string, number>; sessions: Session[]; subjects: string[]; hiddenSubjects: string[]; todos: Todo[]; dm: Record<string, Chat[]>; petAccs?: string[] };
 type Board = { scope: string; period: string; rows: { name: string; me: boolean; minutes: number }[] };
 type Avatar = { x: number; y: number; tx: number; ty: number; up: boolean; dist: number; use?: string };
 type ItemKey = keyof typeof ITEMS;
@@ -47,6 +48,15 @@ let chat: Chat[] = [];
 let dmPeer: string | null = null; // null = talking to the whole house
 let houseCode = '';
 let houseOwnerName = ''; // whose home this house is (empty for old shared houses with no owner)
+// A housemate's group focus session that others can still join; their timers all end together.
+type Group = { by: string; byName: string; minutes: number; endsAt: number; tag: string };
+let group: Group | null = null;
+let groupSeen = 0; // endsAt of the last group session I was told about
+let notesSeen = 0; // newest desk note already shown
+let noteTo: string | null = null; // housemate I'm writing a desk note for
+let finishedSession = false; // the session that just ended ran to the end (not given up): take a break
+let missed = 0; // messages that arrived while I was focusing, quietly
+const cheers = new Map<string, { by: string; at: number }>(); // 👏 floating over a studying player
 let me: Me = { id: myId, coins: 0, inventory: {}, sessions: [], subjects: [], hiddenSubjects: [], todos: [], dm: {} };
 let statsTab = 'mine';
 let statsRange = 'week';
@@ -101,10 +111,10 @@ function onMessage(m: any) {
     return;
   }
   if (m.t === 'state') {
-    if (!houseCode) showLoading(false);
+    if (!houseCode) { showLoading(false); setTimeout(welcome, 800); }
     myId = m.me.id;
     // Moved house: start in my own room, and drop any walk or seat that pointed at the old house's tiles.
-    if (m.house.code !== houseCode) { avatars.delete(myId); path = []; seat = null; useNext = null; }
+    if (m.house.code !== houseCode) { avatars.delete(myId); path = []; seat = null; useNext = null; arrive = null; endBreak(); }
     const wasFocusing = !!myMember()?.focus;
     const oldGrid = grid, oldSlots = slots.map((x) => `${x.m.id}:${x.ri}`);
     houseCode = m.house.code;
@@ -112,6 +122,19 @@ function onMessage(m: any) {
     members = m.house.members;
     todos = m.house.todos;
     me = m.me;
+    group = m.house.group ?? null;
+    if (group && group.by !== myId && group.endsAt !== groupSeen && !myMember()?.focus) {
+      groupSeen = group.endsAt;
+      notify(chime);
+      toast(`📚 <b>${esc(group.byName)}</b> started a group focus session. Open Focus to join in!`, 'reward');
+    }
+    const notes = (me.notes ?? []).filter((n) => n.at > notesSeen);
+    if (notes.length) {
+      notesSeen = Math.max(...notes.map((n) => n.at));
+      notify(chime);
+      for (const n of notes) toast(`📝 Note from <b>${esc(n.from)}</b>: ${esc(n.text)}`, 'reward');
+      send({ t: 'notes_read' });
+    }
     syncWatch(m.house.watch ?? null, myId, send);
     noteNewDms();
     slots = members.flatMap((mem) => mem.rooms.map((room, ri) => ({ m: mem, room, ri })));
@@ -164,7 +187,14 @@ function onMessage(m: any) {
     if (pendingLook && mine) { send({ t: 'look', name: mine.name, look: pendingLook }); pendingLook = null; }
     const focusing = !!myMember()?.focus;
     if (focusing && !wasFocusing) { deckHidden = false; goSit(); }
-    if (!focusing && wasFocusing) standUp();
+    if (!focusing && wasFocusing) {
+      standUp();
+      if (missed) toast(`💬 ${missed} new message${missed > 1 ? 's' : ''} while you were focusing.`);
+      missed = 0;
+      // Pomodoro: a finished session rolls straight into a short break, then nudges you to go again.
+      if (finishedSession) startBreak(5 * 60_000, '☕ Nice work! Take a 5-minute break.');
+      finishedSession = false;
+    }
     renderHud();
     renderSide();
     if (openPanel && openPanel !== 'social') renderPanel();
@@ -174,8 +204,13 @@ function onMessage(m: any) {
   } else if (m.t === 'leaderboard') {
     board = m;
     if (openPanel === 'stats') renderPanel();
+  } else if (m.t === 'cheer') {
+    cheers.set(m.to, { by: m.from, at: Date.now() }); // silent, even for the one studying
   } else if (m.t === 'reward') {
-    toast(`Session complete! +${m.coins} ${coin()}${m.withFriends ? ' (study buddy bonus!)' : ''}`, 'reward');
+    notify(chime);
+    if (!m.text) finishedSession = true; // a focus session paid out
+    if (m.text) toast(esc(m.text), 'reward');
+    else toast(`Session complete! +${m.coins} ${coin()}${m.withFriends ? ' (study buddy bonus!)' : ''}`, 'reward');
   } else if (m.t === 'error') {
     toast(esc(m.text));
   }
@@ -189,6 +224,7 @@ function receiveChat(list: Chat[]) {
     if (!first) {
       bubbles.set(c.from, { text: c.text, until: Date.now() + 6000 });
       if (c.from !== myId) {
+        if (chatHidden()) pingOrHold();
         countUnseen();
         if (!document.body.classList.contains('side-open') || dmPeer) unread = true;
         noteUnreadChat();
@@ -219,12 +255,54 @@ let seat: { x: number; y: number } | null = null; // furniture to step onto once
 let useNext: string | null = null; // what to do once the walk ends in front of a piece of furniture
 let restUntil = 0; // pause before wandering on: short after a walk, longer while using furniture
 let quietUntil = 0; // longer pause after you click or steer, so the sprite obeys you
+let arrive: (() => void) | null = null; // what to do once I reach furniture I clicked (water it, nap...)
+let stayMs = 0; // how long to stay on furniture I picked myself, instead of a random little while
+
+// Notification sounds (rewards, new messages), on unless turned off in the You panel.
+let chimes = localStorage.getItem('auralis.chimes') !== 'off';
+const notify = (sound: () => void) => { if (chimes) sound(); };
+// Do not disturb: messages during a focus session are counted, not pinged, and summed up afterwards.
+const pingOrHold = () => { if (myMember()?.focus) missed++; else notify(ping); };
+
+// Breaks: lying down in a bed you clicked (5 minutes) or a snack at the fridge (2), ending with a chime.
+const NAP_MS = 5 * 60_000, SNACK_MS = 2 * 60_000;
+let breakTimer = 0;
+function endBreak() { clearTimeout(breakTimer); breakTimer = 0; }
+function startBreak(ms: number, text: string) {
+  endBreak();
+  toast(text);
+  breakTimer = window.setTimeout(() => {
+    breakTimer = 0;
+    chime(); // an alarm you set yourself, so it rings even with notification sounds off
+    if (!myMember()?.focus) standUp();
+    toast("⏰ Break's over! Ready for another focus session?", 'reward');
+    if (!openPanel && !myMember()?.focus) setPanel('focus');
+  }, ms);
+}
+
+const TVS = new Set(['tv', 'retroTV', 'mediaConsole']);
+const STARS = ['🌠 A shooting star! Make a wish.', "✨ You spotted Orion's belt.", '🪐 Is that Saturn? It is!', '🌌 The Milky Way is out tonight.', '🌙 The moon is so bright.'];
+// What some furniture does once you've walked up to it, on top of the little animation.
+function afterUse(f: Furniture, owner: Member, ri: number, fi: number): (() => void) | null {
+  const it = ITEMS[f.item as ItemKey] as { name: string; use?: string };
+  if (isPlant(f.item)) return () => { send({ t: 'water', owner: owner.id, r: ri, index: fi }); toast(`💧 Watered the ${it.name.toLowerCase()}.`); };
+  if (f.item === 'foodBowl') return () => (owner.pets.length ? send({ t: 'feed', owner: owner.id, r: ri, index: fi }) : toast('No pets here to feed yet.'));
+  if (f.item === 'giftBox') return () => { setPanel('house'); toast('Pick a housemate to send a gift.'); };
+  if (f.item === 'whiteboard') return () => openSide('todos', '#todoInput');
+  if (TVS.has(f.item)) return () => { openSide('chat', '#chatInput', '/watch '); toast('Paste a YouTube, Vimeo or Twitch link after <b>/watch</b> to watch it together.'); };
+  if (it.use === 'read') return () => { if (!myMember()?.focus) setPanel('focus'); };
+  if (it.use === 'snack' || it.use === 'tea') return () => startBreak(SNACK_MS, '🍪 Snack break: 2 minutes.');
+  if (it.use === 'primp' || it.use === 'dress') return () => setPanel('avatar');
+  if (it.use === 'stargaze') return () => toast(skyNow() === 'day' ? "It's too bright for stars. Come back after dark!" : STARS[Math.floor(Math.random() * STARS.length)]);
+  return null;
+}
 
 // Walk to my own chair (preferring one just behind a desk, in any of my rooms) and sit down facing the room.
 function goSit() {
   const a = avatars.get(myId);
   const mine = myMember();
   if (!mine || !a) return;
+  endBreak();
   const it = (f: Furniture) => ITEMS[f.item as ItemKey] as { w: number; chair?: boolean; table?: boolean } | undefined;
   const chairs = mine.rooms.flatMap((room, ri) => room.furniture.filter((f) => it(f)?.chair).map((c) => ({
     c, i: slotOf(myId, ri),
@@ -290,9 +368,64 @@ function walkTo(x: number, y: number) {
   const target = walkable(grid.at(x, y)) ? { x, y } : nearestWalkable(x, y);
   seat = null;
   useNext = null;
+  arrive = null;
+  stayMs = 0;
+  endBreak();
   quietUntil = Date.now() + 2500;
   const p = bfs({ x: a.tx, y: a.ty }, (cx, cy) => cx === target.x && cy === target.y);
   if (p && p.length > 1) path = p.slice(1);
+}
+
+// Click furniture to use it: sit on chairs, sleep in beds, work out on gym gear, water plants, read at shelves...
+// Returns false when the piece does nothing, so the click just walks there.
+function interact(si: number, fi: number) {
+  const { m, room, ri } = slots[si], f = room.furniture[fi];
+  const it = ITEMS[f.item as ItemKey] as { w: number; h: number; act?: string; use?: string };
+  const a = avatars.get(myId);
+  if (!a || !it || (!it.act && !it.use)) return false;
+  walkTo(a.tx, a.ty); // stop whatever I was doing
+  path = [];
+  const o = grid.origins[si], start = { x: a.tx, y: a.ty };
+  const pass = (x: number, y: number) => walkable(grid.at(x, y));
+  const taken = new Set([...avatars].filter(([id]) => id !== myId).map(([, b]) => tileKey(b.tx, b.ty)));
+  if (it.act) { // on top of it
+    const tiles: { x: number; y: number }[] = [];
+    for (let dy = 0; dy < it.h; dy++) for (let dx = 0; dx < it.w; dx++) {
+      const x = o.x + f.x + dx, y = o.y + f.y + dy;
+      if (acts.has(tileKey(x, y)) && !taken.has(tileKey(x, y))) tiles.push({ x, y });
+    }
+    if (!tiles.length) { toast('Someone is already using that.'); return true; }
+    const p = bfs(start, (cx, cy) => pass(cx, cy) && tiles.some((u) => Math.abs(cx - u.x) + Math.abs(cy - u.y) === 1), pass);
+    if (!p) { toast("You can't reach that from here."); return true; }
+    const end = p[p.length - 1];
+    path = p.slice(1);
+    seat = tiles.find((u) => Math.abs(end.x - u.x) + Math.abs(end.y - u.y) === 1)!;
+    stayMs = it.act === 'sleep' ? NAP_MS : 60_000;
+    if (it.act === 'sleep') arrive = () => startBreak(NAP_MS, "😴 Taking a 5-minute break. You'll wake up with a chime.");
+    return true;
+  }
+  // In front of it: the row just below.
+  const fronts = Array.from({ length: it.w }, (_, k) => ({ x: o.x + f.x + k, y: o.y + f.y + it.h }))
+    .filter((u) => (pass(u.x, u.y) || (u.x === start.x && u.y === start.y)) && !taken.has(tileKey(u.x, u.y)));
+  const p = bfs(start, (cx, cy) => fronts.some((u) => u.x === cx && u.y === cy), pass);
+  if (!p) { toast("You can't reach that from here."); return true; }
+  arrive = afterUse(f, m, ri, fi);
+  if (p.length > 1) { path = p.slice(1); useNext = it.use!; return true; }
+  // Already standing in front of it.
+  a.use = it.use; a.up = true;
+  send({ t: 'pos', x: a.tx, y: a.ty, use: a.use });
+  restUntil = Date.now() + 6000;
+  arrive?.();
+  arrive = null;
+  return true;
+}
+
+// Which top-row room has a window at this tile (one every 6 tiles along the back wall), or -1.
+function windowAt(tx: number, ty: number) {
+  return slots.findIndex((_, i) => {
+    const o = grid.origins[i], s = grid.sizes[i], lx = tx - o.x, k = (lx - 1) % 6;
+    return i < grid.cols && ty >= o.y - WALL_H && ty < o.y && lx >= 1 && k < 2 && lx - k + 2 <= s.w - 1;
+  });
 }
 
 // When nothing else is going on, keep busy: walk somewhere new, or go use a sofa, gym ball, treadmill...
@@ -327,28 +460,35 @@ function wander() {
   const usable = [...acts.keys()].map((k) => ({ x: k % 10000, y: Math.floor(k / 10000) }))
     .filter((u) => !taken.has(tileKey(u.x, u.y)) && !(u.x === start.x && u.y === start.y) && near(u.x, u.y));
   // Things to use from the front: plants to water, shelves to read at, stoves, instruments...
-  const fronts: { x: number; y: number; use: string }[] = [];
-  slots.forEach(({ room }, i) => {
+  const fronts: { x: number; y: number; use: string; water?: () => void; thirsty?: boolean }[] = [];
+  slots.forEach(({ m, room, ri }, i) => {
     const o = grid.origins[i];
-    for (const f of room.furniture) {
+    room.furniture.forEach((f, index) => {
       const it = ITEMS[f.item as ItemKey] as { w: number; h: number; use?: string };
-      if (!it?.use) continue;
+      if (!it?.use) return;
+      const plant = isPlant(f.item);
+      const water = plant ? () => send({ t: 'water', owner: m.id, r: ri, index }) : undefined;
+      const thirsty = plant && Date.now() - (f.wateredAt ?? Date.now()) > THIRSTY_MS;
       for (let k = 0; k < it.w; k++) {
         const fx = o.x + f.x + k, fy = o.y + f.y + it.h;
-        if ((seen.has(tileKey(fx, fy)) || (fx === start.x && fy === start.y)) && !taken.has(tileKey(fx, fy))) fronts.push({ x: fx, y: fy, use: it.use });
+        if ((seen.has(tileKey(fx, fy)) || (fx === start.x && fy === start.y)) && !taken.has(tileKey(fx, fy))) fronts.push({ x: fx, y: fy, use: it.use, water, thirsty });
       }
-    }
+    });
   });
-  if (fronts.length && Math.random() < 0.45) {
-    const u = fronts[Math.floor(Math.random() * fronts.length)];
+  // A thirsty plant in reach always wins: buddies water plants on their own, so nobody has to.
+  const thirsty = fronts.filter((u) => u.thirsty);
+  if (thirsty.length || (fronts.length && Math.random() < 0.45)) {
+    const pool = thirsty.length ? thirsty : fronts;
+    const u = pool[Math.floor(Math.random() * pool.length)];
     if (u.x === start.x && u.y === start.y) {
       a.use = u.use; a.up = true;
       send({ t: 'pos', x: u.x, y: u.y, use: u.use });
       restUntil = Date.now() + 4000 + Math.random() * 4000;
+      u.water?.();
       return;
     }
     const p = bfs(start, (cx, cy) => cx === u.x && cy === u.y, pass);
-    if (p) { path = p.slice(1); useNext = u.use; return; }
+    if (p) { path = p.slice(1); useNext = u.use; arrive = u.water ?? null; return; }
   }
   if (usable.length && Math.random() < 0.55) {
     const u = usable[Math.floor(Math.random() * usable.length)];
@@ -428,16 +568,30 @@ canvas.addEventListener('pointerdown', (e) => {
     renderPanel();
     return;
   }
-  // Clicking something that makes a sound (record player, fireplace, clocks) in any room you can see toggles it, just for you.
+  if (e.pointerType === 'touch') showTip(clickLabel(tx, ty), e.clientX, e.clientY - 40, 1200); // fingers can't hover
+  // A housemate studying: cheer them on.
+  const studier = studyingAt(tx, ty);
+  if (studier) { send({ t: 'cheer', to: studier.id }); return; }
+  // Clicking a window in one of your rooms opens or closes its curtains, for everyone.
+  const wi = windowAt(tx, ty);
+  if (wi >= 0 && slots[wi].m.id === myId) { send({ t: 'curtains', r: slots[wi].ri }); return; }
   const si = grid.owner[ty * grid.w + tx], hit = slots[si];
-  const sounding = hit?.room.furniture.find((f) => {
-    const it = ITEMS[f.item as ItemKey], lx = tx - grid.origins[si].x, ly = ty - grid.origins[si].y;
-    return it && soundName(f.item) && lx >= f.x && lx < f.x + it.w && ly >= f.y && ly < f.y + it.h;
-  });
-  if (sounding) {
-    const what = soundName(sounding.item);
-    toast(toggleSound(sounding.item) ? `🔊 ${what} on. Click the ${ITEMS[sounding.item as ItemKey].name.toLowerCase()} again to stop.` : `${what} off.`);
+  const fi = hit ? furnitureAt(hit.room, tx - grid.origins[si].x, ty - grid.origins[si].y) : -1;
+  const clicked = fi >= 0 ? hit.room.furniture[fi] : undefined;
+  // Clicking something that makes a sound (record player, fireplace, clocks) in any room you can see toggles it, just for you.
+  if (clicked && soundName(clicked.item)) {
+    const what = soundName(clicked.item);
+    toast(toggleSound(clicked.item) ? `🔊 ${what} on. Click the ${ITEMS[clicked.item as ItemKey].name.toLowerCase()} again to stop.` : `${what} off.`);
   }
+  if (clicked?.item === 'deskCalendar') { if (hit.m.id === myId) setPanel('focus'); else toast(esc(examLabel(hit.m))); return; }
+  // A housemate's desk: leave them a note. A lamp in my own room: switch it on or off.
+  if (clicked && hit.m.id !== myId && (ITEMS[clicked.item as ItemKey] as { table?: boolean }).table) { writeNote(hit.m.id); return; }
+  if (clicked && hit.m.id === myId && LIGHTS.has(clicked.item)) {
+    send({ t: 'light', r: hit.ri, index: fi });
+    toast(`💡 ${ITEMS[clicked.item as ItemKey].name} ${clicked.off ? 'on' : 'off'}.`);
+    return;
+  }
+  if (clicked && interact(si, fi)) return;
   walkTo(tx, ty);
 });
 
@@ -470,7 +624,12 @@ canvas.addEventListener('pointermove', (e) => {
   if (openPanel === 'decorate' && myRoom()) {
     const { tx, ty } = tileAt(e), o = grid.origins[mySlot()];
     c = drag?.moved ? 'var(--grabbing)' : placing ? 'var(--place)' : o && furnitureAt(myRoom()!, tx - o.x, ty - o.y) >= 0 ? 'var(--grab)' : '';
+  } else if (e.pointerType !== 'touch') { // a hand, and a label saying what a click does
+    const { tx, ty } = tileAt(e), label = clickLabel(tx, ty);
+    if (label) c = 'pointer';
+    showTip(label, e.clientX + 14, e.clientY + 16);
   }
+  if (openPanel === 'decorate') showTip(null);
   if (canvas.style.cursor !== c) canvas.style.cursor = c;
 });
 
@@ -526,13 +685,16 @@ function step(dt: number) {
         // Watering, reading, cooking... takes a few seconds; otherwise barely a breath, then off again.
         restUntil = Date.now() + (useNext ? 4000 + Math.random() * 4000 : 150 + Math.random() * 450);
         useNext = null;
+        if (!seat && arrive) { arrive(); arrive = null; }
       }
     } else if (id === myId && seat && a.x === a.tx && a.y === a.ty) {
       a.tx = seat.x; a.ty = seat.y; a.up = true;
       send({ t: 'pos', x: seat.x, y: seat.y });
       // Lounging lasts a while; a workout or a bounce a little less.
-      restUntil = Date.now() + (acts.get(tileKey(seat.x, seat.y))?.act === 'sit' ? 8000 + Math.random() * 7000 : 5000 + Math.random() * 5000);
+      restUntil = Date.now() + (stayMs || (acts.get(tileKey(seat.x, seat.y))?.act === 'sit' ? 8000 + Math.random() * 7000 : 5000 + Math.random() * 5000));
+      stayMs = 0;
       seat = null;
+      if (arrive) { arrive(); arrive = null; }
     }
     const dx = a.tx - a.x, dy = a.ty - a.y;
     const d = Math.hypot(dx, dy);
@@ -650,10 +812,10 @@ function render(t: number) {
   const sky = skyNow();
   const dark = sky !== 'day';
   // Top-row rooms get windows to the outside (more as the room grows); inner rooms get a painting.
-  slots.forEach((_, i) => {
+  slots.forEach(({ room }, i) => {
     const o = grid.origins[i], s = grid.sizes[i];
     const wy = (o.y - WALL_H) * T;
-    if (i < grid.cols) for (let lx = 1; lx + 2 <= s.w - 1; lx += 6) drawWindow(ctx, (o.x + lx) * T, wy, sky);
+    if (i < grid.cols) for (let lx = 1; lx + 2 <= s.w - 1; lx += 6) drawWindow(ctx, (o.x + lx) * T, wy, sky, !!room.curtains);
     else drawPainting(ctx, (o.x + 1) * T, wy + 8);
   });
 
@@ -682,10 +844,14 @@ function render(t: number) {
       if (it.solid) for (const g of room.furniture) {
         if ((ITEMS[g.item as ItemKey] as { top?: boolean } | undefined)?.top &&g.y >= f.y && g.y < f.y + it.h && g.x >= f.x && g.x < f.x + it.w) bare |= 1 << (f.flip ? f.x + it.w - 1 - g.x : g.x - f.x);
       }
+      const thirsty = isPlant(f.item) && now - (f.wateredAt ?? now) > THIRSTY_MS; // droops until someone waters it
       const draw = () => {
         if (dragged) ctx.globalAlpha = 0.35;
+        if (thirsty) ctx.filter = 'grayscale(0.7) brightness(0.9)';
         drawFurniture(ctx, f.item, (o.x + f.x) * T, (o.y + f.y) * T - lift, t, furnColor(f), f.flip, it.w, f.s, bare);
+        ctx.filter = 'none';
         ctx.globalAlpha = 1;
+        if (thirsty) drawDroplet(ctx, (o.x + f.x) * T + T / 2, (o.y + f.y) * T - lift - 6 + Math.round(Math.sin(t / 300)));
       };
       if (it.top) sprites.push({ y: o.y + f.y + 0.6, draw });
       else if (!it.solid) draw();
@@ -695,7 +861,11 @@ function render(t: number) {
       const spots = petSpots[i];
       if (!spots?.length) return;
       const pos = petPos(seedOf(m.id, slot), now, spots, petToys[i]);
-      sprites.push({ y: pos.y + 0.9, draw: () => drawPet(ctx, p.kind, Math.round(pos.x * T), Math.round(pos.y * T), pos.moving, pos.left, now, pos.act, p.coat, p.acc) });
+      const fed = now - (m.fedAt ?? 0); // just fed: a heart floats up for a few seconds
+      sprites.push({ y: pos.y + 0.9, draw: () => {
+        drawPet(ctx, p.kind, Math.round(pos.x * T), Math.round(pos.y * T), pos.moving, pos.left, now, pos.act, p.coat, p.acc);
+        if (fed < 6000) drawHeart(ctx, pos.x * T + T / 2, pos.y * T - fed / 400);
+      } });
     });
   });
   const labels: { x: number; y: number; m: Member; seated: boolean; lift: number }[] = [];
@@ -730,7 +900,7 @@ function render(t: number) {
       const o = grid.origins[i];
       for (const f of room.furniture) {
         const glow = GLOWS[f.item];
-        if (glow) lights.push({ x: (o.x + f.x) * T + glow.dx, y: (o.y + f.y) * T + glow.dy, rad: glow.rad, alpha: glow.alpha });
+        if (glow && !f.off) lights.push({ x: (o.x + f.x) * T + glow.dx, y: (o.y + f.y) * T + glow.dy, rad: glow.rad, alpha: glow.alpha });
       }
     });
     const flicker = 0.03 * Math.sin(t / 700);
@@ -786,6 +956,15 @@ function render(t: number) {
     ctx.fillStyle = '#fff';
     ctx.fillText(text, sx, sy);
 
+    // 👏 from a housemate rising over someone studying.
+    const ch = cheers.get(m.id);
+    if (ch && now - ch.at < 2500) {
+      ctx.font = `600 ${fs}px 'Fredoka', system-ui, sans-serif`;
+      ctx.globalAlpha = 1 - (now - ch.at) / 2500;
+      ctx.fillStyle = '#2b2530';
+      ctx.fillText(`👏 ${ch.by}`, sx, sy - fs * 1.6 - (now - ch.at) / 40);
+      ctx.globalAlpha = 1;
+    }
     // Chat speech bubble above the name.
     const b = bubbles.get(m.id);
     if (b && b.until > now) {
@@ -807,6 +986,9 @@ function render(t: number) {
   }
 }
 
+// Lights you can switch on and off by clicking them in your own room.
+const LIGHTS = new Set(['lamp', 'arcLamp', 'bedsideLamp', 'candles', 'neonHeart', 'fairyJar', 'floorCandle', 'snowflakeLamp', 'lanternString', 'diya', 'menorah', 'discoBall',
+  'skyLantern', 'sparklers', 'garbaLamp', 'bonfire', 'eidLantern', 'crescentLamp', 'lotusLamp']);
 // Things that light up the room at night: offset of the light from the item's top-left, size and strength.
 const GLOWS: Record<string, { dx: number; dy: number; rad: number; alpha: number }> = {
   lamp: { dx: 8, dy: -4, rad: 40, alpha: 0.32 },
@@ -830,6 +1012,13 @@ const GLOWS: Record<string, { dx: number; dy: number; rad: number; alpha: number
   menorah: { dx: 8, dy: 4, rad: 20, alpha: 0.25 },
   heater: { dx: 8, dy: 0, rad: 24, alpha: 0.25 },
   discoBall: { dx: 8, dy: -6, rad: 26, alpha: 0.2 },
+  skyLantern: { dx: 8, dy: -6, rad: 26, alpha: 0.3 },
+  sparklers: { dx: 8, dy: 0, rad: 20, alpha: 0.25 },
+  garbaLamp: { dx: 8, dy: 6, rad: 24, alpha: 0.3 },
+  bonfire: { dx: 8, dy: 4, rad: 34, alpha: 0.4 },
+  eidLantern: { dx: 8, dy: 4, rad: 26, alpha: 0.3 },
+  crescentLamp: { dx: 8, dy: -4, rad: 24, alpha: 0.25 },
+  lotusLamp: { dx: 8, dy: 6, rad: 18, alpha: 0.25 },
 };
 
 const fmt = (ms: number) => {
@@ -958,6 +1147,13 @@ const choices = (act: string, list: string[], current?: string) =>
 
 const esc = (s: string) => s.replace(/[&<>"]/g, (ch) => `&#${ch.charCodeAt(0)};`);
 
+function festivalNote() {
+  const on = activeEvents(), next = nextEvent();
+  const now = on.length ? `${on.map((e) => `${e.emoji} <b>${e.name}</b>`).join(' · ')}: festive picks first! ` : '';
+  const soon = next ? `Next up: ${next.emoji} ${next.name}, ${next.day.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}.` : '';
+  return `<p class="hint">${now}${soon}</p>`;
+}
+
 function shopBody(mine: Member) {
   const tab = SHOP_TABS.find((x) => x.id === shopTab) ?? SHOP_TABS[0];
   const rail = SHOP_TABS.map((x) => {
@@ -966,10 +1162,13 @@ function shopBody(mine: Member) {
   }).join('');
   let shelf = '';
   if (tab.items) {
-    shelf = tab.items.map((k) => {
+    // The Seasonal shelf leads with the festivals on right now (their picks can come from other shelves too).
+    const items = tab.id === 'seasonal' ? [...new Set([...activeEvents().flatMap((e) => e.items as ItemKey[]), ...tab.items])] : tab.items;
+    shelf = items.map((k) => {
       const it = ITEMS[k];
       const looks = (it as { looks?: string[] }).looks;
-      return `<div class="card"><b>${it.name}</b>${icon(k)}${looks ? `<small class="hint">${looks.length} styles</small>` : ''}<button data-act="buy" data-v="${k}" ${me.coins < it.price ? 'disabled' : ''}>${coin()} ${it.price}</button></div>`;
+      const price = discounted(it.price, me.discount);
+      return `<div class="card"><b>${it.name}</b>${icon(k)}${looks ? `<small class="hint">${looks.length} styles</small>` : ''}<button data-act="buy" data-v="${k}" ${me.coins < price ? 'disabled' : ''}>${coin()} ${price !== it.price ? `<s>${it.price}</s> ` : ''}${price}</button></div>`;
     }).join('');
   } else if (tab.id === 'petacc') {
     const owned = me.petAccs ?? [];
@@ -997,7 +1196,9 @@ function shopBody(mine: Member) {
     }).join('') + next;
     shelf = roomPicker(mine) + shelf;
   }
-  const note = tab.id === 'work' ? '<p class="hint">Drinks can go on any table. Your buddy studies at a desk chair behind a table.</p>'
+  const note = me.discount && tab.items ? '<p class="hint">🎉 10% off your next buy, for finishing a house to-do together.</p>'
+    : tab.id === 'seasonal' ? festivalNote()
+    : tab.id === 'work' ? '<p class="hint">Drinks can go on any table. Your buddy studies at a desk chair behind a table.</p>'
     : tab.id === 'fitness' ? '<p class="hint">When your buddy wanders past, they hop on and work out.</p>'
     : tab.id === 'petstuff' ? '<p class="hint">Your pets climb, nap and chase the ball on their own.</p>'
     : tab.id === 'petacc' ? '<p class="hint">Buy once, then dress up any of your pets from the You panel.</p>'
@@ -1091,19 +1292,22 @@ function panelBody(mine: Member) {
     const f = mine.focus;
     const others = members.filter((m) => m.id !== myId && m.focus);
     const together = others.length ? `<p class="center">Studying with you: <b>${others.map((m) => esc(m.name)).join(', ')}</b> ✨ +25%</p>` : '';
-    return f
+    return (f
       ? `<p class="hint center">Studying at your desk…</p>
          <p class="big" id="ptimer">${fmt(f.endsAt - Date.now())}</p>
          <div class="bar panel-bar"><i id="pbar" style="width:${progress(f)}%"></i></div>
          <p class="center">Finish to earn <b>${f.minutes}</b> ${coin()}</p>${together}
          <div class="center"><button class="danger" data-act="cancel">Give up</button></div>`
-      : `<h3>What are you studying?</h3>
+      : `${group && group.by !== myId ? `<div class="invite">📚 <b>${esc(group.byName)}</b> is studying <b>${esc(group.tag)}</b>, ${fmt(group.endsAt - Date.now())} left.
+           <button data-act="joingroup">Join them</button></div>` : ''}
+         <h3>What are you studying?</h3>
          <div class="row"><input id="tag" maxlength="24" placeholder="Study" value="${esc(lastTag)}" aria-label="Subject">
            <button class="off" data-act="tagsave" title="Save as a quick pick">★ Save</button></div>
          ${subjectChips()}
          <h3>How long?</h3>
          <div class="tiles">${FOCUS_LENGTHS.map((n) => `<button class="tile" data-act="focus" data-v="${n}"><b>${n}</b><small>min</small><span class="reward">+${n} ${coin()}</span></button>`).join('')}</div>
-         <p class="hint center">You'll walk to your desk and study until the timer ends. Study at the same time as a housemate for +25% coins.</p>${together}`;
+         ${members.length > 1 ? '<label class="center invite-check"><input type="checkbox" id="groupInvite"> Invite housemates to join this session</label>' : ''}
+         <p class="hint center">You'll walk to your desk and study until the timer ends. Study at the same time as a housemate for +25% coins.</p>${together}`) + examsHTML(mine);
   }
   if (openPanel === 'shop') return shopBody(mine);
   if (openPanel === 'decorate') return decorateBody(mine);
@@ -1111,7 +1315,8 @@ function panelBody(mine: Member) {
     return `<div class="me">${avatarPreview(mine.look)}<div class="me-info">
         <label>Name <input id="name" maxlength="16" value="${esc(mine.name)}"></label>
         <p class="hint">Total focus: <b>${mine.totalMinutes}</b> min</p>
-        <button class="off small-chip" data-act="logout">Log out</button></div></div>
+        <button class="off small-chip" data-act="logout">Log out</button>
+        <button class="off small-chip" data-act="chimes">${chimes ? '🔔 Sounds on' : '🔕 Sounds off'}</button></div></div>
       ${mine.pets.length ? `<h3>Your pets</h3>${mine.pets.map((p, slot) => {
         const coats = PETS[p.kind as PetKey]?.coats ?? [];
         const accs = me.petAccs ?? [];
@@ -1136,7 +1341,9 @@ function panelBody(mine: Member) {
     <div class="code-big">${houseCode}</div>
     <div class="center"><button class="off" data-act="copy">Copy code</button></div>`}
     <h3>Housemates</h3>
-    <ul class="members">${members.map((m) => `<li><span class="dot${m.online ? ' on' : ''}"></span>${esc(m.name)}${m.id === myId ? ' (you)' : ''}${m.focus ? '<span class="tag">📖 studying</span>' : ''}${!away && m.id !== myId ? `<button class="off small" data-act="kick" data-v="${m.id}">Remove</button>` : ''}</li>`).join('')}</ul>
+    <ul class="members">${members.map((m) => `<li><span class="dot${m.online ? ' on' : ''}"></span>${esc(m.name)}${m.id === myId ? ' (you)' : ''}${m.focus ? '<span class="tag">📖 studying</span>' : ''}${m.id !== myId ? `<button class="off small" data-act="gift" data-v="${m.id}" title="Send ${esc(m.name)} ${GIFT_COINS} coins">🎁 ${GIFT_COINS}</button><button class="off small" data-act="noteto" data-v="${m.id}" aria-label="Leave ${esc(m.name)} a note">✉️</button>` : ''}${!away && m.id !== myId ? `<button class="off small" data-act="kick" data-v="${m.id}">Remove</button>` : ''}</li>`).join('')}</ul>
+    ${noteTo && members.some((m) => m.id === noteTo) ? `<h3>Note for ${esc(members.find((m) => m.id === noteTo)!.name)}'s desk</h3>
+    <div class="row"><input id="noteText" maxlength="140" placeholder="Good luck on the exam!"><button data-act="sendnote">Leave note</button></div>` : ''}
     <h3>Join a friend</h3>
     <div class="row"><input id="join" placeholder="Friend's code" maxlength="5" autocapitalize="characters"><button data-act="join">Join</button></div>
     <h3>Recent houses</h3>
@@ -1174,7 +1381,7 @@ panel.addEventListener('click', (e) => {
     case 'focus': {
       lastTag = panel.querySelector<HTMLInputElement>('#tag')?.value.trim() ?? '';
       localStorage.setItem('auralis.tag', lastTag);
-      send({ t: 'focus_start', minutes: Number(v), tag: lastTag || 'Study' });
+      send({ t: 'focus_start', minutes: Number(v), tag: lastTag || 'Study', group: !!panel.querySelector<HTMLInputElement>('#groupInvite')?.checked });
       setPanel(null);
       break;
     }
@@ -1236,9 +1443,146 @@ panel.addEventListener('click', (e) => {
       } else send({ t: 'kick', id: v });
       break;
     case 'logout': signOut(true); break;
+    case 'chimes':
+      chimes = !chimes;
+      localStorage.setItem('auralis.chimes', chimes ? 'on' : 'off');
+      if (chimes) chime();
+      renderPanel();
+      break;
+    case 'gift': send({ t: 'gift', to: v }); break;
+    case 'noteto': writeNote(v); break;
+    case 'sendnote': {
+      const text = panel.querySelector<HTMLInputElement>('#noteText')!.value.trim();
+      if (text && noteTo) send({ t: 'note', to: noteTo, text });
+      noteTo = null;
+      renderPanel();
+      break;
+    }
+    case 'joingroup': send({ t: 'focus_join' }); setPanel(null); break;
+    case 'examadd': {
+      const subject = panel.querySelector<HTMLInputElement>('#examSubject')!.value.trim(), date = panel.querySelector<HTMLInputElement>('#examDate')!.value;
+      if (subject && date) send({ t: 'exam_add', subject, date });
+      else toast('Add a subject and a date.');
+      break;
+    }
+    case 'examdel': send({ t: 'exam_del', index: Number(v) }); break;
     case 'snapshot': saveSnapshot(); break;
   }
 });
+
+// Open the House panel with a note form for a housemate (also what clicking their desk does).
+function writeNote(id: string) {
+  noteTo = id;
+  setPanel('house');
+  panel.querySelector<HTMLInputElement>('#noteText')?.focus();
+}
+
+// ---------- what a click does: hover labels, cheering, exam countdowns ----------
+const ACT_LABELS: Record<string, string> = { sit: 'Sit', sleep: 'Nap (5-min break)', bounce: 'Bounce', lift: 'Work out', run: 'Run', punch: 'Box', bike: 'Ride', stretch: 'Stretch' };
+const USE_LABELS: Record<string, string> = {
+  water: 'Water', read: 'Study here', snack: 'Snack (2-min break)', tea: 'Tea (2-min break)', primp: 'Change your look', dress: 'Change your look',
+  stargaze: 'Stargaze', feed: 'Feed the pets', music: 'Play music', strum: 'Play guitar', drum: 'Drum', dj: 'DJ', warm: 'Warm up', wind: 'Wind it up',
+};
+const cap = (s: string) => s[0].toUpperCase() + s.slice(1);
+
+// A housemate studying at the tile (or just under their timer bubble), if any.
+function studyingAt(tx: number, ty: number) {
+  return members.find((m) => {
+    const a = avatars.get(m.id);
+    return m.id !== myId && m.focus && m.online && a && Math.round(a.tx) === tx && (Math.round(a.ty) === ty || Math.round(a.ty) - 1 === ty);
+  });
+}
+
+// What clicking this tile would do, in a few words (null: just walk there). Mirrors the click handler.
+function clickLabel(tx: number, ty: number): string | null {
+  if (tx < 0 || ty < 0 || tx >= grid.w || ty >= grid.h) return null;
+  const studier = studyingAt(tx, ty);
+  if (studier) return `Cheer ${studier.name} on 👏`;
+  const wi = windowAt(tx, ty);
+  if (wi >= 0 && slots[wi].m.id === myId) return slots[wi].room.curtains ? 'Open curtains' : 'Close curtains';
+  const si = grid.owner[ty * grid.w + tx] ?? -1, hit = slots[si];
+  const fi = hit ? furnitureAt(hit.room, tx - grid.origins[si].x, ty - grid.origins[si].y) : -1;
+  if (fi < 0) return null;
+  const f = hit.room.furniture[fi], it = ITEMS[f.item as ItemKey] as { table?: boolean; act?: string; use?: string };
+  const sound = soundName(f.item) ? ` · 🔊 ${soundName(f.item)}` : '';
+  if (f.item === 'deskCalendar') return examLabel(hit.m);
+  if (hit.m.id !== myId && it.table) return `Leave ${hit.m.name} a note`;
+  if (hit.m.id === myId && LIGHTS.has(f.item)) return f.off ? 'Lights on' : 'Lights off';
+  if (f.item === 'giftBox') return 'Send a gift';
+  if (f.item === 'whiteboard') return 'House to-dos';
+  if (TVS.has(f.item)) return 'Watch together';
+  if (it.act) return ACT_LABELS[it.act] ?? cap(it.act);
+  if (it.use) return (USE_LABELS[it.use] ?? cap(it.use)) + sound;
+  return sound ? sound.slice(3) : null;
+}
+
+const tip = document.createElement('div');
+tip.id = 'tip';
+tip.hidden = true;
+document.body.append(tip);
+let tipTimer = 0;
+function showTip(text: string | null, x = 0, y = 0, ms = 0) {
+  clearTimeout(tipTimer);
+  tip.hidden = !text;
+  if (!text) return;
+  tip.textContent = text;
+  tip.style.left = `${Math.min(x, innerWidth - tip.offsetWidth - 8)}px`;
+  tip.style.top = `${y}px`;
+  if (ms) tipTimer = window.setTimeout(() => { tip.hidden = true; }, ms);
+}
+canvas.addEventListener('pointerleave', () => showTip(null));
+
+const DAY_MS = 86_400_000;
+function daysTo(date: string) {
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const d = Math.round((Date.parse(`${date}T00:00:00`) - +today) / DAY_MS);
+  return d <= 0 ? 'today!' : d === 1 ? 'tomorrow' : `in ${d} days`;
+}
+function examLabel(m: Member) {
+  const next = m.exams?.[0];
+  if (m.id === myId) return next ? `Your next exam: ${next.subject} ${daysTo(next.date)}` : 'Add an exam to count down to';
+  return next ? `${m.name}'s next exam: ${next.subject} ${daysTo(next.date)}` : `${m.name} has no exams coming up`;
+}
+function examsHTML(mine: Member) {
+  const list = mine.exams ?? [];
+  const today = new Date(Date.now() - new Date().getTimezoneOffset() * 60_000).toISOString().slice(0, 10);
+  return `<h3>Exam countdown</h3>
+    ${list.length ? `<ul class="members">${list.map((x, i) => `<li><span class="who"><b>${esc(x.subject)}</b> ${daysTo(x.date)}</span>
+      <button class="off small" data-act="examdel" data-v="${i}" aria-label="Remove ${esc(x.subject)}">✕</button></li>`).join('')}</ul>` : ''}
+    <div class="row"><input id="examSubject" maxlength="24" placeholder="Subject" aria-label="Exam subject"><input id="examDate" type="date" min="${today}" aria-label="Exam date"><button data-act="examadd">Add</button></div>
+    <p class="hint">A desk calendar (Shop → Decor) shows your next exam to housemates.</p>`;
+}
+
+// ---------- first visit: a short tour ----------
+const TOUR = [
+  '👋 Welcome to Auralis! This is your room. Your little buddy wanders around and uses things on their own.',
+  '🖱️ Click furniture to use it: sit, nap, work out, water plants, play music… Hover (or tap) to see what a click does.',
+  '⏰ Open <b>Focus</b> in the dock to study. Your buddy sits at the desk and you earn a coin a minute.',
+  '🛍️ Spend coins in the <b>Shop</b>, then arrange your room in <b>Decorate</b>.',
+  "🏠 Share your house code (top right) so friends' rooms join yours. Study at the same time for +25% coins!",
+];
+function welcome() {
+  if (localStorage.getItem('auralis.tour')) return;
+  let i = 0;
+  const box = document.createElement('div');
+  box.id = 'tour';
+  box.setAttribute('role', 'dialog');
+  box.setAttribute('aria-label', 'Quick tour');
+  const show = () => {
+    box.innerHTML = `<p>${TOUR[i]}</p><div class="row"><small>${i + 1} / ${TOUR.length}</small>
+      <button class="off" data-t="skip">Skip</button><button data-t="next">${i === TOUR.length - 1 ? 'Got it!' : 'Next'}</button></div>`;
+    box.querySelector<HTMLButtonElement>('[data-t="next"]')!.focus();
+  };
+  box.addEventListener('click', (e) => {
+    const t = (e.target as HTMLElement).closest<HTMLButtonElement>('button')?.dataset.t;
+    if (!t) return;
+    if (t === 'next' && ++i < TOUR.length) { show(); return; }
+    box.remove();
+    localStorage.setItem('auralis.tour', 'done');
+  });
+  document.body.append(box);
+  show();
+}
 
 const requestBoard = () => send({ t: 'leaderboard', scope: boardScope, period: boardPeriod });
 
@@ -1266,12 +1610,18 @@ document.querySelectorAll<HTMLButtonElement>('#dock button').forEach((b) =>
   }));
 
 // ---------- shared to-dos, private to-dos and chat ----------
+// "Everyone" to-dos show my own tick, and are crossed off only once the whole house has ticked them.
 function todoHTML(list: Todo[], empty: string) {
   return list.length
-    ? list.map((t) => `<li class="${t.done ? 'done' : ''}">
-        <button class="check" data-todo="toggle" data-id="${t.id}" aria-label="${t.done ? 'Mark not done' : 'Mark done'}">${t.done ? '✓' : ''}</button>
-        <span class="todo-text">${esc(t.text)}${t.by ? `<small>${esc(t.by)}</small>` : ''}</span>
-        <button class="del" data-todo="del" data-id="${t.id}" aria-label="Delete">✕</button></li>`).join('')
+    ? list.map((t) => {
+      const ticked = t.all ? !!t.ticks?.includes(myId) : t.done;
+      const waiting = t.all ? members.filter((m) => !t.ticks?.includes(m.id)) : [];
+      const all = t.all ? ` · 👥 ${members.length - waiting.length}/${members.length}${waiting.length && !t.done ? `, waiting on ${waiting.map((m) => esc(m.name)).join(', ')}` : ''}` : '';
+      return `<li class="${t.done ? 'done' : ''}">
+        <button class="check${ticked && !t.done ? ' mine' : ''}" data-todo="toggle" data-id="${t.id}" aria-label="${ticked ? 'Untick' : 'Tick'}">${ticked ? '✓' : ''}</button>
+        <span class="todo-text">${esc(t.text)}${t.by || all ? `<small>${esc(t.by ?? '')}${all}</small>` : ''}</span>
+        <button class="del" data-todo="del" data-id="${t.id}" aria-label="Delete">✕</button></li>`;
+    }).join('')
     : `<li class="empty">${empty}</li>`;
 }
 
@@ -1292,6 +1642,7 @@ function noteNewDms() {
     const onScreen = dmPeer === peer && document.body.classList.contains('side-open');
     if (dmReady) countUnseen(fresh);
     if (dmReady && fresh && !onScreen) {
+      pingOrHold();
       if (dmPeer !== peer) dmUnread[peer] = (dmUnread[peer] ?? 0) + fresh;
       unread = true;
       noteUnreadChat();
@@ -1339,7 +1690,7 @@ function renderSide() {
 }
 const scrollChat = () => { const log = $('#chatLog'); log.scrollTop = log.scrollHeight; };
 
-function wireTodos(list: string, form: string, input: string, kinds: { add: string; toggle: string; del: string }) {
+function wireTodos(list: string, form: string, input: string, kinds: { add: string; toggle: string; del: string }, extra = () => ({})) {
   $(list).addEventListener('click', (e) => {
     const b = (e.target as HTMLElement).closest<HTMLButtonElement>('button[data-todo]');
     if (b) send({ t: b.dataset.todo === 'toggle' ? kinds.toggle : kinds.del, id: Number(b.dataset.id) });
@@ -1347,11 +1698,20 @@ function wireTodos(list: string, form: string, input: string, kinds: { add: stri
   $(form).addEventListener('submit', (e) => {
     e.preventDefault();
     const el = $<HTMLInputElement>(input);
-    if (el.value.trim()) send({ t: kinds.add, text: el.value });
+    if (el.value.trim()) send({ t: kinds.add, text: el.value, ...extra() });
     el.value = '';
   });
 }
-wireTodos('#todoList', '#todoForm', '#todoInput', { add: 'todo_add', toggle: 'todo_toggle', del: 'todo_del' });
+// The 👥 button makes the next house to-do one that everyone has to tick.
+const todoAll = $<HTMLButtonElement>('#todoAll');
+todoAll.addEventListener('click', () => {
+  const on = todoAll.getAttribute('aria-pressed') !== 'true';
+  todoAll.setAttribute('aria-pressed', String(on));
+  todoAll.className = on ? 'on' : 'off';
+  $<HTMLInputElement>('#todoInput').placeholder = on ? 'Everyone ticks this…' : 'Add a to-do…';
+});
+wireTodos('#todoList', '#todoForm', '#todoInput', { add: 'todo_add', toggle: 'todo_toggle', del: 'todo_del' },
+  () => ({ all: todoAll.getAttribute('aria-pressed') === 'true' }));
 wireTodos('#myTodoList', '#myTodoForm', '#myTodoInput', { add: 'ptodo_add', toggle: 'ptodo_toggle', del: 'ptodo_del' });
 $('#chatForm').addEventListener('submit', (e) => {
   e.preventDefault();
@@ -1404,6 +1764,16 @@ function toggleFold(card: SideCard) {
   localStorage.setItem('auralis.folds', JSON.stringify(folds));
   applyFold(card);
 }
+// Bring a side card into view (unfolded, and as a sheet on phones) and put the cursor in its input.
+function openSide(card: SideCard, input: string, text = '') {
+  if (folds[card]) toggleFold(card);
+  setPanel(innerWidth < 900 ? 'social' : null);
+  const el = $<HTMLInputElement>(input);
+  if (text) el.value = text;
+  el.focus();
+}
+// Group chat you can't see right now: worth a ping.
+const chatHidden = () => document.hidden || !!folds.chat || (innerWidth < 900 && !document.body.classList.contains('side-open'));
 for (const card of ['todos', 'personal', 'chat'] as SideCard[]) {
   applyFold(card);
   $(`#fold-${card}`).addEventListener('click', () => toggleFold(card));

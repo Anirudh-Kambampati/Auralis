@@ -468,9 +468,9 @@ export function skyNow(): Sky {
   return h >= 8 && h < 17 ? 'day' : (h >= 17 && h < 20) || (h >= 6 && h < 8) ? 'dusk' : 'night';
 }
 
-// A 2x2-tile window with curtains, filling the tall back wall above the panel strip.
-export function drawWindow(c: Ctx, x: number, y: number, sky: Sky) {
-  c.drawImage(baked(`win|${sky}`, 32, 32, (g) => {
+// A 2x2-tile window with curtains (drawn shut when closed), filling the tall back wall above the panel strip.
+export function drawWindow(c: Ctx, x: number, y: number, sky: Sky, closed = false) {
+  c.drawImage(baked(`win|${sky}|${closed}`, 32, 32, (g) => {
     r(g, 5, 5, 22, 19, OUT);
     r(g, 6, 6, 20, 17, '#fffaf3');
     r(g, 7, 7, 18, 14, { day: '#a8dcf5', dusk: '#f7b58a', night: '#3a4280' }[sky]);
@@ -484,7 +484,12 @@ export function drawWindow(c: Ctx, x: number, y: number, sky: Sky) {
     r(g, 15, 7, 2, 14, '#fffaf3');
     r(g, 7, 13, 18, 1, '#fffaf3');
     r(g, 3, 3, 26, 2, '#8a5a3c');
-    for (const cx of [3, 23]) {
+    if (closed) for (const cx of [3, 16]) {
+      r(g, cx, 5, 13, 19, '#f4a6b8');
+      for (let k = cx + 2; k < cx + 13; k += 3) { r(g, k, 5, 1, 19, '#e88aa0'); r(g, k + 1, 5, 1, 19, '#fbc4d0'); }
+      r(g, cx, 24, 13, 1, OUT);
+    }
+    else for (const cx of [3, 23]) {
       r(g, cx, 5, 6, 19, '#f4a6b8');
       r(g, cx + 2, 5, 1, 19, '#e88aa0');
       r(g, cx + 4, 5, 1, 19, '#fbc4d0');
@@ -493,6 +498,21 @@ export function drawWindow(c: Ctx, x: number, y: number, sky: Sky) {
     r(g, 4, 22, 24, 2, '#fffaf3');
     r(g, 4, 24, 24, 1, shade('#fffaf3', -0.15));
   }), x, y);
+}
+
+// A little water drop over a thirsty plant; x = its centre, y = its bottom.
+export function drawDroplet(c: Ctx, x: number, y: number) {
+  x = Math.round(x) - 3;
+  r(c, x + 2, y - 7, 2, 1, OUT); r(c, x + 1, y - 6, 4, 1, OUT); r(c, x, y - 5, 6, 4, OUT); r(c, x + 1, y - 1, 4, 1, OUT);
+  r(c, x + 2, y - 6, 2, 1, '#6fb6f0'); r(c, x + 1, y - 5, 4, 4, '#6fb6f0'); r(c, x + 2, y - 4, 1, 2, '#dff0ff');
+}
+
+// A little heart, e.g. over a pet that was just fed; x = its centre, y = its bottom.
+export function drawHeart(c: Ctx, x: number, y: number) {
+  x = Math.round(x) - 4; y = Math.round(y);
+  r(c, x + 1, y - 8, 2, 1, OUT); r(c, x + 5, y - 8, 2, 1, OUT); r(c, x, y - 7, 8, 3, OUT); r(c, x + 1, y - 4, 6, 1, OUT); r(c, x + 2, y - 3, 4, 1, OUT); r(c, x + 3, y - 2, 2, 1, OUT);
+  r(c, x + 1, y - 7, 2, 1, '#f06a8a'); r(c, x + 5, y - 7, 2, 1, '#f06a8a'); r(c, x + 1, y - 6, 6, 2, '#f06a8a'); r(c, x + 2, y - 4, 4, 1, '#f06a8a'); r(c, x + 3, y - 3, 2, 1, '#f06a8a');
+  r(c, x + 1, y - 7, 1, 1, '#ffd0dc');
 }
 
 // Night tint over a tile: deep blue at night, a softer violet at dusk.
@@ -1927,6 +1947,43 @@ const RECIPES: Record<string, [number, string, string]> = {
   diya: [0, '', 'f7,6,2,4,#ffd34d|f7,7,1,2,#fff3b0|b3,10,10,4,#c8805a|r5,11,6,1,#f2b48a'],
   sleigh: [8, '#e06a5a', 'r0,22,32,2,#ffd34d|r1,20,1,2,#ffd34d|r29,18,2,4,#ffd34d|b2,0,8,14,$|b2,8,28,12,$|r4,10,24,2,#ffd34d|b20,4,8,6,#4f9a6a|h24,6,#ffd34d'],
   reindeer: [10, '', 'r3,0,1,4,#b07a4e|r12,0,1,4,#b07a4e|r2,0,2,1,#b07a4e|r12,0,2,1,#b07a4e|o8,18,6,#c8966a|d8,19,3,#e8d3b0|o8,6,4,#c8966a|r6,5,1,1,O|r9,5,1,1,O|d8,8,1,#f48a8a'],
+  // ---- festivals ----
+  rangoli: [0, '', 'o16,16,13,#f48a8a|d16,16,10,#ffd27a|d16,16,7,#8fd0a8|d16,16,4,#b89af0|d16,16,1,#fffaf3|o16,4,2,#7fb2e8|o16,28,2,#7fb2e8|o4,16,2,#7fb2e8|o28,16,2,#7fb2e8|d8,8,2,#f28a3a|d24,8,2,#f28a3a|d8,24,2,#f28a3a|d24,24,2,#f28a3a'],
+  skyLantern: [16, '', 'r12,0,2,32,#8a5a3c|r6,1,8,1,#8a5a3c|r7,2,1,3,#3a3448|b3,5,9,9,#f28a3a|r5,7,5,5,#ffd27a|f6,8,3,3,#fff3b0|r4,14,1,6,#f48a8a|r7,14,1,8,#f48a8a|r10,14,1,6,#f48a8a|b9,29,7,3,#8a5a3c'],
+  mithaiBox: [0, '', 'b2,7,12,7,#f4a6c8|r2,10,12,1,#ffd34d|o5,5,1,#ffd27a|o8,4,1,#fffaf3|o11,5,1,#f28a3a'],
+  sparklers: [2, '', 'b3,9,10,9,#e06a5a|r3,12,10,1,#ffd34d|r5,1,1,8,#a8a0b8|r8,0,1,9,#a8a0b8|r11,2,1,7,#a8a0b8|f4,0,3,2,#fff3b0|f7,0,3,1,#ffd34d|f10,1,3,2,#fff3b0|f8,1,1,1,#ffffff'],
+  gulal: [0, '', 'r1,12,14,2,#e8e3dc|o4,10,2,#f48a8a|o11,10,2,#8fd0a8|o8,7,2,#ffd27a|o8,11,2,#b89af0'],
+  colourRug: [0, '', 'd6,8,5,#f48a8a|d14,6,4,#ffd27a|d20,9,5,#8fd0a8|d27,7,4,#b89af0|d11,11,3,#7fb2e8|d24,12,2,#f4a6c8|d3,3,1,#ffd27a|d29,13,1,#f48a8a'],
+  dandiya: [0, '', 'r3,3,2,11,#e06a5a|r11,3,2,11,#ffd34d|r3,5,2,1,#ffd34d|r3,9,2,1,#8fd0a8|r11,6,2,1,#e06a5a|r11,10,2,1,#8fd0a8|r2,13,4,1,#fffaf3|r10,13,4,1,#fffaf3'],
+  garbaLamp: [4, '', 'f7,0,2,3,#ffd34d|r6,3,4,2,#a8603a|o8,11,6,#c8805a|r3,11,10,1,#f48a8a|f5,8,1,1,#ffd34d|f10,8,1,1,#ffd34d|f8,9,1,1,#fff3b0|f5,13,1,1,#fff3b0|f11,13,1,1,#ffd34d'],
+  marigold: [16, '', 'r1,0,1,32,#8a5a3c|r14,0,1,32,#8a5a3c|r1,1,14,1,#8a5a3c|o4,5,2,#f28a3a|o8,7,2,#ffd34d|o12,5,2,#f28a3a|r4,8,1,4,#4f9a6a|r8,10,1,4,#4f9a6a|r12,8,1,4,#4f9a6a|o4,13,1,#ffd34d|o12,13,1,#ffd34d'],
+  modak: [0, '', 'r1,12,14,2,#e8e3dc|o4,10,2,#fffaf3|o8,9,2,#fffaf3|o12,10,2,#fffaf3|r4,7,1,1,#f2c48a|r8,6,1,1,#f2c48a|r12,7,1,1,#f2c48a'],
+  kite: [14, '#f4a6b8', 'r7,14,2,16,#8a5a3c|b4,28,8,2,#8a5a3c|r6,0,4,1,O|r5,1,6,1,O|r4,2,8,1,O|r3,3,10,1,O|r2,4,12,2,O|r3,6,10,1,O|r4,7,8,1,O|r5,8,6,1,O|r6,9,4,1,O|r7,10,2,1,O|r7,1,2,1,$|r6,2,4,1,$|r5,3,6,1,$|r3,4,10,2,$|r5,6,6,1,$d|r6,7,4,1,$d|r7,8,2,1,$d|r8,1,1,8,$l|r8,11,1,3,#e8e3dc|r9,12,2,1,#f48a8a|r6,13,2,1,#8fd0a8'],
+  pongalPot: [4, '', 'r1,0,1,20,#8fd0a8|r14,0,1,20,#8fd0a8|r1,0,1,1,#4f9a6a|r14,0,1,1,#4f9a6a|o8,13,6,#c8805a|r4,7,8,2,#fffaf3|o6,6,1,#fffaf3|o10,5,1,#fffaf3|r3,12,10,1,#ffd34d|r4,15,8,1,#f48a8a'],
+  bonfire: [2, '', 'r1,15,14,3,#8a5a3c|r3,13,10,2,#b07a4e|r2,14,4,1,#6a4a32|r10,14,4,1,#6a4a32|r4,6,8,7,#f28a3a|r6,3,4,10,#ffd34d|f5,4,2,4,#ffd34d|f9,2,2,4,#f28a3a|f7,7,2,4,#fff3b0'],
+  pookalam: [0, '', 'o16,16,13,#f28a3a|d16,16,11,#ffd34d|d16,16,9,#f48a8a|d16,16,7,#fffaf3|d16,16,5,#b89af0|d16,16,3,#ffd34d|d16,16,1,#e06a5a|d16,4,1,#4f9a6a|d16,28,1,#4f9a6a|d4,16,1,#4f9a6a|d28,16,1,#4f9a6a'],
+  dhol: [0, '', 'b1,5,14,9,#e06a5a|r1,7,14,1,#ffd34d|r1,11,14,1,#ffd34d|r3,5,1,9,#8a5a3c|r12,5,1,9,#8a5a3c|r0,5,1,9,#fffaf3|r15,5,1,9,#fffaf3'],
+  rakhiThali: [0, '', 'o8,10,6,#ffd34d|r4,10,8,1,#f2c48a|o5,9,1,#f48a8a|o11,9,1,#e06a5a|r7,7,2,3,#c8805a|f7,5,2,2,#ffd34d'],
+  dahiHandi: [16, '', 'r1,0,1,32,#8a5a3c|r14,0,1,32,#8a5a3c|r1,1,14,1,#8a5a3c|r8,2,1,5,#3a3448|o8,12,5,#c8805a|r4,8,9,2,#fffaf3|r3,12,10,1,#f48a8a|r5,15,6,1,#ffd34d'],
+  indianFlag: [14, '', 'r2,0,1,28,#a8a0b8|r3,1,11,3,#f28a3a|r3,4,11,3,#fffaf3|r3,7,11,3,#4f9a6a|r7,4,3,3,#3a6ab8|r8,5,1,1,#fffaf3|b0,27,6,3,#a8a0b8'],
+  tricolourBalloons: [20, '', 'r4,7,1,24,#e8e3dc|r8,11,1,20,#e8e3dc|r11,6,1,25,#e8e3dc|o4,4,3,#f28a3a|o11,3,3,#4f9a6a|o8,8,3,#fffaf3|b3,30,10,4,#7fb2e8'],
+  eidLantern: [6, '', 'r7,0,2,2,#ffd34d|r5,2,6,2,#ffd34d|b3,4,10,12,#4f9a6a|r5,6,6,8,#ffd27a|f6,7,4,6,#fff3b0|r7,6,2,8,#4f9a6a|b4,16,8,3,#ffd34d|r3,19,10,2,#c8a040'],
+  crescentLamp: [12, '', 'r7,16,2,10,#a8a0b8|b4,26,8,2,#a8a0b8|o8,8,7,#3a4280|d8,8,5,#ffd34d|d10,7,5,#3a4280|f12,4,1,1,#fff3b0|f4,13,1,1,#fff3b0|r13,10,1,1,#fff3b0'],
+  datesPlate: [0, '', 'r1,12,14,2,#e8e3dc|o4,10,2,#8a5a3c|o8,9,2,#a8603a|o12,10,2,#8a5a3c|r3,9,1,1,#c8805a|r7,8,1,1,#c8805a'],
+  sheerKhurma: [0, '', 'b2,8,12,6,#fffaf3|r3,8,10,2,#f2dca0|r5,8,1,1,#8a5a3c|r9,9,1,1,#8fd0a8|r7,8,1,1,#c8a078|r1,13,14,1,#e8e3dc'],
+  prayerMat: [0, '', 'b2,1,12,30,#4f9a6a|r4,3,8,26,#6cbf7a|r6,5,4,6,#ffd34d|r7,4,2,1,#ffd34d|r5,14,6,1,#ffd34d|r5,24,6,1,#ffd34d|r2,29,12,1,#ffd34d'],
+  greenBunting: [16, '', 'r1,0,1,32,#8a5a3c|r14,0,1,32,#8a5a3c|r1,2,14,1,#3a3448|r2,3,3,3,#4f9a6a|r3,6,1,1,#4f9a6a|r6,3,3,3,#fffaf3|r7,6,1,1,#fffaf3|r10,3,3,3,#4f9a6a|r11,6,1,1,#4f9a6a|o8,12,2,#ffd34d|r9,11,2,2,#4f9a6a'],
+  biryaniPot: [0, '', 'o8,10,5,#a8a0b8|r3,6,10,2,#ffd27a|o6,6,1,#f28a3a|o10,5,1,#fffaf3|r3,9,10,1,#8a8098|r2,9,1,2,#8a8098|r13,9,1,2,#8a8098'],
+  stocking: [0, '#e06a5a', 'b5,1,6,10,$|b5,8,9,6,$|r5,1,6,3,#fffaf3|r12,10,2,3,#fffaf3|r6,5,4,1,$d'],
+  wreath: [12, '', 'r7,16,2,10,#8a5a3c|b4,26,8,2,#8a5a3c|d8,2,2,#4f9a6a|d12,4,2,#4f9a6a|d14,8,2,#4f9a6a|d12,12,2,#4f9a6a|d8,14,2,#4f9a6a|d4,12,2,#4f9a6a|d2,8,2,#4f9a6a|d4,4,2,#4f9a6a|d8,2,1,#6cbf7a|d14,8,1,#6cbf7a|d2,8,1,#6cbf7a|o12,4,1,#e06a5a|o4,12,1,#e06a5a|r6,13,4,3,#e06a5a'],
+  candyCane: [14, '', 'r6,0,5,2,#e06a5a|r11,1,2,5,#fffaf3|r11,4,2,2,#e06a5a|r4,1,2,3,#fffaf3|r6,2,3,28,#fffaf3|r6,6,3,2,#e06a5a|r6,12,3,2,#e06a5a|r6,18,3,2,#e06a5a|r6,24,3,2,#e06a5a|b3,28,9,2,#a8a0b8'],
+  batGarland: [16, '', 'r1,0,1,32,#3a3448|r14,0,1,32,#3a3448|r1,2,14,1,#3a3448|r5,3,1,3,#a8a0b8|r10,3,1,8,#a8a0b8|r1,6,9,1,#3a3448|r2,7,7,1,#3a3448|r4,5,3,3,#3a3448|r1,5,1,1,#3a3448|r9,5,1,1,#3a3448|f5,6,1,1,#ffd34d|r6,12,8,1,#3a3448|r7,13,6,1,#3a3448|r9,11,3,3,#3a3448|r6,11,1,1,#3a3448|r13,11,1,1,#3a3448|f10,12,1,1,#ffd34d'],
+  witchHat: [0, '', 'r1,12,14,2,#3a3448|b4,6,8,7,#3a3448|b5,3,6,4,#3a3448|r9,1,3,2,#3a3448|r4,10,8,2,#b89af0|r7,10,2,2,#ffd34d'],
+  easterBunny: [6, '', 'o8,15,5,#fffaf3|o8,8,4,#fffaf3|r5,0,2,6,#fffaf3|r9,0,2,6,#fffaf3|r4,0,1,5,O|r7,0,1,5,O|r8,0,1,5,O|r11,0,1,5,O|r6,1,1,3,#f4a6c8|r9,1,1,3,#f4a6c8|r6,8,1,1,O|r9,8,1,1,O|d8,10,1,#f4a6c8|o12,17,2,#fffaf3'],
+  easterLilies: [4, '', 'b4,12,8,8,#c8805a|r5,13,6,1,#e8a070|r7,5,1,7,#4f9a6a|r10,6,1,6,#4f9a6a|r4,7,1,5,#4f9a6a|o7,4,2,#fffaf3|o11,5,2,#fffaf3|o4,6,2,#fffaf3|r7,4,1,1,#ffd34d|r11,5,1,1,#ffd34d|r4,6,1,1,#ffd34d'],
+  hotCrossBuns: [0, '', 'r1,12,14,2,#e8e3dc|o4,10,3,#d9a06a|o11,10,3,#d9a06a|r2,10,5,1,#fffaf3|r4,8,1,5,#fffaf3|r9,10,5,1,#fffaf3|r11,8,1,5,#fffaf3'],
+  lotusLamp: [0, '', 'r4,13,8,1,#8fd0a8|r3,10,10,3,#f4a6c8|r2,9,2,2,#f4a6c8|r12,9,2,2,#f4a6c8|r5,7,2,4,#f7c0c8|r9,7,2,4,#f7c0c8|r7,6,2,5,#fbd8e0|f7,3,2,3,#ffd34d|r7,5,2,1,#c8805a'],
+  deskCalendar: [0, '', 'b3,4,10,10,#fffaf3|r3,4,10,3,#e06a5a|r5,2,1,3,#3a3448|r10,2,1,3,#3a3448|r5,9,1,1,#a8a0b8|r7,9,1,1,#a8a0b8|r9,9,1,1,#e06a5a|r5,11,1,1,#a8a0b8|r7,11,1,1,#a8a0b8|r9,11,1,1,#a8a0b8'],
 };
 type Shape = { k: string; n: number[]; col: string };
 const parsed = new Map<string, Shape[]>();

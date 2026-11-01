@@ -100,7 +100,7 @@ export const ITEMS = {
   pumpkin: { name: 'Jack-o-lantern', w: 1, h: 1, price: 19, solid: true , use: 'admire' },
   christmasTree: { name: 'Holiday tree', w: 1, h: 1, price: 70, solid: true , use: 'admire' },
   snowman: { name: 'Snowman', w: 1, h: 1, price: 25, solid: true , use: 'admire' },
-  giftBox: { name: 'Gift box', w: 1, h: 1, price: 8, solid: false, top: true, colors: 'pastel' },
+  giftBox: { name: 'Gift box', w: 1, h: 1, price: 8, solid: false, top: true, colors: 'pastel', use: 'admire' },
   // pet corner
   petBall: { name: 'Pet ball', w: 1, h: 1, price: 8, solid: false, top: true, pet: 'chase' },
   petBed: { name: 'Pet bed', w: 1, h: 1, price: 25, solid: false, top: true, colors: 'pastel', pet: 'sleep' },
@@ -240,7 +240,7 @@ export const ITEMS = {
   birdPerch: { name: 'Bird perch', w: 1, h: 1, price: 25, solid: true, pet: 'perch', shelf: 'petstuff' },
   petTent: { name: 'Pet tent', w: 1, h: 1, price: 35, solid: true, colors: 'pastel', pet: 'sleep', shelf: 'petstuff' },
   petSofa: { name: 'Pet sofa', w: 1, h: 1, price: 30, solid: true, colors: 'pastel', pet: 'sleep', shelf: 'petstuff' },
-  foodBowl: { name: 'Food bowl', w: 1, h: 1, price: 6, solid: false, top: true, colors: 'pastel', pet: 'eat', shelf: 'petstuff' },
+  foodBowl: { name: 'Food bowl', w: 1, h: 1, price: 6, solid: false, top: true, colors: 'pastel', pet: 'eat', use: 'feed', shelf: 'petstuff' },
   fountain: { name: 'Water fountain', w: 1, h: 1, price: 19, solid: false, top: true, pet: 'eat', shelf: 'petstuff' },
   toyMouse: { name: 'Toy mouse', w: 1, h: 1, price: 4, solid: false, top: true, pet: 'chase', shelf: 'petstuff' },
   chewBone: { name: 'Chew bone', w: 1, h: 1, price: 5, solid: false, top: true, pet: 'chase', shelf: 'petstuff' },
@@ -267,6 +267,43 @@ export const ITEMS = {
   diya: { name: 'Diya lamp', w: 1, h: 1, price: 6, solid: false, top: true, shelf: 'seasonal' },
   sleigh: { name: 'Sleigh', w: 2, h: 1, price: 115, solid: true, colors: 'pastel', act: 'sit', shelf: 'seasonal' },
   reindeer: { name: 'Reindeer plush', w: 1, h: 1, price: 35, solid: true, use: 'hug', shelf: 'seasonal' },
+  // festivals (see EVENTS below for when each can be bought)
+  rangoli: { name: 'Rangoli', w: 2, h: 2, price: 20, solid: false, shelf: 'seasonal' },
+  skyLantern: { name: 'Akash kandil', w: 1, h: 1, price: 25, solid: true, use: 'admire', shelf: 'seasonal' },
+  mithaiBox: { name: 'Mithai box', w: 1, h: 1, price: 9, solid: false, top: true, shelf: 'seasonal' },
+  sparklers: { name: 'Sparkler bucket', w: 1, h: 1, price: 11, solid: true, use: 'admire', shelf: 'seasonal' },
+  gulal: { name: 'Gulal colours', w: 1, h: 1, price: 8, solid: false, top: true, shelf: 'seasonal' },
+  colourRug: { name: 'Holi splash rug', w: 2, h: 1, price: 15, solid: false, shelf: 'seasonal' },
+  dandiya: { name: 'Dandiya sticks', w: 1, h: 1, price: 8, solid: false, top: true, shelf: 'seasonal' },
+  garbaLamp: { name: 'Garba pot lamp', w: 1, h: 1, price: 19, solid: true, use: 'dance', shelf: 'seasonal' },
+  marigold: { name: 'Marigold toran', w: 1, h: 1, price: 15, solid: true, use: 'admire', shelf: 'seasonal' },
+  modak: { name: 'Modak plate', w: 1, h: 1, price: 8, solid: false, top: true, shelf: 'seasonal' },
+  kite: { name: 'Patang kite', w: 1, h: 1, price: 11, solid: true, colors: 'pastel', use: 'play', shelf: 'seasonal' },
+  pongalPot: { name: 'Pongal pot', w: 1, h: 1, price: 15, solid: true, use: 'cook', shelf: 'seasonal' },
+  bonfire: { name: 'Lohri bonfire', w: 1, h: 1, price: 25, solid: true, use: 'warm', shelf: 'seasonal' },
+  pookalam: { name: 'Pookalam', w: 2, h: 2, price: 20, solid: false, shelf: 'seasonal' },
+  dhol: { name: 'Dhol', w: 1, h: 1, price: 30, solid: true, use: 'drum', shelf: 'seasonal' },
+  rakhiThali: { name: 'Rakhi thali', w: 1, h: 1, price: 9, solid: false, top: true, shelf: 'seasonal' },
+  dahiHandi: { name: 'Dahi handi', w: 1, h: 1, price: 19, solid: true, use: 'admire', shelf: 'seasonal' },
+  indianFlag: { name: 'Tiranga flag', w: 1, h: 1, price: 15, solid: true, use: 'admire', shelf: 'seasonal' },
+  tricolourBalloons: { name: 'Tricolour balloons', w: 1, h: 1, price: 11, solid: true, use: 'admire', shelf: 'seasonal' },
+  eidLantern: { name: 'Fanoos lantern', w: 1, h: 1, price: 25, solid: true, use: 'admire', shelf: 'seasonal' },
+  crescentLamp: { name: 'Crescent moon lamp', w: 1, h: 1, price: 30, solid: true, use: 'admire', shelf: 'seasonal' },
+  datesPlate: { name: 'Plate of dates', w: 1, h: 1, price: 6, solid: false, top: true, shelf: 'seasonal' },
+  sheerKhurma: { name: 'Sheer khurma', w: 1, h: 1, price: 8, solid: false, top: true, shelf: 'seasonal' },
+  prayerMat: { name: 'Prayer mat', w: 1, h: 2, price: 15, solid: false, shelf: 'seasonal' },
+  greenBunting: { name: 'Green bunting', w: 1, h: 1, price: 11, solid: true, use: 'admire', shelf: 'seasonal' },
+  biryaniPot: { name: 'Biryani handi', w: 1, h: 1, price: 11, solid: false, top: true, shelf: 'seasonal' },
+  stocking: { name: 'Christmas stocking', w: 1, h: 1, price: 8, solid: false, top: true, colors: 'pastel', shelf: 'seasonal' },
+  wreath: { name: 'Wreath', w: 1, h: 1, price: 19, solid: true, use: 'admire', shelf: 'seasonal' },
+  candyCane: { name: 'Giant candy cane', w: 1, h: 1, price: 15, solid: true, use: 'admire', shelf: 'seasonal' },
+  batGarland: { name: 'Bat garland', w: 1, h: 1, price: 11, solid: true, use: 'admire', shelf: 'seasonal' },
+  witchHat: { name: 'Witch hat', w: 1, h: 1, price: 8, solid: false, top: true, shelf: 'seasonal' },
+  easterBunny: { name: 'Easter bunny', w: 1, h: 1, price: 25, solid: true, use: 'hug', shelf: 'seasonal' },
+  easterLilies: { name: 'Easter lilies', w: 1, h: 1, price: 14, solid: true, use: 'water', shelf: 'seasonal' },
+  hotCrossBuns: { name: 'Hot cross buns', w: 1, h: 1, price: 8, solid: false, top: true, shelf: 'seasonal' },
+  lotusLamp: { name: 'Lotus lamp', w: 1, h: 1, price: 11, solid: false, top: true, shelf: 'seasonal' },
+  deskCalendar: { name: 'Desk calendar', w: 1, h: 1, price: 9, solid: false, top: true, shelf: 'decor' },
 };
 // Shop shelves in order. Items list their shelf; items with no shelf (the starter desk and chair, retired bathroom pieces) aren't sold.
 export const SHELVES = [
@@ -295,9 +332,72 @@ const FIRST_ITEMS = {
   games: ['arcade', 'gameConsole', 'poolTable', 'foosball', 'trampoline'],
   fitness: ['gymBall', 'dumbbells', 'punchingBag', 'exerciseBike', 'treadmill'],
   petstuff: ['catTower', 'doghouse', 'petBed', 'petBall'],
-  seasonal: ['pumpkin', 'christmasTree', 'snowman', 'giftBox'],
+  seasonal: ['pumpkin', 'christmasTree', 'snowman'],
 };
 for (const [shelf, keys] of Object.entries(FIRST_ITEMS)) for (const k of keys) ITEMS[k].shelf = shelf;
+ITEMS.giftBox.shelf = 'decor'; // sending gifts works all year, so the box is always for sale
+
+// Festivals: from `before` days ahead to `after` days after the main day, the festival's items lead the Seasonal shelf
+// (everything stays for sale all year). date: 'MM-DD' every year, 'easter' (worked out), or
+// per-year dates for festivals that follow the moon. Those are best-known dates and can be a day off (Eid depends on
+// the moon sighting): check them, and add next year's before it starts.
+export const EVENTS = [
+  { id: 'newyear', name: 'New Year', emoji: '🎉', date: '01-01', before: 5, after: 1, items: ['partyBalloons', 'sparklers'] },
+  { id: 'sankranti', name: 'Lohri, Makar Sankranti & Pongal', emoji: '🪁', date: '01-14', before: 4, after: 3, items: ['kite', 'bonfire', 'pongalPot'] },
+  { id: 'republic', name: 'Republic Day', emoji: '🇮🇳', date: '01-26', before: 3, after: 1, items: ['indianFlag', 'tricolourBalloons'] },
+  { id: 'valentine', name: "Valentine's Day", emoji: '💝', date: '02-14', before: 7, after: 1, items: ['heartBalloon'] },
+  { id: 'holi', name: 'Holi', emoji: '🎨', date: { 2026: '03-04', 2027: '03-22' }, before: 7, after: 2, items: ['gulal', 'colourRug'] },
+  { id: 'stpatrick', name: "St Patrick's Day", emoji: '☘️', date: '03-17', before: 5, after: 1, items: ['clover'] },
+  // The whole of Ramadan, then Eid al-Fitr.
+  { id: 'eid', name: 'Ramadan & Eid al-Fitr', emoji: '🌙', date: { 2026: '03-20', 2027: '03-10' }, before: 30, after: 3, items: ['eidLantern', 'crescentLamp', 'datesPlate', 'sheerKhurma', 'prayerMat', 'lanternString'] },
+  { id: 'easter', name: 'Good Friday & Easter', emoji: '🐣', date: 'easter', before: 10, after: 2, items: ['eggBasket', 'easterBunny', 'easterLilies', 'hotCrossBuns'] },
+  { id: 'baisakhi', name: 'Baisakhi & Bihu', emoji: '🌾', date: '04-14', before: 4, after: 3, items: ['dhol', 'marigold'] },
+  { id: 'buddha', name: 'Buddha Purnima', emoji: '🪷', date: { 2026: '05-01', 2027: '05-20' }, before: 4, after: 2, items: ['lotusLamp', 'diya'] },
+  { id: 'eidadha', name: 'Eid al-Adha', emoji: '🌙', date: { 2026: '05-27', 2027: '05-17' }, before: 5, after: 3, items: ['eidLantern', 'crescentLamp', 'biryaniPot', 'prayerMat'] },
+  { id: 'independence', name: 'Independence Day', emoji: '🇮🇳', date: '08-15', before: 4, after: 1, items: ['indianFlag', 'tricolourBalloons', 'kite'] },
+  { id: 'onam', name: 'Onam', emoji: '🌼', date: { 2026: '08-26', 2027: '09-12' }, before: 9, after: 2, items: ['pookalam', 'marigold'] },
+  { id: 'rakhi', name: 'Raksha Bandhan', emoji: '🧵', date: { 2026: '08-28', 2027: '08-17' }, before: 5, after: 1, items: ['rakhiThali', 'mithaiBox'] },
+  { id: 'milad', name: 'Milad-un-Nabi', emoji: '🕌', date: { 2026: '08-26', 2027: '08-15' }, before: 4, after: 2, items: ['greenBunting', 'crescentLamp', 'lanternString'] },
+  { id: 'janmashtami', name: 'Janmashtami', emoji: '🪈', date: { 2026: '09-04', 2027: '08-25' }, before: 4, after: 1, items: ['dahiHandi', 'mithaiBox'] },
+  { id: 'ganesh', name: 'Ganesh Chaturthi', emoji: '🐘', date: { 2026: '09-14', 2027: '09-04' }, before: 4, after: 10, items: ['modak', 'marigold', 'dhol'] },
+  // Navratri's nine nights run up to Dussehra, alongside Durga Puja.
+  { id: 'navratri', name: 'Navratri, Durga Puja & Dussehra', emoji: '🪔', date: { 2026: '10-20', 2027: '10-09' }, before: 11, after: 2, items: ['dandiya', 'garbaLamp', 'marigold', 'dhol'] },
+  { id: 'halloween', name: 'Halloween', emoji: '🎃', date: '10-31', before: 14, after: 2, items: ['pumpkin', 'ghost', 'cauldron', 'tombstone', 'candyBowl', 'scarecrow', 'batGarland', 'witchHat'] },
+  { id: 'diwali', name: 'Diwali', emoji: '🪔', date: { 2026: '11-08', 2027: '10-29' }, before: 10, after: 3, items: ['diya', 'rangoli', 'skyLantern', 'mithaiBox', 'sparklers', 'lanternString', 'marigold'] },
+  { id: 'gurpurab', name: 'Guru Nanak Jayanti', emoji: '🕯️', date: { 2026: '11-24', 2027: '11-14' }, before: 4, after: 1, items: ['diya', 'candles', 'lanternString'] },
+  { id: 'hanukkah', name: 'Hanukkah', emoji: '🕎', date: { 2026: '12-04', 2027: '12-24' }, before: 3, after: 8, items: ['menorah'] },
+  { id: 'christmas', name: 'Christmas', emoji: '🎄', date: '12-25', before: 24, after: 6, items: ['christmasTree', 'snowman', 'sleigh', 'reindeer', 'gingerbread', 'snowflakeLamp', 'stocking', 'wreath', 'candyCane'] },
+];
+
+const DAY = 86_400_000;
+// Easter Sunday (Gregorian calendar, anonymous algorithm).
+export function easterSunday(y) {
+  const a = y % 19, b = Math.floor(y / 100), c = y % 100, d = Math.floor(b / 4), e = b % 4;
+  const f = Math.floor((b + 8) / 25), g = Math.floor((b - f + 1) / 3), h = (19 * a + b - d - g + 15) % 30;
+  const i = Math.floor(c / 4), k = c % 4, l = (32 + 2 * e + 2 * i - h - k) % 7, m = Math.floor((a + 11 * h + 22 * l) / 451);
+  const n = h + l - 7 * m + 114;
+  return new Date(y, Math.floor(n / 31) - 1, (n % 31) + 1);
+}
+function mainDay(ev, y) {
+  if (ev.date === 'easter') return easterSunday(y);
+  const md = typeof ev.date === 'string' ? ev.date : ev.date[y];
+  if (!md) return null;
+  const [m, d] = md.split('-').map(Number);
+  return new Date(y, m - 1, d);
+}
+// Each festival's next window that hasn't ended yet (windows can cross New Year), soonest first.
+function windows(now) {
+  const out = [];
+  for (const ev of EVENTS) for (const y of [now.getFullYear() - 1, now.getFullYear(), now.getFullYear() + 1]) {
+    const day = mainDay(ev, y);
+    if (!day) continue;
+    const from = new Date(+day - ev.before * DAY), ends = new Date(+day + (ev.after + 1) * DAY);
+    if (ends > now) { out.push({ ...ev, day, from, ends }); break; }
+  }
+  return out.sort((a, b) => a.from - b.from);
+}
+export const activeEvents = (now = new Date()) => windows(now).filter((e) => e.from <= now);
+export const nextEvent = (now = new Date()) => windows(now).find((e) => e.from > now) ?? null;
 export const USES = [...new Set(Object.values(ITEMS).map((i) => i.use).filter(Boolean))];
 export const PASTELS = ['#f4a6b8', '#9db4ee', '#8fd0a8', '#ffd27a', '#b89af0', '#f2b48a', '#e8e3dc', '#7a6a8a'];
 export const WOODS = ['#d9a06a', '#b07a4e', '#8a5a3c', '#f0d2a8', '#fffaf3', '#9db4ee'];
@@ -368,6 +468,15 @@ export const FOCUS_LENGTHS = [15, 25, 45, 60];
 // Room upgrades: each level makes the floor bigger. EXPAND_COST[n] is the price to reach level n.
 export const ROOM_SIZES = [{ w: 10, h: 8 }, { w: 12, h: 9 }, { w: 14, h: 10 }, { w: 16, h: 11 }];
 export const EXPAND_COST = [0, 250, 600, 1200];
+
+// Plants want watering every few days, or they droop (looks only, nothing is lost).
+export const THIRSTY_MS = 3 * 86_400_000;
+export const isPlant = (item) => ITEMS[item]?.use === 'water';
+// "Everyone" house to-dos: finishing one gives each person coins and money off their next shop buy, a few times a day.
+export const TASK_COINS = 5, TASK_REWARDS_PER_DAY = 3;
+export const discounted = (price, discount) => (discount ? Math.ceil(price * 0.9) : price);
+// Gifts between housemates: a fixed amount, a few a day, so coins can't be shovelled between accounts.
+export const GIFT_COINS = 10, GIFTS_PER_DAY = 5;
 // Extra rooms: everyone starts with one; ROOM_COST[n] buys room number n + 1.
 export const MAX_ROOMS = 3;
 export const ROOM_COST = [0, 1500, 2500];

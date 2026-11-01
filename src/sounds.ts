@@ -263,3 +263,22 @@ export function toggleSound(item: string): boolean {
   playing.set(key, { ctx, out, stop: SOUNDS[key][1](ctx, out) });
   return true;
 }
+
+// A few soft sine notes in a row. Fine outside a click once the page has been clicked before.
+function notes(list: number[], gap: number, vol: number) {
+  const ctx = new AudioContext();
+  list.forEach((m, i) => {
+    const o = ctx.createOscillator(), g = ctx.createGain(), at = ctx.currentTime + 0.05 + i * gap;
+    o.type = 'sine';
+    o.frequency.value = hz(m);
+    g.gain.setValueAtTime(0, at);
+    g.gain.linearRampToValueAtTime(vol, at + 0.02);
+    g.gain.exponentialRampToValueAtTime(0.0001, at + 1.2);
+    o.connect(g).connect(ctx.destination);
+    o.start(at);
+    o.stop(at + 1.3);
+  });
+  setTimeout(() => ctx.close(), 2500);
+}
+export const chime = () => notes([72, 76, 79], 0.25, 0.25); // rewards, end of a break
+export const ping = () => notes([84, 91], 0.12, 0.12); // a new message

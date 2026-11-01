@@ -470,6 +470,9 @@ body.side-open #side { display: flex; }
 .todo-text small { display: block; font-size: 11px; color: var(--muted); }
 .check { width: 26px; height: 26px; padding: 0; flex: none; background: var(--paper); color: var(--ink); box-shadow: 0 2px 0 var(--ink); font-size: 15px; }
 li.done .check { background: #6fcf8a; color: #fff; }
+.check.mine { background: #cdeed6; } /* ticked by me, still waiting on others */
+.invite { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 10px; background: #eef3ff; border: 2px solid var(--ink); border-radius: 12px; }
+.invite-check { display: flex; align-items: center; justify-content: center; gap: 6px; margin-top: 10px; }
 .del { width: 26px; height: 26px; padding: 0; flex: none; background: none; border: none; box-shadow: none; color: var(--muted); }
 #chatLog { flex: 1; overflow-y: auto; padding: 8px 12px; display: flex; flex-direction: column; gap: 6px; font-size: 15px; }
 #chatLog p { margin: 0; padding: 6px 10px; background: #fff; border: 2px solid var(--ink); border-radius: 12px 12px 12px 4px; align-self: flex-start; max-width: 90%; overflow-wrap: anywhere; }
@@ -806,3 +809,11 @@ body.signed-out #deck, body.signed-out #game, body.signed-out #zoom { display: n
 .code-small { color: var(--muted); font-size: 13px; letter-spacing: 1px; }
 .members .who { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .members .tag, .members li button.small { flex-shrink: 0; white-space: nowrap; }
+
+/* What a click will do, next to the pointer (or over a tapping finger). */
+#tip { position: fixed; z-index: 60; pointer-events: none; padding: 4px 9px; border-radius: 8px; background: var(--ink); color: #fff; font-size: 13px; font-weight: 600; white-space: nowrap; }
+/* First-visit tour card, above the dock. */
+#tour { position: fixed; z-index: 55; left: 50%; bottom: 130px; transform: translateX(-50%); width: min(360px, calc(100vw - 32px)); padding: 12px 14px; background: #fffaf3; border: 2px solid var(--ink); border-radius: 14px; box-shadow: 0 3px 0 var(--ink); }
+#tour p { margin: 0 0 10px; }
+#tour .row { align-items: center; justify-content: flex-end; gap: 8px; }
+#tour small { margin-right: auto; color: var(--muted); }

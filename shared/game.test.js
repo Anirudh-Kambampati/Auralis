@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   buildGrid, canPlace, placeSwaps, focusReward, colorsFor, roomSize, PETS, EXPAND_COST,
+  ITEMS, EVENTS, easterSunday, activeEvents, nextEvent,
   DOOR, WALL, FLOOR, BLOCKED, VOID, ROOM_W, colsFor,
 } from './game.js';
 
@@ -114,4 +115,17 @@ test('recolour palettes and pet prices', () => {
 test('friends bonus', () => {
   assert.equal(focusReward(25, false), 25);
   assert.equal(focusReward(25, true), 32);
+});
+
+test('festivals: Easter, windows across New Year', () => {
+  assert.equal(easterSunday(2025).toDateString(), new Date(2025, 3, 20).toDateString());
+  assert.equal(easterSunday(2026).toDateString(), new Date(2026, 3, 5).toDateString());
+  assert.equal(easterSunday(2027).toDateString(), new Date(2027, 2, 28).toDateString());
+  const ids = (d) => activeEvents(d).map((e) => e.id);
+  assert.ok(ids(new Date(2026, 3, 3)).includes('easter')); // Good Friday
+  assert.deepEqual(ids(new Date(2026, 11, 28)).sort(), ['christmas', 'newyear']);
+  assert.ok(ids(new Date(2027, 0, 1)).includes('newyear'));
+  assert.equal(nextEvent(new Date(2026, 10, 1)).id, 'gurpurab');
+
+  for (const e of EVENTS) for (const k of e.items) assert.ok(ITEMS[k], `${e.id}: ${k}`);
 });

@@ -10,6 +10,7 @@ import { files, isPng } from './files.js';
 import {
   ITEMS, WALLPAPERS, FLOORS, SKINS, HAIRS, SHIRTS, STYLES, FACES, OUTFITS, FOCUS_LENGTHS, canPlace, placeSwaps, focusReward,
   WALL_PATTERNS, FLOOR_STYLES, PETS, MAX_PETS, EXPAND_COST, colorsFor, USES, PET_ACCS, MAX_ROOMS, ROOM_COST,
+  isPlant, TASK_COINS, TASK_REWARDS_PER_DAY, discounted, GIFT_COINS, GIFTS_PER_DAY,
 } from '../shared/game.js';
 import { parseVideo } from '../shared/watch.js';
 
@@ -25,6 +26,8 @@ console.log(`Storage: ${process.env.DATABASE_URL ? 'Postgres (DATABASE_URL)' : '
 const { db } = store;
 // Players used to have one `room`; now they have `rooms`, the first being the original.
 for (const p of Object.values(db.players)) if (!p.rooms) { p.rooms = [p.room ?? newRoom()]; delete p.room; }
+// Plants placed before watering existed start out freshly watered.
+for (const p of Object.values(db.players)) for (const r of p.rooms) for (const f of r.furniture) if (isPlant(f.item)) f.wateredAt ??= Date.now();
 let saveTimer = null;
 const save = () => {
   clearTimeout(saveTimer);
@@ -44,6 +47,7 @@ const lastChat = new Map(); // playerId -> ms, simple flood guard
 // house code -> the video it is watching together: { src, by, byName, playing, pos, at }. Not saved: a restart ends it.
 const watches = new Map();
 const lastDm = new Map(); // playerId -> ms, same guard for private messages
+const lastCheer = new Map(); // playerId -> ms, so cheers can't be spammed
 let nextId = Date.now();
 
 const newCode = () => {
@@ -95,8 +99,29 @@ function leaveHouse(p) {
   if (!h) return;
   h.members = h.members.filter((id) => id !== p.id);
   if (!h.members.length && !h.owner) { delete db.houses[h.code]; store.deleteHouse(h.code); }
-  else broadcastHouse(h.code);
+  else { settleTodos(h); broadcastHouse(h.code); }
   p.house = null;
+}
+
+// "Everyone" to-dos are done once everybody in the house right now has ticked them. The first time one is finished
+// with two or more people, each of them gets coins and money off their next shop buy (capped per day, so it can't be farmed).
+function settleTodos(h) {
+  for (const t of h.todos ?? []) {
+    if (!t.all) continue;
+    t.done = h.members.every((id) => t.ticks?.includes(id));
+    if (!t.done || t.rewarded || h.members.length < 2) continue;
+    t.rewarded = true;
+    const day = new Date().toDateString();
+    for (const id of h.members) {
+      const q = db.players[id];
+      if (q.taskDay !== day) { q.taskDay = day; q.taskRewards = 0; }
+      if (q.taskRewards >= TASK_REWARDS_PER_DAY) continue;
+      q.taskRewards++;
+      q.coins += TASK_COINS;
+      q.discount = true;
+      send(sockets.get(id), { t: 'reward', text: `Everyone finished "${t.text}"! +${TASK_COINS} coins and 10% off your next shop buy.` });
+    }
+  }
 }
 
 const pick = (list, v, fallback) => (list.includes(v) ? v : fallback);
@@ -116,7 +141,8 @@ function trimDmThreads(rec) {
 function publicPlayer(p) {
   return {
     id: p.id, name: p.name, look: p.look, rooms: p.rooms, focus: p.focus, pets: p.pets ?? [],
-    totalMinutes: p.totalMinutes, online: sockets.has(p.id), pos: positions.get(p.id) ?? null,
+    totalMinutes: p.totalMinutes, online: sockets.has(p.id), pos: positions.get(p.id) ?? null, fedAt: p.fedAt ?? 0,
+    exams: p.exams ?? [],
   };
 }
 
@@ -131,12 +157,13 @@ function broadcastHouse(code) {
   // now lets clients work out how far a playing video has got without trusting their own clocks.
   const house = {
     code, owner: h.owner ?? null, ownerName: db.players[h.owner]?.name ?? null,
-    members: h.members.map((id) => publicPlayer(db.players[id])), todos: h.todos ?? [], chat: h.chat ?? [], watch: w ? { ...w, now: Date.now() } : null,
+    members: h.members.map((id) => publicPlayer(db.players[id])), todos: h.todos ?? [], chat: h.chat ?? [],
+    group: h.group?.endsAt > Date.now() ? h.group : null, // a group focus session housemates can still join watch: w ? { ...w, now: Date.now() } : null,
   };
   for (const id of h.members) {
     const p = db.players[id];
     // Personal to-dos ride along in `me`, which only this player receives.
-    send(sockets.get(id), { t: 'state', house, me: { id: p.id, home: p.home, ...houseLists(p), coins: p.coins, inventory: p.inventory, petAccs: p.petAccs ?? [], sessions: p.sessions ?? [], subjects: p.subjects ?? [], hiddenSubjects: p.hiddenSubjects ?? [], todos: p.todos ?? [], dm: p.dm ?? {} } });
+    send(sockets.get(id), { t: 'state', house, me: { id: p.id, home: p.home, ...houseLists(p), coins: p.coins, discount: !!p.discount, notes: p.notes ?? [], inventory: p.inventory, petAccs: p.petAccs ?? [], sessions: p.sessions ?? [], subjects: p.subjects ?? [], hiddenSubjects: p.hiddenSubjects ?? [], todos: p.todos ?? [], dm: p.dm ?? {} } });
   }
 }
 
@@ -146,7 +173,7 @@ function newRoom() { return { wallpaper: WALLPAPERS[0], floor: FLOORS[0], furnit
 
 function handle(p, m) {
   const room = roomOf(p, m);
-  if (['place', 'move', 'pickup', 'room', 'flip', 'restyle', 'shape', 'expand'].includes(m.t) && !room) return;
+  if (['place', 'move', 'pickup', 'room', 'flip', 'restyle', 'shape', 'expand', 'curtains', 'light'].includes(m.t) && !room) return;
   switch (m.t) {
     case 'look':
       p.name = cleanName(m.name);
@@ -167,6 +194,7 @@ function handle(p, m) {
       leaveHouse(p);
       db.houses[code].members.push(p.id);
       p.house = code;
+      settleTodos(db.houses[code]);
       remember(p, code);
       positions.delete(p.id);
       break;
@@ -244,7 +272,14 @@ function handle(p, m) {
       if (!FOCUS_LENGTHS.includes(m.minutes) || p.focus) return;
       p.focus = { minutes: m.minutes, endsAt: Date.now() + m.minutes * 60_000, tag: cleanText(m.tag, 24) || 'Study' };
       p.hiddenSubjects = (p.hiddenSubjects ?? []).filter((t) => t !== p.focus.tag); // using a subject again brings it back
+      if (m.group) db.houses[p.house].group = { by: p.id, byName: p.name, minutes: m.minutes, endsAt: p.focus.endsAt, tag: p.focus.tag };
       break;
+    case 'focus_join': { // join a housemate's group session: same subject, and the timer ends when theirs does
+      const g = db.houses[p.house].group, left = g ? g.endsAt - Date.now() : 0;
+      if (p.focus || left < 60_000) return;
+      p.focus = { minutes: Math.round(left / 60_000), endsAt: g.endsAt, tag: g.tag };
+      break;
+    }
     case 'focus_cancel':
       p.focus = null;
       break;
@@ -268,8 +303,11 @@ function handle(p, m) {
     }
     case 'buy': {
       const it = ITEMS[m.item];
-      if (!it || p.coins < it.price) return;
-      p.coins -= it.price;
+      const price = it && discounted(it.price, p.discount);
+      if (!it || p.coins < price) return;
+
+      p.coins -= price;
+      p.discount = false;
       p.inventory[m.item] = (p.inventory[m.item] ?? 0) + 1;
       break;
     }
@@ -279,7 +317,7 @@ function handle(p, m) {
       p.inventory[m.item]--;
       for (const f of room.furniture.filter((_, i) => out.includes(i))) p.inventory[f.item] = (p.inventory[f.item] ?? 0) + 1;
       room.furniture = room.furniture.filter((_, i) => !out.includes(i));
-      room.furniture.push({ item: m.item, x: m.x, y: m.y });
+      room.furniture.push({ item: m.item, x: m.x, y: m.y, ...(isPlant(m.item) ? { wateredAt: Date.now() } : {}) });
       break;
     }
     case 'move': {
@@ -295,6 +333,70 @@ function handle(p, m) {
       if (!f) return;
       room.furniture.splice(m.index, 1);
       p.inventory[f.item] = (p.inventory[f.item] ?? 0) + 1;
+      break;
+    }
+    case 'gift': { // send a housemate some coins, a few times a day
+      const them = db.houses[p.house].members.includes(m.to) && m.to !== p.id ? db.players[m.to] : null;
+      if (!them || p.coins < GIFT_COINS) return;
+      const day = new Date().toDateString();
+      if (p.giftDay !== day) { p.giftDay = day; p.giftsSent = 0; }
+      if (p.giftsSent >= GIFTS_PER_DAY) return send(sockets.get(p.id), { t: 'error', text: `You can send ${GIFTS_PER_DAY} gifts a day. Try again tomorrow!` });
+      p.giftsSent++;
+      p.coins -= GIFT_COINS;
+      them.coins += GIFT_COINS;
+      send(sockets.get(p.id), { t: 'reward', text: `🎁 Sent ${them.name} ${GIFT_COINS} coins.` });
+      send(sockets.get(them.id), { t: 'reward', text: `🎁 ${p.name} sent you ${GIFT_COINS} coins!` });
+      break;
+    }
+    case 'feed': { // anyone in the house can fill a pet bowl; it feeds that room owner's pets (hearts float over them)
+      const owner = db.houses[p.house].members.includes(m.owner) ? db.players[m.owner] : null;
+      if (owner?.rooms[m.r]?.furniture[m.index]?.item !== 'foodBowl' || !owner.pets?.length) return;
+      owner.fedAt = Date.now();
+      if (owner.id !== p.id) send(sockets.get(owner.id), { t: 'reward', text: `🐾 ${p.name} fed your pets.` });
+      break;
+    }
+    case 'note': { // leave a note on a housemate's desk; they see it now, or next time they log in
+      const them = db.houses[p.house].members.includes(m.to) && m.to !== p.id ? db.players[m.to] : null;
+      const text = cleanText(m.text, 140);
+      if (!them || !text) return;
+      them.notes = [...(them.notes ?? []), { from: p.name, text, at: Date.now() }].slice(-10);
+      send(sockets.get(p.id), { t: 'reward', text: `📝 Left a note on ${them.name}'s desk.` });
+      break;
+    }
+    case 'cheer': { // a little 👏 over a housemate who's studying, at most every few seconds
+      const h = db.houses[p.house], them = h.members.includes(m.to) && m.to !== p.id ? db.players[m.to] : null;
+      if (!them?.focus || Date.now() - (lastCheer.get(p.id) ?? 0) < 5000) return;
+      lastCheer.set(p.id, Date.now());
+      for (const id of h.members) send(sockets.get(id), { t: 'cheer', from: p.name, to: them.id });
+      return; // nothing saved, nothing to rebroadcast
+    }
+    case 'exam_add': { // an exam date to count down to; housemates see it on your desk calendar
+      const subject = cleanText(m.subject, 24), at = Date.parse(`${m.date}T00:00:00`);
+      if (!subject || !/^\d{4}-\d{2}-\d{2}$/.test(m.date ?? '') || !(at > Date.now() - 86_400_000) || at > Date.now() + 2 * 365 * 86_400_000) return;
+      p.exams = [...(p.exams ?? []).filter((e) => Date.parse(`${e.date}T00:00:00`) > Date.now() - 86_400_000), { subject, date: m.date }]
+        .sort((a, b) => a.date.localeCompare(b.date)).slice(0, 6);
+      break;
+    }
+    case 'exam_del':
+      p.exams = (p.exams ?? []).filter((_, i) => i !== m.index);
+      break;
+    case 'notes_read':
+      p.notes = [];
+      break;
+    case 'light': { // switch a lamp in your own room on or off
+      const f = room.furniture[m.index];
+      if (!f) return;
+      f.off = !f.off || undefined;
+      break;
+    }
+    case 'curtains':
+      room.curtains = !room.curtains;
+      break;
+    case 'water': { // anyone in the house can water anyone's plants
+      const owner = db.houses[p.house].members.includes(m.owner) ? db.players[m.owner] : null;
+      const f = owner?.rooms[m.r]?.furniture[m.index];
+      if (!f || !isPlant(f.item)) return;
+      f.wateredAt = Date.now();
       break;
     }
     case 'room':
@@ -365,13 +467,15 @@ function handle(p, m) {
       h.todos ??= [];
       if (!text) return;
       if (h.todos.length >= 60) return send(sockets.get(p.id), { t: 'error', text: 'The house list is full (60). Clear some done ones first.' });
-      h.todos.push({ id: nextId++, text, done: false, by: p.name });
+      h.todos.push({ id: nextId++, text, done: false, by: p.name, ...(m.all ? { all: true, ticks: [] } : {}) });
       break;
     }
     case 'todo_toggle': {
-      const t = db.houses[p.house].todos?.find((x) => x.id === m.id);
+      const h = db.houses[p.house], t = h.todos?.find((x) => x.id === m.id);
       if (!t) return;
-      t.done = !t.done;
+      if (!t.all) { t.done = !t.done; break; }
+      t.ticks = t.ticks.includes(p.id) ? t.ticks.filter((id) => id !== p.id) : [...t.ticks, p.id];
+      settleTodos(h);
       break;
     }
     case 'todo_del': {
