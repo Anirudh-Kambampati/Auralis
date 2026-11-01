@@ -184,27 +184,30 @@ const STYLE_OVERLAY: Record<string, Overlay> = {
 };
 // Short styles keep the hair off the cheeks: no long sideburns down the face.
 const CROPPED = new Set(['short', 'side part', 'spiky', 'messy', 'undercut', 'quiff', 'fauxhawk', 'topknot', 'slick', 'curtains', 'crop', 'mohawk', 'bowl', 'manbun', 'pixie']);
-// Faces at full detail (32 wide, rows of the doubled sprite): big anime eyes (lash, highlight, two-tone iris), brows,
-// mouths, blush and tears. e = lash, i/I = iris, w = shine, m = mouth, b = blush, q = tears.
-const FACE_ART: Record<string, Overlay> = {
-  happy: { 18: '.......eeee..........eeee.......', 19: '......eeeeee........eeeeee......', 20: '......ewwiie........ewwiie......', 21: '......ewiiie........ewiiie......', 22: '......eiiIIe........eiiIIe......', 23: '......eiIIIe........eiIIIe......', 24: '.......eeee..........eeee.......', 25: '...bbb........m..m........bbb...', 26: '...............mm...............' },
-  sleepy: { 18: '................................', 19: '................................', 20: '................................', 21: '................................', 22: '......eeeeee........eeeeee......', 23: '.......eeee..........eeee.......', 25: '...bbb....................bbb...', 26: '...............mm...............' },
-  wink: { 18: '.......eeee.....................', 19: '......eeeeee....................', 20: '......ewwiie....................', 21: '......ewiiie.........eeee.......', 22: '......eiiIIe........e....e......', 23: '......eiIIIe....................', 24: '.......eeee.....................', 25: '...bbb........m..m........bbb...', 26: '...............mm...............' },
-  grin: { 18: '.......eeee..........eeee.......', 19: '......eeeeee........eeeeee......', 20: '......ewwiie........ewwiie......', 21: '......ewiiie........ewiiie......', 22: '......eiiIIe........eiiIIe......', 23: '......eiIIIe........eiIIIe......', 24: '.......eeee..........eeee.......', 25: '...bbb.......mwwwwm.......bbb...', 26: '..............mmmm..............' },
-  cool: { 19: '.....eeeeeeeeeeeeeeeeeeeeee.....', 20: '.....ewweeee........ewweeee.....', 21: '.....eeweeee........eeweeee.....', 22: '......eeeee..........eeeee......', 25: '...............mmm..............', 26: '..................m.............' },
-  surprised: { 15: '.......eeee..........eeee.......', 18: '.......eeee..........eeee.......', 19: '......ewwwwe........ewwwwe......', 20: '......ewiiwe........ewiiwe......', 21: '......ewiiwe........ewiiwe......', 22: '......ewwwwe........ewwwwe......', 23: '.......eeee..........eeee.......', 25: '...............mm...............', 26: '..............mmmm..............', 27: '...............mm...............' },
-  blush: { 18: '................................', 19: '................................', 20: '................................', 21: '.......eeee..........eeee.......', 22: '......e....e........e....e......', 24: '..b.b.b..................b.b.b..', 25: '...b.b.b......m..m........b.b.b.', 26: '...............mm...............' },
-  smirk: { 18: '................................', 19: '................................', 20: '......eeeeee........eeeeee......', 21: '......ewiiie........ewiiie......', 22: '......eiiIIe........eiiIIe......', 23: '......eiIIIe........eiIIIe......', 24: '.......eeee..........eeee.......', 25: '...bbb...........m........bbb...', 26: '..............mmm...............' },
-  fierce: { 15: '......ee...............ee.......', 16: '........ee...........ee.........', 18: '................................', 19: '................................', 20: '......eeeeee........eeeeee......', 21: '......ewiiie........ewiiie......', 22: '......eiiIIe........eiiIIe......', 23: '......eiIIIe........eiIIIe......', 24: '.......eeee..........eeee.......', 25: '.............mwwwwm.............', 26: '..............mmmm..............' },
-  silly: { 18: '.......eeee.....................', 19: '......eeeeee....................', 20: '......ewwiie....................', 21: '......ewiiie.........eeee.......', 22: '......eiiIIe........e....e......', 23: '......eiIIIe....................', 24: '.......eeee.....................', 25: '...bbb........mmmm........bbb...', 26: '...............bb...............', 27: '...............bb...............' },
-  calm: { 18: '................................', 19: '................................', 20: '......eeeeee........eeeeee......', 21: '......ewiiie........ewiiie......', 22: '......eiiIIe........eiiIIe......', 23: '......eiIIIe........eiIIIe......', 24: '.......eeee..........eeee.......', 25: '...bbb....................bbb...', 26: '...............mm...............' },
-  laugh: { 18: '................................', 19: '................................', 20: '......e..................e......', 21: '.......ee..............ee.......', 22: '.........ee..........ee.........', 23: '.......ee..............ee.......', 24: '......e..................e......', 25: '...bbb.......mmmmmm.......bbb...', 26: '..............mbbm..............' },
-  sad: { 15: '.........ee.........ee..........', 16: '.......ee.............ee........', 18: '.......eeee..........eeee.......', 19: '......eeeeee........eeeeee......', 20: '......ewwiie........ewwiie......', 21: '......ewwiie........ewwiie......', 22: '......eiiIIe........eiiIIe......', 23: '......eiIIIe........eiIIIe......', 24: '.......eeee..........eeee.......', 25: '...............mm...............', 26: '..............m..m..............' },
-  cry: { 15: '.........ee.........ee..........', 16: '.......ee.............ee........', 18: '................................', 19: '................................', 20: '................................', 21: '......eeeeee........eeeeee......', 22: '......qeeeeq........qeeeeq......', 23: '......q....q........q....q......', 24: '......q....q........q....q......', 25: '......q....q..mmmm..q....q......', 26: '......q....q..mbbm..q....q......' },
-  angry: { 15: '......ee...............ee.......', 16: '........ee...........ee.........', 18: '................................', 19: '................................', 20: '......eeeeee........eeeeee......', 21: '......ewiiie........ewiiie......', 22: '......eiIIIe........eiIIIe......', 23: '.......eeee..........eeee.......', 25: '..............mmmm..............', 26: '..............m..m..............' },
-  shy: { 18: '................................', 19: '.......eeee..........eeee.......', 20: '......eeeeee........eeeeee......', 21: '......eiiiie........eiiiie......', 22: '......eiiwIe........eiiwIe......', 23: '......eiwIIe........eiwIIe......', 24: '..bbbb.eeee..........eeee.bbbb..', 25: '..bbbb.........mm.........bbbb..', 26: '..............m..m..............' },
-  pout: { 18: '.......eeee..........eeee.......', 19: '......eeeeee........eeeeee......', 20: '......ewwiie........ewwiie......', 21: '......ewiiie........ewiiie......', 22: '......eiiIIe........eiiIIe......', 23: '......eiIIIe........eiIIIe......', 24: '.......eeee..........eeee.......', 25: '...bbb..........m.........bbb...', 26: '...............m................', 27: '................m...............' },
-  starry: { 18: '.......eeee..........eeee.......', 19: '......eeeeee........eeeeee......', 20: '......eiiyie........eiiyie......', 21: '......eiyyye........eiyyye......', 22: '......eIIyIe........eIIyIe......', 23: '......eIIIIe........eIIIIe......', 24: '.......eeee..........eeee.......', 25: '...bbb.......m....m.......bbb...', 26: '..............mbbm..............' },
+// Faces (16px, like the original characters): the eyes, cheeks and mouth below are the default, each face changes some rows.
+const FACE_BASE: Overlay = { 10: '.ohswesssswesho.', 11: '.ohseesssseesho.', 12: '.ohsbssmmssbsho.' };
+const FACE_OVERLAY: Record<string, Overlay> = {
+  happy: {},
+  sleepy: { 10: '.oh' + 'ssssssssss' + 'ho.' },
+  wink: { 10: '.oh' + 'swesssssss' + 'ho.' },
+  grin: { 12: '.oh' + 'sbsmmmmsbs' + 'ho.' },
+  // proper shades: a frame across, two lenses with a glint, and a smirk below
+  cool: { 10: '.oheeeeeeeeeeho.', 11: '.oheweesseweeho.', 12: '.ohseesssseesho.', 13: '..oSssssmmssSo..' },
+  surprised: { 9: '.oh' + 'seessssees' + 'ho.', 13: '..oSsssmmsssSo..' },
+  // happy closed eyes (^ ^) and big rosy cheeks
+  blush: { 10: '.ohssessssessho.', 11: '.ohsesessesesho.', 12: '.ohbbssmmssbbho.' },
+  smirk: { 12: '.oh' + 'sbsssmmmbs' + 'ho.' },
+  fierce: { 9: '.oh' + 'seessssees' + 'ho.', 12: '.oh' + 'sbsmmmmsbs' + 'ho.' },
+  // a wink, a wide grin and the tongue poking out
+  silly: { 10: '.ohswesssssssho.', 12: '.ohsbsmmmmsbsho.', 13: '..oSssssbbssSo..' },
+  calm: { 12: '.ohssssmmssssho.' },
+  laugh: { 10: '.ohssessssessho.', 11: '.ohsesessesesho.', 12: '.ohbbsmmmmsbbho.', 13: '..oSssmmmmssSo..' },
+  sad: { 12: '.ohssssssssssho.', 13: '..oSssmssmssSo..' },
+  cry: { 12: '.ohsqssssssqsho.', 13: '..oSqsmssmsqSo..' },
+  angry: { 9: '.ohseeesseeesho.', 12: '.ohssssssssssho.', 13: '..oSssmmmmssSo..' },
+  shy: { 10: '.ohsewssssewsho.', 12: '.ohbbssmsssbbho.' },
+  pout: { 12: '.ohsbssssssbsho.', 13: '..oSssssmsssSo..' },
+  starry: { 10: '.ohsyessssyesho.', 12: '.ohsbsmmmmsbsho.' },
 };
 const OUTFIT_OVERLAY: Record<string, Overlay> = {
   tee: {},
@@ -242,9 +245,9 @@ const ACC_OVERLAY: Record<string, Overlay> = {
 };
 // Glasses, shades, masks and bandages sit on the face, so they are drawn at full detail like it.
 const ACC_FACE: Record<string, Overlay> = {
-  glasses: { 17: '.....aaaaaaaa......aaaaaaaa.....', 18: '.....a......a......a......a.....', 19: '.....a......aaaaaaaa......a.....', 20: '.....a......a......a......a.....', 21: '.....a......a......a......a.....', 22: '.....a......a......a......a.....', 23: '.....a......a......a......a.....', 24: '.....a......a......a......a.....', 25: '.....aaaaaaaa......aaaaaaaa.....' },
-  round: { 17: '......aaaaaa........aaaaaa......', 18: '.....a......a......a......a.....', 19: '.....a......a......a......a.....', 20: '.....a......aaaaaaaa......a.....', 21: '.....a......a......a......a.....', 22: '.....a......a......a......a.....', 23: '.....a......a......a......a.....', 24: '.....a......a......a......a.....', 25: '......aaaaaa........aaaaaa......' },
-  shades: { 18: '.....aaaaaaaa......aaaaaaaa.....', 19: '.....awwaaaaaaaaaaaaaaawwaa.....', 20: '.....aawaaaaa......aawaaaaa.....', 21: '.....aaaaaaaa......aaaaaaaa.....', 22: '.....aaaaaaaa......aaaaaaaa.....', 23: '......aaaaaa........aaaaaa......' },
+  glasses: { 19: '......aaaaaaaa....aaaaaaaa......', 20: '......a......aaaaaa......a......', 21: '......a......a....a......a......', 22: '......a......a....a......a......', 23: '......a......a....a......a......', 24: '......aaaaaaaa....aaaaaaaa......' },
+  round: { 19: '.......aaaaaa......aaaaaa.......', 20: '......a......a....a......a......', 21: '......a......aaaaaa......a......', 22: '......a......a....a......a......', 23: '......a......a....a......a......', 24: '.......aaaaaa......aaaaaa.......' },
+  shades: { 19: '......aaaaaaaaaaaaaaaaaaaa......', 20: '......awwaaaaa....awwaaaaa......', 21: '......aawaaaaa....aawaaaaa......', 22: '......aaaaaaaa....aaaaaaaa......', 23: '.......aaaaaa......aaaaaa.......' },
   mask: { 24: '...aa......................aa...', 25: '.....aaaaaaaaaaaaaaaaaaaaaa.....', 26: '.....aaaaaaaaaaaAAaaaaaaaaa.....', 27: '.......aaaaaaaaaaaaaaaaaa.......' },
   bandage: { 24: '.......................aaaa.....', 25: '......................aabbaa....', 26: '.......................aaaa.....' },
 };
@@ -305,7 +308,7 @@ const BODY_HD_BACK: Record<string, string[]> = {
 };
 
 for (const rows of [HEAD_FRONT, HEAD_BACK, BODY_FRONT, BODY_BACK, ...LEGS,
-  ...[STYLE_OVERLAY, OUTFIT_OVERLAY, ACC_OVERLAY].flatMap((o) => Object.values(o).map((m) => Object.values(m)))]) {
+  ...[STYLE_OVERLAY, FACE_OVERLAY, OUTFIT_OVERLAY, ACC_OVERLAY].flatMap((o) => Object.values(o).map((m) => Object.values(m)))]) {
   console.assert(rows.every((row) => row.length === 16), 'sprite rows must be 16 wide', rows);
 }
 
@@ -392,7 +395,11 @@ function avatarRows(look: Look, step: number, up: boolean) {
   const over = (layer: string[]) => Object.fromEntries(hairShine(thin(scale2x(layer))).map((row, y) => [y, row]));
   rows = lay(rows, over(hairOnly));
   if (hatOnly) rows = lay(rows, over(hatOnly));
-  if (!up) rows = lay(lay(rows, FACE_ART[look.face ?? ''] ?? FACE_ART.happy), ACC_FACE[look.acc ?? '']);
+  if (!up) {
+    // The face: the 16px eyes, cheeks and mouth, doubled onto the head (only the features; the head itself is full detail).
+    const face = lay(lay(Array(21).fill(BLANK), FACE_BASE), FACE_OVERLAY[look.face ?? '']).map((row) => row.replace(/[^ewbmqy]/g, '.'));
+    rows = lay(lay(rows, Object.fromEntries(face.flatMap((row, y) => { const d = [...row].map((ch) => ch + ch).join(''); return [[y * 2, d], [y * 2 + 1, d]]; }))), ACC_FACE[look.acc ?? '']);
+  }
   return rows;
 }
 
@@ -410,7 +417,7 @@ const lookPal = (look: Look): Record<string, string> => {
   const acc = ACC_COL[look.acc ?? ''] ?? '#5a5070';
   return {
     o: OUT, h: look.hair, H: shade(look.hair, -0.15), l: shade(look.hair, 0.28), n: '#f4f2ee', N: '#c8c0c8',
-    s: look.skin, S: shade(look.skin, -0.1), e: '#2a1e26', w: '#ffffff', b: '#f7a0a8', m: '#b0505a', q: '#7fc4f0', i: '#5a3a5a', I: '#9a6a8a',
+    s: look.skin, S: shade(look.skin, -0.1), e: '#2a1e26', w: '#ffffff', b: '#f7a0a8', m: '#c8606a', q: '#7fc4f0',
     t: look.shirt, T: shade(look.shirt, -0.15), c: '#fff4e6', d: '#7a5040', a: acc, A: shade(acc, -0.15),
     v: '#6a8ad0', V: '#5a78bc', r: '#e06a5a', y: '#ffd34d', k: '#3a3448', g: '#8fd0a8', p: look.outfit === 'overalls' ? '#5a78bc' : '#5a5080',
   };
@@ -2497,54 +2504,54 @@ function heartHD(c: Ctx, x: number, y: number, col: string) {
 }
 const grain = (c: Ctx, col: string, lines: number[][]) => { for (const [x, y, w] of lines) R(c, x, y, w, 0.5, shade(col, -0.05)); };
 
-// The big shark plush: chubby, round, shiny-eyed and grinning (64x44 half-pixels).
+// The big shark plush: a sleek side view in flat blues with a smiling face, at full detail (64x44 half-pixels).
 const SHARK_ROWS = [
   '................................................................',
-  '.............................ooo................................',
-  '............................obbbo...............................',
-  '............................obbbbo..............................',
-  '...........................obbbbbbo.............................',
-  '...........................obbbbbbo.............................',
-  '..........................obbbbbbbbo............................',
-  '..........................obbbbbbbbo............................',
-  '..o.......................obbbbbbbbbo...........................',
-  '.obo.....................obbbbbbbbbbbo..........................',
-  '..obo....................obbbbbbbbbbbbooo.......................',
-  '..obbo..................obbbbbbbbbbbbbbbboooo...................',
-  '..obbbo...............ooobbbbbbbbbbbbbbbbbbbbooo................',
-  '...obbbo............oobbbbbbbbbbbbbbbbbbbbbbbbbboo..............',
-  '...obbbbo..........obbbbbbbbbbLLLLLLLLLLLLbbbbbbbbo.............',
-  '....obbbbo.......oobbbbbbLLLLLLLLLLLLLLLLLLLLLLbbbboo...........',
-  '....obbbbbo.....obbbbbbLLLLLLLLLLLLLLLLLLLLLLLLLLbbbbo..........',
-  '....obbbbbbo...obbbbbLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLbbbo.........',
-  '.....obbbbbbo.obbbbbLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLbbbo........',
-  '.....obbbbbbbobbbbbLLLLLLLLLLLLLLLLLLLLeeeeLLLLLLLLeeeebo.......',
-  '......obbbbbbbbbbbbLLLLLLLLLLLLLLLLLLLeeeeeeLLLLLLeeeeeeo.......',
-  '......obbbbbbbbbbbbLLLLLLLLLLLLLLLLLLLesseeeLLLLLLesseeebo......',
-  '.......obbbbbbbbbbbLLLLLLLLLLDLLLLLLLLesseeeLLLLLLesseeebo......',
-  '.......obbbbbbbbbbbbLLLLLLLLLDLDLLwwwweeeeiewwwwwweeeeiebbo.....',
-  '.......obbDobbbbbbbbbLLLLLLLLDLDwDwwwwweeeewwwwwwwweeeebbbo.....',
-  '........oDDDbbbbbbbbbbbLLLLLLwwDwDwwwwwwwwwwwwwwwwwwwwwbbbo.....',
-  '........oDDDbbbbbbbbbbbbbLLLwwwwwDwkkkwwwwwwwwwwwwwwwwwkkko.....',
-  '.......oDDDDbbbbbbbbbbbbbbDwwwwwwwwwkkwwwwmsmmmmmmsmwwwkkbo.....',
-  '.......oDDDDbbbbbbbbbDDDDDwwwwwwwwwwwwwwwwmMMMMMMMMmwwwwwwo.....',
-  '......oDDDDDobbbbbDDDDDDDwwwwwwwwwwwwwwwwwwmMMttMMmwwwwwwo......',
-  '......oDDDDoobbbDDDDDDDDDwwwwwwwwwwwWWWWWWWWmmttmmwwwwwwwo......',
-  '.....oDDDDo..obDDDDDDDDDDwwwwwwwWWWWWWWWWWWWWmmmmWWWwwwwo.......',
-  '.....oDDDo...oDDDDDDDDDDDwwwwWWWWWWWWWWWWWWWWWWWWWWWWWWwo.......',
-  '....oDDDo.....oDDDDDDDDDDDwwDDDDDDWWWWWWWWWWWWWWWWWWWWWo........',
-  '....oDDo.......oDDDDDDDDDDDwWDDDDDDDDDDDWWWWWWWWWWWWWWo.........',
-  '...oDDo.........oDDDDDDDDDDDWWDDDDDDDDDWWWWWWWWWWWWWWo..........',
-  '...oDo...........ooDDDDDDDDDDWWDDDDDDDDWWWWWWWWWWWWoo...........',
-  '..oDo..............obDDDDDDDDDDwDDDDDDWWWWWWWWWWWWo.............',
-  '...o................oobbbbDDDDDDDDDDDDWWWWWWWWWWoo..............',
-  '......................ooobbbbbbbbbDDDbbbbbbbbooo................',
-  '.........................oooobbbbbbDDbbbboooo...................',
-  '.............................oooooooooooo.......................',
+  '..................................oooo..........................',
+  '.................................obbbbo.........................',
+  '.................................obbbbo.........................',
+  '................................obbbbbo.........................',
+  '...............................obbbbbbo.........................',
+  '...............................obbbbbbo.........................',
+  '..............................obbbbbbbo.........................',
+  '..............................obbbbbbbo.........................',
+  '..o..........................obbbbbbbbbo........................',
+  '.oboo.......................obbbbbbbbbbo........................',
+  '.obbboo....................obbbbbbbbbbbboo......................',
+  '.obbbbbo...................obbbbbbbbbbbbbbo.....................',
+  '..obbbbboo................obbbbbbbbbbbbbbbbo....................',
+  '..obbbbbbbo..............obbbbbbbbbbbbbbbbbboo..................',
+  '...obbbbbbbo.............obbbbbbbbbbLLLLbbbbbbooo...............',
+  '....obbbbbbbo..........oobbLLLLLLLLLLLLLLLLLLLLLLoooo...........',
+  '....obbbbbbbboo.....oooLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLoo.........',
+  '.....obbbbbbbbbo..ooLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLoo.......',
+  '......obbbbbbbbbooLLLLLLLLLLLLbbbbbbbbbbbbbbbbLLeeeeLLLLLo......',
+  '.......obbbbbbbbbbLLLLLLLbbbbbbbbbbbbbbbbbbbbbbesseeeLLLLLoo....',
+  '.......obbbbbbbbbbLLLbbbbbbbbbbbbbbbbbbbbbbbbbbesseeebLLLLbbo...',
+  '........obbbbbbbbbLbbbbbbbbbbbbbbbbbdbbdbbdbbbbeeeesebbbLLbbbo..',
+  '.........obbbbbbbbbbbbbbbbbbbbbbbbbbdbbdbbdbbbbbeeeebbbbbbbbbbo.',
+  '..........obbbbbbbbbbbbbbbbbbbbbbbbbbdbbdbbdbbbbbbbbbbbbbbbbbbo.',
+  '..........obbbbbbbbbbbbbbbbbbbbbbbbbbdbbdbbdkkkkbbbbbmbbbbmbbbbo',
+  '..........obbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbkkbbbbbbbmmmmwbbbo.',
+  '..........odbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbwwrrwwwwbo.',
+  '.........odddbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbwwwwwwwwwwwwwwwo..',
+  '........odddddbbbbbbbbbbbbbbbbbbbbbbwwwwwwwwwwwwwwwwwwwwwwwwo...',
+  '........odddddddbbbbbbbbbbbbwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwoo....',
+  '.......oddddddddoobbbbwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwooo......',
+  '......oddddddddo..ooowwwwwwwwwwwwwwwwwwwwwwwwwwwwwooooo.........',
+  '.....odddddddoo......ooowwwwwwwwwwwwwwwwwwwooooooo..............',
+  '.....oddddddo...........oooddddddddddoooooo.....................',
+  '....oddddddo..............oddddddddoo...........................',
+  '....odddddo...............odddddddo.............................',
+  '...oddddoo................oddddddo..............................',
+  '...odddo..................oddddoo...............................',
+  '....ooo...................odddo.................................',
+  '...........................ooo..................................',
+  '................................................................',
   '................................................................',
   '................................................................',
 ];
-const SHARK_PAL: Record<string, string> = { o: '#3a2a4a', b: '#7f90d4', L: '#a3b2ec', D: '#6272b4', w: '#f6f2fc', W: '#e0d8f0', e: '#2a1e3a', s: '#ffffff', i: '#7a8ad0', m: '#c8445e', M: '#8a2a40', t: '#f49aa8', k: '#f4a0b4' };
+const SHARK_PAL: Record<string, string> = { o: '#2a66b0', b: '#47a8f0', L: '#6cbcf6', d: '#3a8ad8', w: '#ffffff', e: '#1c3a66', s: '#ffffff', m: '#1c3a66', r: '#f07890', k: '#f7a0b8' };
 const HD: Record<string, HdDraw> = {
   sharkPlush(c) { pix(c, 0, -12, SHARK_ROWS, SHARK_PAL); },
   desk(c, t, col = '#d9a06a', bare = 0) {
