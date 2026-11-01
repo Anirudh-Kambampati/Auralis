@@ -116,8 +116,9 @@ function onMessage(m: any) {
   if (m.t === 'state') {
     if (!houseCode) { showLoading(false); setTimeout(welcome, 800); }
     myId = m.me.id;
-    // Moved house: start in my own room, and drop any walk or seat that pointed at the old house's tiles.
-    if (m.house.code !== houseCode) { avatars.delete(myId); path = []; seat = null; useNext = null; arrive = null; endBreak(); }
+    // Moved house: start in my own room, drop any walk or seat that pointed at the old house's tiles,
+    // and treat its chat history as already seen.
+    if (m.house.code !== houseCode) { lastChatId = -1; avatars.delete(myId); path = []; seat = null; useNext = null; arrive = null; endBreak(); }
     const wasFocusing = !!myMember()?.focus;
     const oldGrid = grid, oldSlots = slots.map((x) => `${x.m.id}:${x.ri}`);
     houseCode = m.house.code;
@@ -1114,6 +1115,7 @@ function tickTimers() {
   $('#dock').hidden = showDeck;
   if (showDeck && openPanel) setPanel(null);
   document.querySelector('#dock [data-panel="social"]')?.classList.toggle('unread', unread);
+  if (!unread) $('#fold-chat').classList.remove('dot'); // read elsewhere: the folded card's dot goes too
   if (!f) return;
   const left = fmt(focusEnd(f) - Date.now());
   $('#timer').textContent = `${f.pausedAt ? '⏸' : '📖'} ${left}`;
