@@ -425,10 +425,9 @@ label { display: flex; flex-direction: column; gap: 6px; font-weight: 700; }
   animation: rise 0.18s ease-out;
 }
 body.side-open #side { display: flex; }
-/* Phones: the sheet shows the card its dock button opened. */
-@media (max-width: 899px) {
-  body[data-side="todos"] #side .side-card.chat, body[data-side="chat"] #side .side-card.todos { display: none; }
-}
+/* The sheet shows the card its dock button opened. */
+body[data-side="todos"] #side .side-card.chat, body[data-side="chat"] #side .side-card.todos { display: none; }
+.side-head .fold { display: none !important; }
 .side-card {
   display: flex;
   flex-direction: column;
@@ -515,20 +514,9 @@ li.done .check { background: #6fcf8a; color: #fff; }
 }
 
 @media (min-width: 900px) {
-  #side {
-    display: flex;
-    left: 20px;
-    top: 84px;
-    bottom: 24px;
-    width: 300px;
-    max-height: none;
-    transform: none;
-    animation: none;
-  }
-  .side-head .close { display: none; }
-  #dock, body.panel-open #dock { left: calc(320px + (100% - 320px - (var(--right, 0px))) / 2); }
+  #dock, body.panel-open #dock { left: calc((100% - (var(--right, 0px))) / 2); }
   body.panel-open { --right: 420px; }
-  #deck { left: calc(320px + (100% - 320px - (var(--right, 0px))) / 2); }
+  #deck { left: calc((100% - (var(--right, 0px))) / 2); }
 }
 
 /* ---------- stats + leaderboard ---------- */

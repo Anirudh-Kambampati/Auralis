@@ -818,7 +818,7 @@ function render(t: number) {
   const below = !deck.hidden ? deck.offsetHeight + (wide ? 24 : 0) : sheet ? sheet.offsetHeight + dock.offsetHeight + 40 : dock.offsetHeight + 24;
   const coverTop = 70 * dpr, coverBottom = below * dpr;
   const coverRight = wide && !panel.hidden ? (panel.offsetWidth + 20) * dpr : 0;
-  const coverLeft = wide ? (side.offsetWidth + 20) * dpr : 0;
+  const coverLeft = 0;
   const aw = cw - coverRight - coverLeft, ah = Math.max(ch * 0.3, ch - coverTop - coverBottom);
   // Frame the room I'm standing in (keep the last one while I'm in an opening or doorway).
   const here = grid.owner[Math.round(me_.y) * grid.w + Math.round(me_.x)];
@@ -1802,9 +1802,8 @@ function welcome() {
 
 const requestBoard = () => send({ t: 'leaderboard', scope: boardScope, period: boardPeriod });
 
-// To-dos and chat live in the side cards: a column on wide screens, a sheet above the dock (one card at a time) on phones.
+// To-dos and chat open from the dock as a card above it, one at a time.
 const isSide = (name: string | null): name is SideCard => name === 'todos' || name === 'chat';
-const wideScreen = () => innerWidth >= 900;
 function setPanel(name: string | null) {
   if (name === 'stats' && statsTab === 'board') requestBoard();
   if (name === 'decorate' && token) snapshotsApi().catch(() => {});
@@ -1819,6 +1818,7 @@ function setPanel(name: string | null) {
   document.querySelectorAll<HTMLButtonElement>('#dock button').forEach((x) => x.classList.toggle('on', x.dataset.panel === name));
   document.body.classList.toggle('side-open', isSide(name));
   document.body.dataset.side = isSide(name) ? name : '';
+  if (isSide(name) && folds[name]) toggleFold(name);
   if (name === 'chat') { unread = false; tickTimers(); scrollChat(); }
   renderPanel();
   document.body.classList.toggle('panel-open', !panel.hidden);
@@ -1827,7 +1827,6 @@ document.querySelectorAll<HTMLButtonElement>('#dock button').forEach((b) =>
   b.addEventListener('click', () => {
     if (b.dataset.panel === 'focus' && myMember()?.focus) { deckHidden = false; tickTimers(); return; }
     const card = b.dataset.panel!;
-    if (isSide(card) && wideScreen()) { openSide(card, card === 'chat' ? '#chatInput' : '#todoInput'); return; } // already on screen: unfold it
     setPanel(openPanel === card ? null : card);
   }));
 
@@ -1861,7 +1860,7 @@ function noteNewDms() {
     if (last.id <= seen) continue;
     const fresh = list.filter((c) => c.id > seen && c.from !== myId).length;
     // Unread unless that thread is open on screen right now.
-    const onScreen = dmPeer === peer && (wideScreen() ? !folds.chat : document.body.dataset.side === 'chat');
+    const onScreen = dmPeer === peer && document.body.dataset.side === 'chat';
     if (dmReady) countUnseen(fresh);
     if (dmReady && fresh && !onScreen) {
       pingOrHold();
@@ -2013,14 +2012,14 @@ function toggleFold(card: SideCard) {
 // Bring a side card into view (unfolded, and as a sheet on phones) and put the cursor in its input.
 function openSide(card: SideCard, input: string, text = '') {
   if (folds[card]) toggleFold(card);
-  setPanel(wideScreen() ? null : card);
+  setPanel(card);
   if (card === 'chat') { unread = false; tickTimers(); scrollChat(); }
   const el = $<HTMLInputElement>(input);
   if (text) el.value = text;
   el.focus();
 }
 // Group chat you can't see right now: worth a ping.
-const chatHidden = () => document.hidden || !!folds.chat || (!wideScreen() && document.body.dataset.side !== 'chat');
+const chatHidden = () => document.hidden || document.body.dataset.side !== 'chat';
 for (const card of ['todos', 'chat'] as SideCard[]) {
   applyFold(card);
   $(`#fold-${card}`).addEventListener('click', () => toggleFold(card));

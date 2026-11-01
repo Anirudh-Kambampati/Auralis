@@ -100,9 +100,9 @@ const HEAD_FRONT = [
   '.ohhhhhhhhhhhho.',
   '.ohHsHhhhhHsHho.',
   '.ohssssssssssho.',
-  '.ohssssssssssho.',
-  '.ohssssssssssho.',
-  '.ohssssssssssho.',
+  '.ohswesssswesho.',
+  '.ohseesssseesho.',
+  '.ohsbssmmssbsho.',
   '..oSssssssssSo..',
 ];
 const HEAD_BACK = [
@@ -136,56 +136,42 @@ export const AVATAR_H = 21;
 
 // Overlays replace whole sprite rows by index ('.' keeps the pixel underneath).
 type Overlay = Record<number, string>;
-const longRows: Overlay = { 15: '.oo..........oo.' };
-for (let y = 9; y < 15; y++) longRows[y] = 'ohh..........hho';
 const rows = (from: number, to: number, row: string): Overlay => Object.fromEntries(Array.from({ length: to - from + 1 }, (_, i) => [from + i, row]));
+// Hairstyles: each draws its own top of the head and fringe (rows 0-9) and, for longer styles, hair down the sides.
 const STYLE_OVERLAY: Record<string, Overlay> = {
-  short: { 2: '.....oooooo.....', 3: '...oohhhhhhoo...', 4: '..ohhhhhhlhhho..', 5: '.ohhhhhhhllhhho.', 6: '.ohhhhhhhhhhhho.', 7: '.ohHhhhhhHhhhho.', 8: '.ohsHhhhHshhhHo.', 9: '.ohssHhHssssHho.' },
-  'side part': { 2: '.....oooooo.....', 3: '...oohhhhhhoo...', 4: '..ohhhhhlhhhho..', 5: '.ohhhhhhllhhhho.', 6: '.ohhhhhhhhhhhho.', 7: '.ohHHhhhhhhhhho.', 8: '.ohhhHHhhhhhHho.', 9: '.osssssHHhhhHho.' },
-  // close crop: no fringe, skin at the temples
-  buzz: { 8: '.o' + 's'.repeat(12) + 'o.', ...rows(9, 12, '..s..........s..') },
-  spiky: { 0: '....o...o..o....', 1: '...oho.oho.oho..', 2: '..ohlhoohhoohho.', 3: '.ohllhhhhhhhhho.', 4: 'ohhlhhhhhhhhhhho', 5: 'ohhhhhhhhhhhHhho', 6: '.ohhhHhhhhHhhHo.', 7: '.ohhHhhhhhhHhho.', 8: '.oHhsHhHhHshHho.', 9: '.oHsssHsHsssHso.' },
-  curly: {
-    1: '....oooooooo....', 2: '..oohhHhhHhhoo..', 3: '.ohhHhhhhhhHhho.', 4: 'o' + 'h'.repeat(14) + 'o',
-    ...rows(5, 7, 'ohH' + 'h'.repeat(10) + 'Hho'), ...rows(8, 11, 'oh............ho'), 12: '.oh..........ho.', 13: '.oo..........oo.',
-  },
-  bob: { 8: '.o' + 'h'.repeat(12) + 'o.', ...rows(9, 12, 'oh............ho'), 13: '.oo..........oo.' },
-  long: longRows,
-  ponytail: { 3: '..............o.', 4: '..............po', ...rows(5, 10, '..............ho'), 11: '..............o.' },
-  buns: { 0: '..ooo......ooo..', 1: '.ohlho....ohlho.', 2: '.ohhho....ohhho.', 3: '..ooo......ooo..' },
-  messy: { 1: '.....oooooo.....', 2: '...oohhhhhhooo..', 3: '..ohhlhhhhhhhho.', 4: '.ohhllhhhhhhhhho', 5: '.ohhhhhhhhhHhhho', 6: 'ohhhhhhhHHhhhHo.', 7: 'ohHhhhhHhhhhHho.', 8: '.ohHhhHhsHhhHho.', 9: '.ohsHHssssHsHho.' },
-  undercut: { 3: '...oohhhhhhoo...', 4: '..ohhhlhhhhhho..', 5: '.ohhhllhhhhhhho.', 6: '.ohhhhhhhhhhHho.', 7: '.osHhhhhhhhHHso.', 8: '.ossHhhhhHHssso.' },
-  quiff: { 1: '.....ooooooo....', 2: '...oohhhhllhoo..', 3: '..ohhhhhhhhlhho.', 4: '.ohhhhhhhhhhhho.', 5: '.ohhhhHhhhhhhho.', 6: '.ohhHhhhhhhHhho.', 7: '.ohHhhhhhhhhHho.', 8: '.ohsHhhhhhhHsho.', 9: '.ohssHsssssHsho.' },
-  fauxhawk: { 0: '.o..o.oo..o..o..', 1: '.oho.ohho.ohoho.', 2: '..ohhhhlhhhhho..', 3: 'oohhhllhhhhhhhoo', 4: 'ohhhlhhhhhhhhhho', 5: '.ohhhhhHhhhhhho.', 6: 'ohhHhhhhhhhHhhho', 7: '.ohhHhhhhhhHhho.', 8: '.oHhshHhhHhshHo.', 9: '.oHssshsshsssHo.' },
-  topknot: { 0: '......oooo......', 1: '.....ohlhho.....', 2: '...oooHhhHooo...', 3: '..ohhhhhhhhhho..', 4: '.ohhlhhhhhhhhho.', 5: '.ohllhhhhhhhhho.', 6: '.ohhhhhhhhhhhho.', 7: '.ohhhHhhhhHhhho.', 8: '.oHhsHhhhHshhHo.', 9: '.oHssshHhssssHo.' },
-  slick: { 3: '...oohhhhhhoo...', 4: '..ohhhlhhhhhho..', 5: '.ohhhllhhhhhhho.', 6: '.ohhhhhhhhhhhho.', 7: '.ohHhhhhhhhhHho.', 8: '.ohsHHhhhhHHsho.', 9: '.ohssssssssssho.' },
-  curtains: { 2: '.....oooooo.....', 3: '...oohhhhhhoo...', 4: '..ohhlhhhhhhho..', 5: '.ohhllhhhhhhhho.', 6: '.ohhlhhhhhhhhho.', 7: '.ohhhhhHHhhhhho.', 8: '.ohhhhHssHhhhho.', 9: '.oHhhHssssHhhHo.' },
-  crop: { 2: '....oooooooo....', 3: '...ohhlhhhhhoo..', 4: '..ohhllhhhhhhho.', 5: '.ohhhhhhhhhhhho.', 6: '.ohhHhhhHhhhHho.', 7: '.oHhhhHhhhHhhho.', 8: '.ohHshhHsHhsHho.', 9: '.ohsssHssssHsho.' },
-  // shaved sides with a strip standing up down the middle
-  mohawk: {
-    0: '......oooo......', 1: '.....ohhhho.....', 2: '....ohhhhhho....', 3: '...osshhhhsso...', 4: '..osssshhsssso..',
-    ...rows(5, 6, '.osssshhhhsssso.'), 7: '.ossssshhssssso.', 8: '.o' + 's'.repeat(12) + 'o.',
-  },
-  afro: {
-    0: '...oooooooooo...', 1: '..ohhhhhhhhhho..', 2: '.ohhlhhhhhhhhho.', 3: 'ohhllhhhhhhhhhho', ...rows(4, 7, 'o' + 'h'.repeat(14) + 'o'),
-    8: 'ohHssssssssssHho', ...rows(9, 11, 'oh............ho'),
-  },
-  wavy: { 2: '.....oooooo.....', 3: '...oohhhhhhoo...', 4: '..ohhlhhhhhhho..', 5: '.ohhllhhhhhhhho.', 6: '.ohhhhhHhhhhhho.', 7: '.ohHhhHhhhHhhHo.', 8: 'ohHhsHhhhHshhHho', 9: 'ohhssssssssssHho', 10: 'oHh..........hHo', 11: 'ohH..........Hho', 12: 'oHh..........hHo', 13: '.oo..........oo.' },
-  shaggy: { 1: '....o.oooo.o....', 2: '...ohohhhhohoo..', 3: '..ohhhhhhhhhhho.', 4: '.ohhlhhhhhhhhhho', 5: 'ohhllhhhhhhhhhho', 6: 'ohhhhhHhhHhhhhHo', 7: 'oHhhHhhHhhHhhHho', 8: '.oHHsHhHhHshHHo.', 9: '.oHssHsHssHssHo.', 10: 'oHh..........hHo', 11: '.oH..........Ho.', 12: '..o..........o..' },
-  pixie: { 2: '.....oooooo.....', 3: '...oohhhhhhoo...', 4: '..ohhhhhhlhhho..', 5: '.ohhhhhhhllhhho.', 6: '.ohhhhhhhhhhhho.', 7: '.oHHhhhhhhhhhho.', 8: '.osHHHhhhhhhhho.', 9: '.osssHHHhhhHHho.' },
-  emo: { 2: '.....oooooo.....', 3: '...oohhhhhhoo...', 4: '..ohhhhhhlhhho..', 5: '.ohhhhhhllhhhho.', 6: '.ohhhhhhhhhhhho.', 7: '.ohhhhhhhhhhhho.', 8: '.ohhhhhhhhHHsho.', 9: '.ohhhhhhHHsssho.', 10: '.ohhhhhH........', 11: '.ohhhhH.........' },
-  bowl: { 2: '.....oooooo.....', 3: '...oohhhhhhoo...', 4: '..ohhlhhhhhhho..', 5: '.ohhllhhhhhhhho.', 6: '.ohhhhhhhhhhhho.', 7: '.ohhhhhhhhhhhho.', 8: '.ohhhhhhhhhhhho.', 9: '.oHHHHHHHHHHHHo.' },
-  twintails: { 5: 'ho............oh', 6: 'ho............oh', 7: 'ho............oh', 8: 'hho..........ohh', 9: 'hho..........ohh', 10: 'Hho..........ohH', 11: 'Hho..........ohH', 12: 'oHo..........oHo', 13: '.o............o.' },
-  halfup: { 0: '......ooo.......', 1: '.....ohlho......', 2: '.....oooooo.....', 3: '...oohhhhhhoo...', 4: '..ohhlhhhhhhho..', 5: '.ohhllhhhhhhhho.', 6: '.ohhhhhhhhhhhho.', 7: '.ohhHhhhhhhHhho.', 8: '.ohHsHhhhhHsHho.', 9: 'oh............ho', 10: 'oh............ho', 11: 'oh............ho', 12: 'oh............ho', 13: 'oh............ho', 14: '.o............o.' },
-  manbun: { 0: '.......ooo......', 1: '......ohlho.....', 2: '.....ooHhHoo....', 3: '...oohhhhhhoo...', 4: '..ohhhlhhhhhho..', 5: '.ohhhllhhhhhhho.', 6: '.ohhhhhhhhhhhho.', 7: '.ohHhhhhhhhhHho.', 8: '.ohsHHhhhhHHsho.', 9: '.ohssssssssssho.' },
-  wolf: { 1: '.....oooooo.....', 2: '...oohhhhhhoo...', 3: '..ohhhlhhhhhho..', 4: '.ohhhllhhhhhhho.', 5: '.ohhhhhhhhhhhho.', 6: 'ohhHhhhhHhhhHhho', 7: 'oHhhHhhHhhHhhhHo', 8: 'ohHhsHhHhhsHhHho', 9: 'oHhssHssssHsshHo', 10: 'oh............ho', 11: '.oh..........ho.', 12: '..o..........o..' },
-  sidelong: { 2: '.....oooooo.....', 3: '...oohhhhhhoo...', 4: '..ohhhhhhhlhho..', 5: '.ohhhhhhhhllhho.', 6: '.ohhhhhhhhhhhho.', 7: '.ohhhhhhhhhhhho.', 8: '.ohhhhhhhHHHsho.', 9: '.ohhhhhHHssssho.', 10: 'oh............ho', 11: 'oh............ho', 12: 'oh............ho', 13: 'oh............ho', 14: 'oh............ho', 15: '.oo..........oo.' },
-  braids: { 9: 'oh............ho', 10: 'oh............ho', 11: 'oh............ho', 12: 'oh............ho', 13: 'oho..........oho', 14: 'oHo..........oHo', 15: 'oho..........oho', 16: '.y............y.' },
+  short: { 2: '.....oooooo.....', 3: '...oohhhhhhoo...', 4: '..ohhhhhhhhhho..', 5: '.ohhhhhhhhhhhho.', 6: '.ohhhhhhhhhhhho.', 7: '.ohhhhhhhhhhhho.', 8: '.ohhhhhhhhhhhho.', 9: '.ohHshHhhsHhsho.' },
+  'side part': { 2: '.....oooooo.....', 3: '...oohhhhhhoo...', 4: '..ohhhhHhhhhhho.', 5: '.ohhhhhHhhhhhho.', 6: '.ohhhhhHhhhhhho.', 7: '.ohhhhhhhhhhhho.', 8: '.ohhhhhhhhhhhho.', 9: '.ossssHhhhhhhho.' },
+  buzz: { 2: '.....oooooo.....', 3: '...ooHhHHhHoo...', 4: '..ohHhHhhHhHho..', 5: '.ohHhHhHHhHhHho.', 6: '.ohhHhHhhHhHhho.', 7: '.osssssssssssso.', 8: '.osssssssssssso.', 9: '.osssssssssssso.' },
+  spiky: { 0: '...o..o...o..o..', 1: '..oho.oho.ohoho.', 2: '.ohhhohhhohhhho.', 3: '.ohhhhhhhhhhhho.', 4: 'ohhhhhhhhhhhhhho', 5: 'ohhhhhhhhhhhhhho', 6: '.ohhhhhhhhhhhho.', 7: '.ohhhhhhhhhhhho.', 8: '.ohHhHhhHhhHhho.', 9: '.ohsHsshsHsshho.' },
+  messy: { 1: '....o.ooo.o.....', 2: '...ohohhhoho.o..', 3: '..ohhhhhhhhhhoho', 4: '.ohhhhhhhhhhhhho', 5: 'ohhhhhhhhhhhhho.', 6: 'ohhhhhhhhhhhhhho', 7: '.ohhhhhhhhhhhho.', 8: '.ohhHhhhhHhhhho.', 9: '.ohsHhshHsshHho.' },
+  undercut: { 2: '.....oooooo.....', 3: '...oohhhhhhoo...', 4: '..ohhhhhhhhhhho.', 5: '.ohhhhhhhhhhhhho', 6: '.ohhhhhhhhhhhhHo', 7: '.osHhhhhhhhhhHso', 8: '.osssHhhhhhHssso', 9: '.osssssssssssso.' },
+  quiff: { 0: '......oooo......', 1: '....oohhhho.....', 2: '...ohhhhhhhoo...', 3: '..ohhhhhhhhhho..', 4: '.ohhhhhhhhhhhho.', 5: '.ohhhhhhhhhhhho.', 6: '.ohhhhhhhhhhhho.', 7: '.ohhhhhhhhhhhho.', 8: '.oHhhhhhhhhhhHo.', 9: '.osssssssssssso.' },
+  fauxhawk: { 0: '......o..o......', 1: '.....ohooho.....', 2: '....ohhhhhho....', 3: '...oHhhhhhhHo...', 4: '..oHHhhhhhhHHo..', 5: '.ohHhhhhhhhhHho.', 6: '.ohhhhhhhhhhhho.', 7: '.ohhhhhhhhhhhho.', 8: '.ohhhhhhhhhhhho.', 9: '.osshssssshssso.' },
+  topknot: { 0: '......oooo......', 1: '.....ohhhho.....', 2: '.....oHhhHo.....', 3: '...oohhhhhhoo...', 4: '..ohhhhhhhhhho..', 5: '.ohhhhhhhhhhhho.', 6: '.ohhhhhhhhhhhho.', 7: '.ohhhhhhhhhhhho.', 8: '.oHhhhhhhhhhhHo.', 9: '.osssssssssssso.' },
+  slick: { 2: '.....oooooo.....', 3: '...oohhhhhhoo...', 4: '..ohhHhhhHhhho..', 5: '.ohhHhhhHhhhhho.', 6: '.ohHhhhHhhhhhho.', 7: '.oHhhhHhhhhhhho.', 8: '.osssssssssssso.', 9: '.osssssssssssso.' },
+  curtains: { 2: '.....oooooo.....', 3: '...oohhhhhhoo...', 4: '..ohhhhhhhhhho..', 5: '.ohhhhhhhhhhhho.', 6: '.ohhhhhhhhhhhho.', 7: '.ohhhhhhhhhhhho.', 8: '.ohhhhhssshhhho.', 9: '.ohhhhsssssshho.' },
+  crop: { 2: '.....oooooo.....', 3: '...oohhhhhhoo...', 4: '..ohhhhhhhhhho..', 5: '.ohhhhhhhhhhhho.', 6: '.ohhhhhhhhhhhho.', 7: '.ohhhhhhhhhhhho.', 8: '.ohhhhhhhhhhhho.', 9: '.oHHHHHHHHHHHHo.' },
+  mohawk: { 0: '......oooo......', 1: '.....ohhhho.....', 2: '....ohhhhhho....', 3: '...osshhhhsso...', 4: '..osssHhhHssso..', 5: '.ossssHhhHsssso.', 6: '.ossssHhhHsssso.', 7: '.osssssHHssssso.', 8: '.osssssssssssso.', 9: '.osssssssssssso.' },
+  pixie: { 2: '.....oooooo.....', 3: '...oohhhhhhoo...', 4: '..ohhhhhhhhhho..', 5: '.ohhhhhhhhhhhho.', 6: '.ohhhhhhhhhhhho.', 7: '.ohhhhhhhhhhhho.', 8: '.ohhhhhhhhhhhho.', 9: '.ohhhhHhssssHso.', 10: '.oh.............', 11: '.oo.............' },
+  bowl: { 2: '....oooooooo....', 3: '..oohhhhhhhhoo..', 4: '..ohhhhhhhhhho..', 5: '.ohhhhhhhhhhhho.', 6: '.ohhhhhhhhhhhho.', 7: '.ohhhhhhhhhhhho.', 8: '.ohhhhhhhhhhhho.', 9: '.oHHHHHHHHHHHHo.', 10: 'o..............o' },
+  manbun: { 0: '......ooo.......', 1: '.....ohhho......', 2: '.....oHhHoo.....', 3: '...oohhhhhhoo...', 4: '..ohhHhhhHhhho..', 5: '.ohhHhhhhhHhhho.', 6: '.ohhhhhhhhhhhho.', 7: '.ohhhhhhhhhhhho.', 8: '.oHhhhhhhhhhhHo.', 9: '.osssssssssssso.' },
+  emo: { 2: '.....oooooo.....', 3: '...oohhhhhhoo...', 4: '..ohhhhhhhhhho..', 5: '.ohhhhhhhhhhhho.', 6: '.ohhhhhhhhhhhho.', 7: '.ohhhhhhhhhhhho.', 8: '.ohhhhhhhhhhhho.', 9: '.ohhhhhhhhhssho.', 10: '.ohhhhhH........', 11: '.ohhhH..........' },
+  curly: { 1: '...oo.oo.oo.oo..', 2: '..ohhohhohhohho.', 3: '.ohhhhhhhhhhhhho', 4: 'ohhhhhhhhhhhhhho', 5: 'ohHhhHhhHhhHhhHo', 6: 'ohhhhhhhhhhhhhho', 7: 'ohhhhhhhhhhhhhho', 8: 'oHhhHhhHhhHhhHho', 9: 'ohHsHssHssHssHho', 10: 'oho..........oho', 11: 'ohho........ohho', 12: '.oho........oho.', 13: '..o..........o..' },
+  bob: { 2: '.....oooooo.....', 3: '...oohhhhhhoo...', 4: '..ohhhhhhhhhho..', 5: '.ohhhhhhhhhhhho.', 6: '.ohhhhhhhhhhhho.', 7: '.ohhhhhhhhhhhho.', 8: '.ohhhhhhhhhhhho.', 9: 'ohhHsssssssHhho.', 10: 'ohh..........hho', 11: 'ohh..........hho', 12: 'ohH..........Hho', 13: '.oo..........oo.' },
+  long: { 2: '.....oooooo.....', 3: '...oohhhhhhoo...', 4: '..ohhhhhhhhhho..', 5: '.ohhhhhhhhhhhho.', 6: '.ohhhhhhhhhhhho.', 7: '.ohhhhhhhhhhhho.', 8: '.ohhhhhhhhhhhho.', 9: '.ohhssssssshhho.', 10: 'ohh..........hho', 11: 'ohh..........hho', 12: 'ohh..........hho', 13: 'ohh..........hho', 14: 'ohh..........hho', 15: 'ohh..........hho', 16: '.oo..........oo.' },
+  ponytail: { 2: '.....oooooo.oo..', 3: '...oohhhhhhoho..', 4: '..ohhhhhhhhhohho', 5: '.ohhhhhhhhhhhoho', 6: '.ohhhhhhhhhhhoho', 7: '.ohhhhhhhhhhhoho', 8: '.oHhhhhhhhhhHoho', 9: '.ossssssssssso.o', 10: '..............oh', 11: '..............oh', 12: '..............o.' },
+  buns: { 0: '.ooo........ooo.', 1: 'ohhho......ohhho', 2: 'ohlho.oooo.ohlho', 3: '.ooohhhhhhhhooo.', 4: '..ohhhhhhhhhho..', 5: '.ohhhhhhhhhhhho.', 6: '.ohhhhhhhhhhhho.', 7: '.ohhhhhhhhhhhho.', 8: '.ohhhhhhhhhhhho.', 9: '.ohhssssssshhho.' },
+  afro: { 0: '...oooooooooo...', 1: '..ohhhhhhhhhho..', 2: '.ohhhhhhhhhhhho.', 3: 'ohhhhhhhhhhhhhho', 4: 'ohHhhhHhhhHhhhHo', 5: 'ohhhhhhhhhhhhhho', 6: 'ohhHhhhhhHhhhhho', 7: 'ohhhhhhhhhhhhhho', 8: 'ohHhhhhhhhhhhHho', 9: 'ohhssssssssssHho', 10: 'oh............ho', 11: 'oho..........oho', 12: '.o............o.' },
+  wavy: { 2: '.....oooooo.....', 3: '...oohhhhhhoo...', 4: '..ohhhhhhhhhho..', 5: '.ohhhhhhhhhhhho.', 6: '.ohhhhhhhhhhhho.', 7: '.ohhhhhhhhhhhho.', 8: '.ohhhhhhhhhhhho.', 9: 'ohhHssssssssHhho', 10: 'ohH..........Hho', 11: 'oHh..........hHo', 12: 'ohH..........Hho', 13: '.oh..........ho.', 14: '..o..........o..' },
+  shaggy: { 1: '....o.o..o.o....', 2: '...ohohhhohoo...', 3: '..ohhhhhhhhhhho.', 4: '.ohhhhhhhhhhhhho', 5: 'ohhhhhhhhhhhhhho', 6: 'ohhhhhhhhhhhhhho', 7: 'ohHhhhhhhhhhhHho', 8: 'ohhHhhhHhhhHhhho', 9: '.ohsHshsHsshsho.', 10: 'oho..........oho', 11: 'oh............ho', 12: '.o............o.' },
+  twintails: { 2: '.....oooooo.....', 3: '...oohhhhhhoo...', 4: 'o.ohhhhhhhhhho.o', 5: 'hoohhhhhhhhhhooh', 6: 'hhohhhhhhhhhhohh', 7: 'hhohhhhhhhhhhohh', 8: '.ohhhhhhhhhhhho.', 9: '.ohhsssssssshho.', 10: 'hho..........ohh', 11: 'hho..........ohh', 12: 'Hho..........ohH', 13: 'oHo..........oHo', 14: '.o............o.' },
+  halfup: { 0: '.......ooo......', 1: '......ohhho.....', 2: '.....ooHhoo.....', 3: '...oohhhhhhoo...', 4: '..ohhhhhhhhhho..', 5: '.ohhhhhhhhhhhho.', 6: '.ohhhhhhhhhhhho.', 7: '.ohhhhhhhhhhhho.', 8: '.ohhhhhhhhhhhho.', 9: '.ohhssssssshhho.', 10: 'ohh..........hho', 11: 'ohh..........hho', 12: 'ohh..........hho', 13: 'ohh..........hho', 14: 'ohh..........hho', 15: '.oo..........oo.' },
+  wolf: { 1: '.....oooooo.....', 2: '...oohhhhhhoo...', 3: '..ohhhhhhhhhho..', 4: '.ohhhhhhhhhhhho.', 5: '.ohhhhhhhhhhhho.', 6: 'ohhhhhhhhhhhhhho', 7: 'ohhHhhhhhhhhHhho', 8: 'ohHhhhHhhHhhhHho', 9: 'ohhsHsssssHsshho', 10: 'oHo..........oHo', 11: 'ohho........ohho', 12: '.oho........oho.', 13: '..o..........o..' },
+  sidelong: { 2: '.....oooooo.....', 3: '...oohhhhhhoo...', 4: '..ohhhhhhhhhho..', 5: '.ohhhhhhhhhhhho.', 6: '.ohhhhhhhhhhhho.', 7: '.ohhhhhhhhhhhho.', 8: '.ohhhhhhhhhhhho.', 9: '.ohhhhhhhsssssho', 10: 'ohhhhH..........', 11: 'ohhhH...........', 12: 'ohhh............', 13: 'ohhh............', 14: 'oHho............', 15: '.oo.............' },
+  braids: { 2: '.....oooooo.....', 3: '...oohhhhhhoo...', 4: '..ohhhhhhhhhho..', 5: '.ohhhhhhhhhhhho.', 6: '.ohhhhhhhhhhhho.', 7: '.ohhhhhhhhhhhho.', 8: '.ohhhhhhhhhhhho.', 9: '.ohhssssssshhho.', 10: 'ohh..........hho', 11: 'ohh..........hho', 12: 'oHh..........hHo', 13: 'ohH..........Hho', 14: 'oHh..........hHo', 15: '.y............y.', 16: '.o............o.' },
 };
 // Short styles keep the hair off the cheeks: no long sideburns down the face.
-const CROPPED = new Set(['short', 'side part', 'spiky', 'messy', 'undercut', 'quiff', 'fauxhawk', 'topknot', 'slick', 'curtains', 'crop', 'mohawk', 'bowl', 'manbun', 'pixie']);
-// Faces (16px, like the original characters): the eyes, cheeks and mouth below are the default, each face changes some rows.
-const FACE_BASE: Overlay = { 10: '.ohswesssswesho.', 11: '.ohseesssseesho.', 12: '.ohsbssmmssbsho.' };
+const CROPPED = new Set(['buzz', 'crop', 'curtains', 'fauxhawk', 'manbun', 'messy', 'mohawk', 'ponytail', 'quiff', 'short', 'side part', 'slick', 'spiky', 'topknot', 'undercut']);
 const FACE_OVERLAY: Record<string, Overlay> = {
   happy: {},
   sleepy: { 10: '.oh' + 'ssssssssss' + 'ho.' },
@@ -237,74 +223,37 @@ const OUTFIT_OVERLAY: Record<string, Overlay> = {
 };
 // Accessories go on top of everything; hats, headphones and ears also show from behind. a = the accessory's colour.
 const ACC_OVERLAY: Record<string, Overlay> = {
+  glasses: { 10: '...kwekkkkwek...', 11: '...keeksskeek...' },
+  round: { 9: '....kk....kk....', 10: '...kwek..kwek...', 11: '...keekkkkeek...' },
+  shades: { 10: '..kkkkkkkkkkkk..', 11: '...kwkk..kwkk...' },
+  bandage: { 11: '..........c.....', 12: '.........cbc....', 13: '..........c.....' },
+  mask: { 11: '..c..........c..', 12: '..cccccccccccc..', 13: '...cccccccccc...' },
   earring: { 13: '.y..............', 14: '.y..............' },
   headphones: { 2: '....oaaaaaao....', 3: '...oa......ao...', 4: '..oa........ao..', 5: '.oa..........ao.', 6: '.oa..........ao.', 7: '.oa..........ao.', 8: '.oa..........ao.', 9: 'oaao........oaao', 10: 'oAbo........obAo', 11: 'oaao........oaao' },
   cap: { 2: '.....oooooo.....', 3: '...ooaaaaaaoo...', 4: '..oaaaaaaaaaao..', 5: '.oaalaaaaaaaaao.', 6: '.oaaaaaaaaaaaao.', 7: '.oAAAAAAAAAAAAo.', 8: 'oAAAAAAAAAAAAAo.' },
   beanie: { 0: '......owwo......', 1: '.....owwwwo.....', 2: '....ooaaaaoo....', 3: '...oaaaaaaaao...', 4: '..oaaaaaaaaaao..', 5: '.oaaaaaaaaaaaao.', 6: '.oaaaaaaaaaaaao.', 7: '.oAaAaAaAaAaAAo.', 8: '.oAAAAAAAAAAAAo.' },
   catears: { 0: '...o........o...', 1: '..oao......oao..', 2: '..oabo....obao..' },
 };
-// Glasses, shades, masks and bandages sit on the face, so they are drawn at full detail like it.
-const ACC_FACE: Record<string, Overlay> = {
-  glasses: { 19: '......aaaaaaaa....aaaaaaaa......', 20: '......a......aaaaaa......a......', 21: '......a......a....a......a......', 22: '......a......a....a......a......', 23: '......a......a....a......a......', 24: '......aaaaaaaa....aaaaaaaa......' },
-  round: { 19: '.......aaaaaa......aaaaaa.......', 20: '......a......a....a......a......', 21: '......a......aaaaaa......a......', 22: '......a......a....a......a......', 23: '......a......a....a......a......', 24: '.......aaaaaa......aaaaaa.......' },
-  shades: { 19: '......aaaaaaaaaaaaaaaaaaaa......', 20: '......awwaaaaa....awwaaaaa......', 21: '......aawaaaaa....aawaaaaa......', 22: '......aaaaaaaa....aaaaaaaa......', 23: '.......aaaaaa......aaaaaa.......' },
-  mask: { 24: '...aa......................aa...', 25: '.....aaaaaaaaaaaaaaaaaaaaaa.....', 26: '.....aaaaaaaaaaaAAaaaaaaaaa.....', 27: '.......aaaaaaaaaaaaaaaaaa.......' },
-  bandage: { 24: '.......................aaaa.....', 25: '......................aabbaa....', 26: '.......................aaaa.....' },
-};
 const ACC_BACK = new Set(['headphones', 'cap', 'beanie', 'catears']);
 const ACC_COL: Record<string, string> = { glasses: '#3a3448', round: '#b07a4e', shades: '#2b2530', headphones: '#e8e3dc', cap: '#e06a5a', beanie: '#5a5070', catears: '#3a3448', bandage: '#f2d8c0', mask: '#fffaf3', earring: '#ffd34d' };
-// Full-detail chibi head (round, with ears) and bodies, rows of the 32x42 sprite: the head fills rows 0-27, a body rows 28-35.
-// Bodies: s skin (neck, hands), t/T shirt and its shade, c collar; outfits are painted onto these as a texture.
-const HEAD_HD = [
-  '................................',
-  '................................',
-  '................................',
-  '.............oooooo.............',
-  '..........ooossssssooo..........',
-  '........oossssssssssssoo........',
-  '.......osssssssssssssssso.......',
-  '......osssssssssssssssssso......',
-  '.....osssssssssssssssssssso.....',
-  '....osssssssssssssssssssssso....',
-  '...osssssssssssssssssssssssso...',
-  '..osssssssssssssssssssssssssso..',
-  '..osssssssssssssssssssssssssso..',
-  '..osssssssssssssssssssssssssso..',
-  '..osssssssssssssssssssssssssso..',
-  '.osssssssssssssssssssssssssssso.',
-  '.osssssssssssssssssssssssssssso.',
-  '.osssssssssssssssssssssssssssso.',
-  'osSssssssssssssssssssssssssssSso',
-  'osSssssssssssssssssssssssssssSso',
-  'osSssssssssssssssssssssssssssSso',
-  '.osossssssssssssssssssssssssoso.',
-  '..o.osssssssssssssssssssssso.o..',
-  '....osssssssssssssssssssssso....',
-  '.....oSSssssssssssssssssSSo.....',
-  '......ooSssssssssssssssSoo......',
-  '........oSSSssssssssSSSo........',
-  '.........oooSSSSSSSSooo.........',
-];
-const SKIRT_HD = ['.......oKKKKKKKK', '......oKKKoKKKKK', '.....oKKKKoKKKKK', '.....ooooooooooo']; // left halves, K = the outfit's colour
-const BODY_HD: Record<string, string[]> = {
-  regular: ['.............osssso.............', '.........oootttcctttooo.........', '........otttttttttttttto........', '.......ottoTttttttttTotto.......', '.......ottoTttttttttTotto.......', '.......ottoTttttttttTotto.......', '.......ossoTTTTTTTTTTosso.......', '........oooooooooooooooo........'],
-  lean: ['.............osssso.............', '..........oottccccttoo..........', '.........otttttttttttto.........', '........ottoTttttttTotto........', '........ottoTttttttTotto........', '........ottoTttttttTotto........', '........ossoTTTTTTTTosso........', '.........oooooooooooooo.........'],
-  athletic: ['.............osssso.............', '.......oooootttcctttooooo.......', '......otttttttttttttttttto......', '......otttoTttttttttTottto......', '......otttoTttttttttTottto......', '.......ottoTttttttttTotto.......', '.......ossoTTTTTTTTTTosso.......', '........oooooooooooooooo........'],
-  broad: ['.............osssso.............', '......ooooootttcctttoooooo......', '.....otttttttttttttttttttto.....', '.....otttoTttttttttttTottto.....', '.....otttoTttttttttttTottto.....', '.....otttoTttttttttttTottto.....', '.....osssoTTTTTTTTTTTTossso.....', '.......oooooooooooooooooo.......'],
-  stocky: ['.............osssso.............', '........oooottccccttoooo........', '.......otttttttttttttttto.......', '......otttoTttttttttTottto......', '......otttoTttttttttTottto......', '......osssoTttttttttTossso......', '.......ooooTTTTTTTTTToooo.......', '........oooooooooooooooo........'],
-  petite: ['.............osssso.............', '..........ootttcctttoo..........', '.........otttttttttttto.........', '.........otoTttttttToto.........', '.........otoTttttttToto.........', '.........otoTttttttToto.........', '.........osoTTTTTTTToso.........', '..........oooooooooooo..........'],
-  curvy: ['.............osssso.............', '.........oootttcctttooo.........', '........otttttttttttttto........', '.......ottoTttttttttTotto.......', '.......ottooTttttttTootto.......', '.......ottoTttttttttTotto.......', '.......ossoTTTTTTTTTTosso.......', '.......oooooooooooooooooo.......'],
-  chubby: ['.............osssso.............', '........oooottccccttoooo........', '.......otttttttttttttttto.......', '......ottottttttttttttotto......', '.....ottotTttttttttttTtotto.....', '.....ottotTttttttttttTtotto.....', '.....ossotTTTTTTTTTTTTtosso.....', '.......oooooooooooooooooo.......'],
-};
-const BODY_HD_BACK: Record<string, string[]> = {
-  regular: ['.............osssso.............', '.........ooottttttttooo.........', '........otttttttttttttto........', '.......ottoTttttttttTotto.......', '.......ottoTttttttttTotto.......', '.......ottoTttttttttTotto.......', '.......ossoTTTTTTTTTTosso.......', '........oooooooooooooooo........'],
-  lean: ['.............osssso.............', '..........oottttttttoo..........', '.........otttttttttttto.........', '........ottoTttttttTotto........', '........ottoTttttttTotto........', '........ottoTttttttTotto........', '........ossoTTTTTTTTosso........', '.........oooooooooooooo.........'],
-  athletic: ['.............osssso.............', '.......ooooottttttttooooo.......', '......otttttttttttttttttto......', '......otttoTttttttttTottto......', '......otttoTttttttttTottto......', '.......ottoTttttttttTotto.......', '.......ossoTTTTTTTTTTosso.......', '........oooooooooooooooo........'],
-  broad: ['.............osssso.............', '......oooooottttttttoooooo......', '.....otttttttttttttttttttto.....', '.....otttoTttttttttttTottto.....', '.....otttoTttttttttttTottto.....', '.....otttoTttttttttttTottto.....', '.....osssoTTTTTTTTTTTTossso.....', '.......oooooooooooooooooo.......'],
-  stocky: ['.............osssso.............', '........oooottttttttoooo........', '.......otttttttttttttttto.......', '......otttoTttttttttTottto......', '......otttoTttttttttTottto......', '......osssoTttttttttTossso......', '.......ooooTTTTTTTTTToooo.......', '........oooooooooooooooo........'],
-  petite: ['.............osssso.............', '..........oottttttttoo..........', '.........otttttttttttto.........', '.........otoTttttttToto.........', '.........otoTttttttToto.........', '.........otoTttttttToto.........', '.........osoTTTTTTTToso.........', '..........oooooooooooo..........'],
-  curvy: ['.............osssso.............', '.........ooottttttttooo.........', '........otttttttttttttto........', '.......ottoTttttttttTotto.......', '.......ottooTttttttTootto.......', '.......ottoTttttttttTotto.......', '.......ossoTTTTTTTTTTosso.......', '.......oooooooooooooooooo.......'],
-  chubby: ['.............osssso.............', '........oooottttttttoooo........', '.......otttttttttttttttto.......', '......ottottttttttttttotto......', '.....ottotTttttttttttTtotto.....', '.....ottotTttttttttttTtotto.....', '.....ossotTTTTTTTTTTTTtosso.....', '.......oooooooooooooooooo.......'],
+// Body types reshape the torso a pixel at a time, so they work with every outfit.
+const edges = (row: string) => [row.search(/[^.]/), row.length - 1 - [...row].reverse().join('').search(/[^.]/)];
+function widen(row: string) {
+  const s = [...row], [i, j] = edges(row);
+  if (i < 0) return row;
+  if (i > 0) { s[i - 1] = 'o'; s[i] = row[i + 1]; }
+  if (j < 15) { s[j + 1] = 'o'; s[j] = row[j - 1]; }
+  return s.join('');
+}
+function narrow(row: string) {
+  const s = [...row], [i, j] = edges(row);
+  if (i < 0) return row;
+  s[i] = '.'; s[i + 1] = 'o'; s[j] = '.'; s[j - 1] = 'o';
+  return s.join('');
+}
+const BODY_SHAPE: Record<string, Record<number, (row: string) => string>> = {
+  lean: { 16: narrow, 17: narrow }, athletic: { 14: widen, 15: widen }, chubby: { 15: widen, 16: widen, 17: widen },
+  broad: { 14: widen, 15: widen, 16: widen }, stocky: { 16: widen, 17: widen }, petite: { 15: narrow, 16: narrow, 17: narrow }, curvy: { 17: widen },
 };
 
 for (const rows of [HEAD_FRONT, HEAD_BACK, BODY_FRONT, BODY_BACK, ...LEGS,
@@ -312,111 +261,69 @@ for (const rows of [HEAD_FRONT, HEAD_BACK, BODY_FRONT, BODY_BACK, ...LEGS,
   console.assert(rows.every((row) => row.length === 16), 'sprite rows must be 16 wide', rows);
 }
 
-const lay = (rows: string[], over?: Overlay) =>
-  over ? rows.map((row, y) => (over[y] ? [...row].map((ch, x) => (over[y][x] !== '.' ? over[y][x] : ch)).join('') : row)) : rows;
-
-// Characters are drawn at twice the room's detail (AV): 32x42 art shown in the same 16x21 space.
-export const AV = 2;
-// After doubling, outer outlines are two pixels thick: thin them back to one by giving the inner half the colour beside it.
-// Outlines between two areas (hair against skin) don't touch the outside, so they stay.
-function thin(rows: string[]) {
-  const at = (x: number, y: number) => rows[y]?.[x] ?? '.';
-  const N = [[1, 0], [-1, 0], [0, 1], [0, -1]];
-  const outside = (x: number, y: number) => N.some(([dx, dy]) => at(x + dx, y + dy) === '.');
-  return rows.map((row, y) => [...row].map((ch, x) => {
-    if (ch !== 'o' || outside(x, y)) return ch;
-    if (!N.some(([dx, dy]) => at(x + dx, y + dy) === 'o' && outside(x + dx, y + dy))) return ch;
-    const fill = N.map(([dx, dy]) => at(x + dx, y + dy)).find((n) => n !== 'o' && n !== '.');
-    return fill ?? ch;
-  }).join(''));
-}
-
-// Legs at full detail: dark trousers and white sneakers with a grey sole, standing and the two walking steps.
-const LEGS_HD: string[][] = [
-  ['........oppppppppppppppo........', '........oppppppooppppppo........', '........oppppppooppppppo........', '.......onnnnnnnoonnnnnnno.......', '.......oNNNNNNNooNNNNNNNo.......', '........ooooooo..ooooooo........'],
-  ['........oppppppppppppppo........', '.......onnnnnnnooppppppo........', '.......oNNNNNNNooppppppo........', '........ooooooo.onnnnnnno.......', '................oNNNNNNNo.......', '.................ooooooo........'],
-  ['........oppppppppppppppo........', '........oppppppoonnnnnnno.......', '........oppppppooNNNNNNNo.......', '.......onnnnnnno.ooooooo........', '.......oNNNNNNNo................', '........ooooooo.................'],
-];
-// Scale2x: doubles pixel art but rounds off its staircase corners, so curves (heads, hair) stay curves.
-function scale2x(rows: string[]) {
-  const at = (x: number, y: number) => rows[y]?.[x] ?? '.';
-  const out: string[] = [];
-  rows.forEach((row, y) => {
-    let a = '', b = '';
-    for (let x = 0; x < row.length; x++) {
-      const E = row[x], B = at(x, y - 1), D = at(x - 1, y), F = at(x + 1, y), H = at(x, y + 1);
-      const corner = B !== H && D !== F;
-      a += (corner && D === B ? D : E) + (corner && B === F ? F : E);
-      b += (corner && D === H ? D : E) + (corner && H === F ? F : E);
+// A style seen from behind: the same shape, but hair where the face would be, and long hair hanging down over the back.
+function fromBehind(style: Overlay): Overlay {
+  return Object.fromEntries(Object.entries(style).map(([key, row]) => {
+    const y = Number(key);
+    if (y < 5) return [y, row];
+    let r = row.replace(/[sH]/g, 'h').replace(/S/g, 'H'); // no face, and no fringe strands, from behind
+    const i = r.search(/[^.]/), j = r.length - 1 - [...r].reverse().join('').search(/[^.]/);
+    if (y >= 14 && i >= 0 && j - i > 6) { // below the head: fill in between the two sides
+      const fill = r.includes('h') ? 'h' : 'o';
+      r = r.slice(0, i) + r.slice(i, j + 1).replace(/\./g, fill) + r.slice(j + 1);
     }
-    out.push(a, b);
-  });
-  return out;
+    return [y, r];
+  }));
 }
-// Anime hair shine: a broken band of light across the hair (the "angel ring") and darker strands under it.
-function hairShine(rows: string[]) {
+// Volume for any hairstyle: a light rim along the top, shadow where hair meets the face and along its lower edge.
+// Layers: the hair falls in locks that fan out from the crown, with a darker line where each pair of locks parts
+// (none straight down the middle), a broken shine band across the top, and shadow against the skin and underneath.
+function shadeHair(rows: string[]) {
   const isHair = (ch?: string) => ch === 'h' || ch === 'H' || ch === 'l';
-  const top = rows.findIndex((row) => [...row].some(isHair));
-  if (top < 0) return rows;
-  const ring = top + 5;
+  const top = [...rows[0]].map((_, x) => rows.findIndex((row) => isHair(row[x])));
+  const tops = top.filter((t) => t >= 0);
+  if (!tops.length) return rows;
+  const crown = Math.min(...tops) - 3, mid = rows[0].length / 2;
   return rows.map((row, y) => [...row].map((ch, x) => {
     if (ch !== 'h') return ch;
-    const solid = isHair(rows[y - 1]?.[x]) && isHair(rows[y + 1]?.[x]) && isHair(row[x - 1]) && isHair(row[x + 1]);
-    if (!solid) return ch;
-    if ((y === ring && x % 5 !== 0) || (y === ring + 1 && x % 5 > 1 && x % 5 < 4)) return 'l';
-    if (y > ring + 2 && (x * 7 + 3) % 6 === 0 && y < ring + 12) return 'H'; // strands
-    return ch;
+    const up = rows[y - 1]?.[x], down = rows[y + 1]?.[x], left = row[x - 1], right = row[x + 1];
+    const d = y - top[x]; // how far down the hair this pixel is
+    const lock = ((Math.atan2(x + 0.5 - mid, y + 0.5 - crown) * 180) / Math.PI / 19 + 1000) % 1; // where across its lock it sits
+    const parting = Math.abs(lock - 0.5) < 0.17 && d >= 2;
+    if ([up, down, left, right].some((n) => n === 's' || n === 'S')) return 'H'; // shadow against the skin
+    if (down === 'o' && y >= 6) return 'H'; // the underside of the hair
+    if (!parting && ((d === 2 && x >= 2 && x <= 13) || (d === 3 && x >= 4 && x <= 7))) return 'l'; // the shine band
+    return parting ? 'H' : ch;
   }).join(''));
 }
+// The mohawk from behind: its crest runs down the back of the head, shaved either side.
+const MOHAWK_BACK: Overlay = {
+  ...Object.fromEntries([3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((y) => [y, y === 3 ? '...osshhhhsso...' : y === 4 ? '..osssHhhHssso..' : '.ossssHhhHsssso.'])),
+  13: '..osssHhhHssso..',
+};
 
 function avatarRows(look: Look, step: number, up: boolean) {
-  // The hair (and hats) come from the 16px art: built on the old head, then cut out, scaled up smoothly and shined.
-  let small = [BLANK, BLANK, ...(up ? HEAD_BACK : HEAD_FRONT), ...(up ? BODY_BACK : BODY_FRONT), ...LEGS[step]];
+  let rows = [BLANK, BLANK, ...(up ? HEAD_BACK : HEAD_FRONT), ...(up ? BODY_BACK : BODY_FRONT), ...LEGS[step]];
   const style = STYLE_OVERLAY[look.style ?? ''];
-  const shaved = look.style === 'buzz' || look.style === 'mohawk' || look.style === 'undercut';
-  const backStyle = style && up && !shaved ? Object.fromEntries(Object.entries(style).filter(([y]) => Number(y) < 8)) : style;
-  small = lay(small, backStyle);
-  if (!up && CROPPED.has(look.style ?? 'short')) small = small.map((row, y) => (y >= 9 && y <= 12 ? `${row.slice(0, 2)}s${row.slice(3, 13)}s${row.slice(14)}` : row));
-  const isHair = (ch?: string) => ch === 'h' || ch === 'H' || ch === 'l';
-  const hairOnly = small.map((row, y) => [...row].map((ch, x) => (isHair(ch) || (ch === 'o' && [small[y - 1]?.[x], small[y + 1]?.[x], row[x - 1], row[x + 1]].some(isHair)) ? ch : '.')).join(''));
-  const hats = (!up || ACC_BACK.has(look.acc ?? '')) && ACC_OVERLAY[look.acc ?? ''];
-  const hatOnly = hats ? small.map((_, y) => hats[y] ?? BLANK) : null;
-
-  // The full-detail body: head, a body of the chosen type with the outfit painted on, legs and sneakers.
-  let rows = [...HEAD_HD, ...(up ? BODY_HD_BACK : BODY_HD)[look.body ?? ''] ?? (up ? BODY_HD_BACK : BODY_HD).regular, ...LEGS_HD[step]];
-  const outfit = OUTFIT_OVERLAY[look.outfit ?? ''] ?? {};
-  rows = rows.map((row, y) => (y < 28 || y > 35 ? row : [...row].map((ch, x) => {
-    if (ch !== 't' && ch !== 'T' && ch !== 'c') return ch;
-    const paint = outfit[14 + ((y - 28) >> 1)]?.[x >> 1]; // the outfit's 16px pattern, stretched over the body
-    return paint && !'.osS'.includes(paint) ? paint : ch;
-  }).join('')));
-  const hem = outfit[18] && [...outfit[18]].find((ch) => ch !== '.' && ch !== 'o'); // skirts and dresses: a flared, pleated skirt over the legs
-  if (hem) rows = lay(rows, Object.fromEntries(SKIRT_HD.map((half, k) => [35 + k, (half + [...half].reverse().join('')).replace(/K/g, hem)])));
-  const over = (layer: string[]) => Object.fromEntries(hairShine(thin(scale2x(layer))).map((row, y) => [y, row]));
-  rows = lay(rows, over(hairOnly));
-  if (hatOnly) rows = lay(rows, over(hatOnly));
-  if (!up) {
-    // The face: the 16px eyes, cheeks and mouth, doubled onto the head (only the features; the head itself is full detail).
-    const face = lay(lay(Array(21).fill(BLANK), FACE_BASE), FACE_OVERLAY[look.face ?? '']).map((row) => row.replace(/[^ewbmqy]/g, '.'));
-    rows = lay(lay(rows, Object.fromEntries(face.flatMap((row, y) => { const d = [...row].map((ch) => ch + ch).join(''); return [[y * 2, d], [y * 2 + 1, d]]; }))), ACC_FACE[look.acc ?? '']);
+  const backStyle = !up || !style ? style : look.style === 'mohawk' ? { ...style, ...MOHAWK_BACK } : fromBehind(style);
+  const layers = [OUTFIT_OVERLAY[look.outfit ?? ''], backStyle, up ? null : FACE_OVERLAY[look.face ?? '']];
+  for (const over of layers) {
+    if (!over) continue;
+    rows = rows.map((row, y) => (over[y] ? [...row].map((ch, x) => (over[y][x] !== '.' ? over[y][x] : ch)).join('') : row));
   }
-  return rows;
-}
-
-// Draws character art (made at AV times the detail) into room-sized space. On a canvas too small to show the
-// extra detail (zoomed all the way out), let the browser average the pixels instead of dropping every other one.
-function blit(c: Ctx, img: HTMLCanvasElement, sh: number, x: number, y: number) {
-  const smooth = c.imageSmoothingEnabled, lo = c.getTransform().a < AV;
-  if (lo) { c.imageSmoothingEnabled = true; c.imageSmoothingQuality = 'high'; }
-  c.drawImage(img, 0, 0, img.width, sh, x, y, img.width / AV, sh / AV);
-  c.imageSmoothingEnabled = smooth;
+  if (!up && CROPPED.has(look.style ?? 'short')) rows = rows.map((row, y) => (y >= 9 && y <= 12 ? `${row.slice(0, 2)}s${row.slice(3, 13)}s${row.slice(14)}` : row));
+  const acc = ACC_OVERLAY[look.acc ?? ''];
+  if (acc && (!up || ACC_BACK.has(look.acc!))) rows = rows.map((row, y) => (acc[y] ? [...row].map((ch, x) => (acc[y][x] !== '.' ? acc[y][x] : ch)).join('') : row));
+  const shape = BODY_SHAPE[look.body ?? ''];
+  if (shape) rows = rows.map((row, y) => shape[y]?.(row) ?? row);
+  return shadeHair(rows);
 }
 
 // x, y = top-left of the tile the avatar stands on; the sprite overhangs the tile above.
 const lookPal = (look: Look): Record<string, string> => {
   const acc = ACC_COL[look.acc ?? ''] ?? '#5a5070';
   return {
-    o: OUT, h: look.hair, H: shade(look.hair, -0.15), l: shade(look.hair, 0.28), n: '#f4f2ee', N: '#c8c0c8',
+    o: OUT, h: look.hair, H: shade(look.hair, -0.15), l: shade(look.hair, 0.2),
     s: look.skin, S: shade(look.skin, -0.1), e: '#2a1e26', w: '#ffffff', b: '#f7a0a8', m: '#c8606a', q: '#7fc4f0',
     t: look.shirt, T: shade(look.shirt, -0.15), c: '#fff4e6', d: '#7a5040', a: acc, A: shade(acc, -0.15),
     v: '#6a8ad0', V: '#5a78bc', r: '#e06a5a', y: '#ffd34d', k: '#3a3448', g: '#8fd0a8', p: look.outfit === 'overalls' ? '#5a78bc' : '#5a5080',
@@ -424,11 +331,14 @@ const lookPal = (look: Look): Record<string, string> => {
 };
 export function drawAvatar(c: Ctx, look: Look, x: number, y: number, step: number, up: boolean) {
   const key = `av|${Object.values(look).join()}|${step}${up}`;
-  const sprite = baked(key, 16 * AV, AVATAR_H * AV, (g) => paintRows(g, avatarRows(look, step, up), lookPal(look)));
+  const sprite = baked(key, 16, AVATAR_H, (g) => paintRows(g, avatarRows(look, step, up), lookPal(look)));
   r(c, x + 4, y + 14, 8, 2, 'rgba(58,38,51,0.22)');
   r(c, x + 3, y + 15, 10, 1, 'rgba(58,38,51,0.12)');
-  blit(c, sprite, sprite.height, x, y + T - AVATAR_H + (step ? -1 : 0) + 1);
+  c.drawImage(sprite, x, y + T - AVATAR_H + (step ? -1 : 0) + 1);
 }
+
+// Furniture redrawn at full detail is drawn at AV times the room's pixels.
+export const AV = 2;
 
 // Chairs face us: backrest drawn behind the sitter, seat and legs in front.
 type ChairPart = (c: Ctx, x: number, y: number, col: string) => void;
@@ -489,11 +399,10 @@ const CHAIRS: Record<string, { col: string; back: ChairPart; seat: ChairPart }> 
 
 // Head and body only, for poses where something hides the legs.
 function seatedSprite(look: Look) {
-  return baked(`sit|${Object.values(look).join()}`, 16 * AV, 18 * AV, (g) =>
-    paintRows(g, avatarRows(look, 0, false).slice(0, 18 * AV), lookPal(look)));
+  return baked(`sit|${Object.values(look).join()}`, 16, 18, (g) => paintRows(g, avatarRows(look, 0, false).slice(0, 18), lookPal(look)));
 }
-// The seated sprite's top `rows` room pixels (all of it by default) at x, y.
-const drawSitter = (c: Ctx, look: Look, x: number, y: number, rows = 18) => blit(c, seatedSprite(look), rows * AV, x, y);
+// The seated sprite's top `rows` pixels (all of it by default) at x, y.
+const drawSitter = (c: Ctx, look: Look, x: number, y: number, rows = 18) => c.drawImage(seatedSprite(look), 0, 0, 16, rows, x, y, 16, rows);
 
 // Seated in a chair facing us: gentle bob, and sparkles drifting up while studying.
 export function drawSeated(c: Ctx, look: Look, x: number, y: number, t: number, chairCol?: string, kind = 'chair', sparkle = true) {
@@ -2504,54 +2413,54 @@ function heartHD(c: Ctx, x: number, y: number, col: string) {
 }
 const grain = (c: Ctx, col: string, lines: number[][]) => { for (const [x, y, w] of lines) R(c, x, y, w, 0.5, shade(col, -0.05)); };
 
-// The big shark plush: a sleek side view in flat blues with a smiling face, at full detail (64x44 half-pixels).
+// The big shark plush: chunky pixels in periwinkle and purple, with a white belly band and a pink mouth (32x22, doubled).
 const SHARK_ROWS = [
+  '................................oooo............................',
+  '................................oooo............................',
+  '..............................oovvvvoo..........................',
+  '..............................oovvvvoo..........................',
+  '..............................oobbbbvvoo........................',
+  '..............................oobbbbvvoo........................',
+  '..oooooooo..................oovvbbbbbbvvoo......................',
+  '..oooooooo..................oovvbbbbbbvvoo......................',
+  'oouuuuuuuuoo................oobbbbbbbbbbvvoo....................',
+  'oouuuuuuuuoo................oobbbbbbbbbbvvoo....................',
+  '..oouuuuuuuuoo..............oobbbbbbbbbbbbvvoo..................',
+  '..oouuuuuuuuoo..............oobbbbbbbbbbbbvvoo..................',
+  '....oouuuuuuuuoo............oobbbbbbbbbbbbbbvvoo................',
+  '....oouuuuuuuuoo............oobbbbbbbbbbbbbbvvoo................',
+  '......oouuuuuuuuoo........oovvbbbbbbbbbbbbbbbbvvoo..............',
+  '......oouuuuuuuuoo........oovvbbbbbbbbbbbbbbbbvvoo..............',
+  '........oouuuuuuuuoo..oooooobbbbbbbbbbbbbbbbbbbbvvoooooo........',
+  '........oouuuuuuuuoo..oooooobbbbbbbbbbbbbbbbbbbbvvoooooo........',
+  '..........oouuuuuuuuoovvvvvvbbbbbbbbbbbbbbbbbbbbbbvvvvvvoo......',
+  '..........oouuuuuuuuoovvvvvvbbbbbbbbbbbbbbbbbbbbbbvvvvvvoo......',
+  '............oouuuuuuvvbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbvvoooo..',
+  '............oouuuuuuvvbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbvvoooo..',
+  '..............oouubbbbbbbbbbbbbbvvbbvvbbbbbbbbbbbbvvbbbbbbvvvvoo',
+  '..............oouubbbbbbbbbbbbbbvvbbvvbbbbbbbbbbbbvvbbbbbbvvvvoo',
+  '..............oouubbbbbbbbbbbbbbvvbbvvbbbbbbbbbbbbvvbbbbbbbbbbvv',
+  '..............oouubbbbbbbbbbbbbbvvbbvvbbbbbbbbbbbbvvbbbbbbbbbbvv',
+  '............oouuuuuubbbbbbbbbbbbbbbbbbwwwwwwwwwwwwwwwwwwwwwwwwoo',
+  '............oouuuuuubbbbbbbbbbbbbbbbbbwwwwwwwwwwwwwwwwwwwwwwwwoo',
+  '..........oouuuuuuuuoobbbbbbbbbbbbbbbbwwwwwwwwwwwwwwrrrrrroooo..',
+  '..........oouuuuuuuuoobbbbbbbbbbbbbbbbwwwwwwwwwwwwwwrrrrrroooo..',
+  '........oouuuuuuuuoo..oobbbbbbbbbbbbbbwwwwoobbbboooooooooo......',
+  '........oouuuuuuuuoo..oobbbbbbbbbbbbbbwwwwoobbbboooooooooo......',
+  '......oouuuuuuoooo....oobbbbbbbboooooooooooobbbboo..............',
+  '......oouuuuuuoooo....oobbbbbbbboooooooooooobbbboo..............',
+  '....oouuuuuuoo........oobbbbbboo............oooo................',
+  '....oouuuuuuoo........oobbbbbboo............oooo................',
+  '......oooooo............oooooo..................................',
+  '......oooooo............oooooo..................................',
   '................................................................',
-  '..................................oooo..........................',
-  '.................................obbbbo.........................',
-  '.................................obbbbo.........................',
-  '................................obbbbbo.........................',
-  '...............................obbbbbbo.........................',
-  '...............................obbbbbbo.........................',
-  '..............................obbbbbbbo.........................',
-  '..............................obbbbbbbo.........................',
-  '..o..........................obbbbbbbbbo........................',
-  '.oboo.......................obbbbbbbbbbo........................',
-  '.obbboo....................obbbbbbbbbbbboo......................',
-  '.obbbbbo...................obbbbbbbbbbbbbbo.....................',
-  '..obbbbboo................obbbbbbbbbbbbbbbbo....................',
-  '..obbbbbbbo..............obbbbbbbbbbbbbbbbbboo..................',
-  '...obbbbbbbo.............obbbbbbbbbbLLLLbbbbbbooo...............',
-  '....obbbbbbbo..........oobbLLLLLLLLLLLLLLLLLLLLLLoooo...........',
-  '....obbbbbbbboo.....oooLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLoo.........',
-  '.....obbbbbbbbbo..ooLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLoo.......',
-  '......obbbbbbbbbooLLLLLLLLLLLLbbbbbbbbbbbbbbbbLLeeeeLLLLLo......',
-  '.......obbbbbbbbbbLLLLLLLbbbbbbbbbbbbbbbbbbbbbbesseeeLLLLLoo....',
-  '.......obbbbbbbbbbLLLbbbbbbbbbbbbbbbbbbbbbbbbbbesseeebLLLLbbo...',
-  '........obbbbbbbbbLbbbbbbbbbbbbbbbbbdbbdbbdbbbbeeeesebbbLLbbbo..',
-  '.........obbbbbbbbbbbbbbbbbbbbbbbbbbdbbdbbdbbbbbeeeebbbbbbbbbbo.',
-  '..........obbbbbbbbbbbbbbbbbbbbbbbbbbdbbdbbdbbbbbbbbbbbbbbbbbbo.',
-  '..........obbbbbbbbbbbbbbbbbbbbbbbbbbdbbdbbdkkkkbbbbbmbbbbmbbbbo',
-  '..........obbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbkkbbbbbbbmmmmwbbbo.',
-  '..........odbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbwwrrwwwwbo.',
-  '.........odddbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbwwwwwwwwwwwwwwwo..',
-  '........odddddbbbbbbbbbbbbbbbbbbbbbbwwwwwwwwwwwwwwwwwwwwwwwwo...',
-  '........odddddddbbbbbbbbbbbbwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwoo....',
-  '.......oddddddddoobbbbwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwooo......',
-  '......oddddddddo..ooowwwwwwwwwwwwwwwwwwwwwwwwwwwwwooooo.........',
-  '.....odddddddoo......ooowwwwwwwwwwwwwwwwwwwooooooo..............',
-  '.....oddddddo...........oooddddddddddoooooo.....................',
-  '....oddddddo..............oddddddddoo...........................',
-  '....odddddo...............odddddddo.............................',
-  '...oddddoo................oddddddo..............................',
-  '...odddo..................oddddoo...............................',
-  '....ooo...................odddo.................................',
-  '...........................ooo..................................',
+  '................................................................',
+  '................................................................',
   '................................................................',
   '................................................................',
   '................................................................',
 ];
-const SHARK_PAL: Record<string, string> = { o: '#2a66b0', b: '#47a8f0', L: '#6cbcf6', d: '#3a8ad8', w: '#ffffff', e: '#1c3a66', s: '#ffffff', m: '#1c3a66', r: '#f07890', k: '#f7a0b8' };
+const SHARK_PAL: Record<string, string> = { o: '#6a5a98', b: '#86a2d4', v: '#7a78b8', u: '#7262a6', w: '#ffffff', r: '#d01868' };
 const HD: Record<string, HdDraw> = {
   sharkPlush(c) { pix(c, 0, -12, SHARK_ROWS, SHARK_PAL); },
   desk(c, t, col = '#d9a06a', bare = 0) {
@@ -2930,22 +2839,22 @@ function drawTurned(c: Ctx, draw: Draw, item: string, x: number, y: number, t: n
 
 // ---------- UI icons ----------
 const UI_ICONS: Record<string, { rows: string[]; pal: Record<string, string> }> = {
-  todo: {
+  todo: { // a clipboard: wooden board, gold clip, two ticked items and one still to do
     rows: [
-      '.oooooooooo.',
-      '.owwwwwwwwo.',
-      '.owwgwwwwwo.',
-      '.oggwwkkkko.',
-      '.owwwwwwwwo.',
-      '.owwgwwwwwo.',
-      '.oggwwkkkko.',
-      '.owwwwwwwwo.',
-      '.owwwwwwwwo.',
-      '.okkwwkkkko.',
-      '.owwwwwwwwo.',
-      '.oooooooooo.',
+      '....oooo....',
+      '.oooyyyyooo.',
+      'obwwwwwwwwbo',
+      'obwwgwwwwwbo',
+      'obggwwkkkwbo',
+      'obwwwwwwwwbo',
+      'obwwgwwwwwbo',
+      'obggwwkkkwbo',
+      'obwwwwwwwwbo',
+      'obeewwkkkwbo',
+      'obeewwwwwwbo',
+      'oooooooooooo',
     ],
-    pal: { o: OUT, w: '#fff4e6', g: '#6fcf8a', k: '#a8a0b8' },
+    pal: { o: OUT, b: '#c58b5a', y: '#e8b43c', w: '#fff4e6', g: '#6fcf8a', k: '#a8a0b8', e: '#d8d0e0' },
   },
   clock: {
     rows: [
