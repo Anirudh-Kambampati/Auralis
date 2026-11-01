@@ -155,16 +155,14 @@ button.danger.armed { background: #c43f3f; animation: shake 0.3s; }
 #dock img { width: 32px; height: 32px; }
 
 /* ---------- zoom ---------- */
+/* Zoom out and in sit either side of the focus timer (or break chip) in the top bar. */
 #zoom {
-  position: fixed;
-  right: calc(16px + var(--right, 0px));
-  bottom: calc(96px + env(safe-area-inset-bottom, 0));
   display: flex;
-  flex-direction: column;
+  align-items: center;
   gap: 8px;
-  transition: right 0.2s;
 }
-#zoom button {
+#zoom > button {
+  pointer-events: auto;
   width: 44px;
   height: 44px;
   padding: 0;
@@ -175,8 +173,9 @@ button.danger.armed { background: #c43f3f; animation: shake 0.3s; }
   border-radius: 12px;
   box-shadow: 0 3px 0 var(--ink);
 }
-@media (min-width: 900px) {
-  #zoom { bottom: calc(24px + env(safe-area-inset-bottom, 0)); }
+@media (max-width: 480px) { /* room for the coins and house code on narrow phones */
+  #zoom { gap: 4px; }
+  #zoom > button { width: 34px; height: 34px; font-size: 20px; border-radius: 10px; }
 }
 
 /* ---------- panel ---------- */
