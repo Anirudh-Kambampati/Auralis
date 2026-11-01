@@ -603,3 +603,24 @@ export const buddyMultiplier = (buddies) => 1 + 0.25 * Math.min(Number(buddies) 
 export function focusReward(minutes, buddies) {
   return minutes + Math.ceil(minutes * (buddyMultiplier(buddies) - 1));
 }
+// Quitting early pays for the nearest quarter of the session reached: 0, 1/4, 1/2, 3/4 or all of it.
+export const quitQuarter = (minutes, elapsedMs) => Math.min(4, Math.max(0, Math.round((elapsedMs / (minutes * 60_000)) * 4)));
+export function quitReward(minutes, buddies, elapsedMs) {
+  return Math.floor((focusReward(minutes, buddies) * quitQuarter(minutes, elapsedMs)) / 4);
+}
+// A paused timer is frozen: its end keeps moving out until it resumes.
+export const focusEnd = (f, now = Date.now()) => (f.pausedAt ? f.endsAt + (now - f.pausedAt) : f.endsAt);
+
+// Days in a row with a session, counted in the player's local days (tz = getTimezoneOffset() minutes).
+export function streakDays(sessions, now, tz = 0) {
+  const day = (t) => Math.floor((t - tz * 60_000) / 86_400_000);
+  const days = new Set(sessions.map((s) => day(s.at)));
+  let d = day(now);
+  if (!days.has(d)) d--;
+  let n = 0;
+  while (days.has(d)) { n++; d--; }
+  return n;
+}
+export const streakBonus = (days) => (days >= 30 ? 0.5 : days >= 7 ? 0.25 : days >= 3 ? 0.1 : 0);
+
+export const quitMinutes =(minutes, elapsedMs) => Math.floor((minutes * quitQuarter(minutes, elapsedMs)) / 4);

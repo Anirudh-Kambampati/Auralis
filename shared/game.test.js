@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  buildGrid, canPlace, placeSwaps, focusReward, colorsFor, roomSize, PETS, EXPAND_COST,
+  buildGrid, canPlace, placeSwaps, focusReward, quitReward, quitMinutes, focusEnd, streakDays, streakBonus, colorsFor, roomSize, PETS, EXPAND_COST,
   ITEMS, EVENTS, easterSunday, activeEvents, nextEvent, footprint, nextRot,
   DOOR, WALL, FLOOR, BLOCKED, VOID, ROOM_W, colsFor,
 } from './game.js';
@@ -118,6 +118,16 @@ test('friends bonus', () => {
   assert.equal(focusReward(25, 2), 38); // ×1.5
   assert.equal(focusReward(25, 4), 50); // ×2
   assert.equal(focusReward(25, 9), 50); // capped
+  const min = 60_000;
+  assert.equal(quitReward(60, 0, 5 * min), 0); // under 1/8: nothing
+  assert.equal(quitReward(60, 0, 10 * min), 15); // nearer 1/4
+  assert.equal(quitReward(60, 0, 31 * min), 30); // nearer 1/2
+  assert.equal(quitReward(60, 0, 50 * min), 45); // nearer 3/4
+  assert.equal(quitReward(60, 0, 55 * min), 60); // nearer full
+  assert.equal(quitReward(60, 4, 30 * min), 60); // buddy bonus scales too
+  assert.equal(quitMinutes(60, 31 * min), 30);
+  assert.equal(quitMinutes(25, 20 * min), 18); // 3/4 of 25, floored
+  assert.equal(quitMinutes(25, 2 * min), 0);
 });
 
 test('festivals: Easter, windows across New Year', () => {
@@ -144,4 +154,22 @@ test('turning: sideways swaps the footprint, square upright things only face fro
   assert.equal(canPlace(room, 'plant', 0, 6), false); // its third tile
   assert.equal(canPlace(room, 'plant', 1, 4), true); // beside it, where it used to reach
   assert.equal(canPlace({ furniture: [] }, 'sofa', 0, 6, 1), false); // 3 deep doesn't fit at the bottom edge
+});
+
+test('pause freezes the timer until resumed', () => {
+  const min = 60_000, f = { minutes: 25, endsAt: 100 * min, pausedAt: 90 * min };
+  assert.equal(focusEnd(f, 92 * min) - 92 * min, 10 * min); // still 10 min left
+  assert.equal(focusEnd(f, 190 * min) - 190 * min, 10 * min); // however long it's paused
+  assert.equal(focusEnd({ minutes: 25, endsAt: 100 * min }, 99 * min), 100 * min);
+});
+
+test('streak bonus counts local days', () => {
+  const day = 86_400_000, tz = 300; // UTC-5
+  const at = (d, h) => d * day + (h + 5) * 3_600_000; // local day d, local hour h
+  const s = [at(10, 23), at(11, 1), at(12, 12)].map((t) => ({ at: t }));
+  assert.equal(streakDays(s, at(12, 13), tz), 3);
+  assert.equal(streakDays(s, at(13, 9), tz), 3); // nothing yet today: still counts
+  assert.equal(streakDays(s, at(14, 9), tz), 0);
+  assert.equal(streakDays(s, at(12, 13), 0), 2); // in UTC the first two fall on one day
+  assert.deepEqual([2, 3, 7, 30].map(streakBonus), [0, 0.1, 0.25, 0.5]);
 });

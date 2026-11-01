@@ -1,7 +1,7 @@
 import {
   SHELVES, buildGrid, walkable, canPlace, placeSwaps,roomSize, MAX_ROOMS, ROOM_COST, colorsFor, ITEMS, PETS, PET_ACCS, MAX_PETS, EXPAND_COST, ROOM_SIZES,
   WALLPAPERS, WALL_PATTERNS, FLOORS, FLOOR_STYLES, SKINS, HAIRS, SHIRTS, STYLES, FACES, OUTFITS, FOCUS_LENGTHS,
-  WALL_H, WALL, FLOOR, DOOR, BLOCKED, VOID, buddyMultiplier, sellPrice, footprint, lying, THIRSTY_MS, isPlant, discounted, GIFT_COINS, activeEvents, nextEvent,
+  WALL_H, WALL, FLOOR, DOOR, BLOCKED, VOID, buddyMultiplier, focusEnd, streakDays, streakBonus, sellPrice, footprint, lying, THIRSTY_MS, isPlant, discounted, GIFT_COINS, activeEvents, nextEvent,
 } from '../shared/game.js';
 import {
   T, OVERHANG, SURFACE, drawSeated, drawActing, drawSeam, drawFloor, drawWall, drawWallFace, drawWallTop, drawDoor, drawWindow, drawPainting, drawFurniture, drawAvatar, drawDeskLamp, drawGlow, drawUsing, skyNow, NIGHT_TINT,
@@ -18,14 +18,15 @@ import './style.css';
 type Furniture = { item: string; x: number; y: number; v?: number; s?: number; flip?: boolean; rot?: number; wateredAt?: number; off?: boolean };
 type Room = { wallpaper: string; floor: string; pattern?: string; floorStyle?: string; level?: number; curtains?: boolean; furniture: Furniture[] };
 type Member = {
-  id: string; name: string; look: Look; rooms: Room[]; focus: { minutes: number; endsAt: number } | null;
+  id: string; name: string; look: Look; rooms: Room[]; focus: Focus | null;
   totalMinutes: number; online: boolean; pos: { x: number; y: number } | null; pets: { kind: string; coat?: number; acc?: string }[]; fedAt?: number;
   exams?: { subject: string; date: string }[]; // YYYY-MM-DD, soonest first
 };
 type Todo = { id: number; text: string; done: boolean; by: string; all?: boolean; ticks?: string[] }; // all: everyone has to tick it
 type Chat = { id: number; from: string; by: string; text: string; at: number };
 type CalEvent = { id: number; date: string; time?: string; text: string; by?: string }; // date YYYY-MM-DD, time HH:MM
-type Session = { at: number; minutes: number; tag: string };
+type Focus = { minutes: number; endsAt: number; pausedAt?: number | null };
+type Session = { at: number; minutes: number; tag: string; early?: boolean };
 type Me = { id: string; home?: string; visited?: { code: string; ownerName: string | null; online: number }[]; banned?: { id: string; name: string }[]; coins: number; discount?: boolean; notes?: { from: string; text: string; at: number }[]; events?: CalEvent[]; inventory: Record<string, number>; sessions: Session[]; subjects: string[]; hiddenSubjects: string[]; todos: Todo[]; dm: Record<string, Chat[]>; petAccs?: string[] };
 type Board = { scope: string; period: string; rows: { name: string; me: boolean; minutes: number }[] };
 type Avatar = { x: number; y: number; tx: number; ty: number; up: boolean; dist: number; use?: string };
@@ -199,7 +200,7 @@ function onMessage(m: any) {
       missed = 0;
       // Pomodoro: a finished session rolls straight into a short break, then nudges you to go again.
       if (finishedSession) { // every fourth session of the day earns a long break
-        const today = me.sessions.filter((s) => isoDay(new Date(s.at)) === isoDay(new Date())).length;
+        const today = me.sessions.filter((s) => !s.early && isoDay(new Date(s.at)) === isoDay(new Date())).length;
         if (today % 4 === 0) startBreak(15 * 60_000, `🍅 That's ${today} today! Take a proper 15-minute break.`);
         else startBreak(5 * 60_000, `☕ Nice work! Take a 5-minute break. (${4 - (today % 4)} more until a long one)`);
       }
@@ -220,7 +221,7 @@ function onMessage(m: any) {
     notify(chime);
     if (!m.text) finishedSession = true; // a focus session paid out
     if (m.text) toast(esc(m.text), 'reward');
-    else toast(`Session complete! +${m.coins} ${coin()}${m.buddies ? ` (×${buddyMultiplier(m.buddies)} for studying together!)` : ''}`, 'reward');
+    else toast(`Session complete! +${m.coins} ${coin()}${m.buddies ? ` (×${buddyMultiplier(m.buddies)} for studying together!)` : ''}${streakBonus(m.streak) ? ` 🔥 ${m.streak}-day streak +${streakBonus(m.streak) * 100}%` : ''}`, 'reward');
   } else if (m.t === 'error') {
     toast(esc(m.text));
   }
@@ -748,7 +749,7 @@ function step(dt: number) {
   const focus = myMember()?.focus;
   // Keep asking until the server ends the session: a single try is lost if the connection blinks
   // or this device's clock runs ahead of the server's (it refuses "done" before its own end time).
-  if (focus && Date.now() >= focus.endsAt && Date.now() - lastDoneTry > 3000) {
+  if (focus && Date.now() >= focusEnd(focus) && Date.now() - lastDoneTry > 3000) {
     lastDoneTry = Date.now();
     send({ t: 'focus_done' });
   }
@@ -977,7 +978,7 @@ function render(t: number) {
     const sx = (view.ox + x * T + 8) * scale, sy = (view.oy + y * T - lift) * scale;
     const fs = Math.max(12, (seated ? 4.5 : 3) * scale);
     ctx.font = `600 ${fs}px 'Fredoka', system-ui, sans-serif`;
-    const text = m.focus ? `📖 ${fmt(m.focus.endsAt - now)}` : m.name;
+    const text = m.focus ? `${m.focus.pausedAt ? '⏸' : '📖'} ${fmt(focusEnd(m.focus, now) - now)}` : m.name;
     const w = ctx.measureText(text).width + fs;
     ctx.beginPath();
     ctx.roundRect(sx - w / 2, sy - fs * 1.2, w, fs * 1.5, fs * 0.5);
@@ -1091,8 +1092,8 @@ const coin = () => `<img class="coin" src="${coinSrc}" alt="coins">`;
 $<HTMLImageElement>('#coinIcon').src = coinSrc;
 document.querySelectorAll<HTMLImageElement>('img[data-icon]').forEach((img) => (img.src = uiIconURL(img.dataset.icon!)));
 
-const progress = (f: { minutes: number; endsAt: number }) =>
-  Math.max(0, Math.min(100, 100 * (1 - (f.endsAt - Date.now()) / (f.minutes * 60_000))));
+const progress = (f: Focus) =>
+  Math.max(0, Math.min(100, 100 * (1 - (focusEnd(f) - Date.now()) / (f.minutes * 60_000))));
 
 function renderHud() {
   $('#coins').textContent = String(me.coins);
@@ -1114,13 +1115,14 @@ function tickTimers() {
   if (showDeck && openPanel) setPanel(null);
   document.querySelector('#dock [data-panel="social"]')?.classList.toggle('unread', unread);
   if (!f) return;
-  const left = fmt(f.endsAt - Date.now());
-  $('#timer').textContent = `📖 ${left}`;
+  const left = fmt(focusEnd(f) - Date.now());
+  $('#timer').textContent = `${f.pausedAt ? '⏸' : '📖'} ${left}`;
+  $('#pauseFocus span').textContent = f.pausedAt ? 'Resume' : 'Pause';
   $('#progress').style.width = `${progress(f)}%`;
   paintBlockText($<HTMLCanvasElement>('#deckTime'), left.padStart(5, '0'), '#2b2530', '#d9cbbb');
   $('#deckFill').style.width = `calc(${progress(f)}% - 6px)`;
   $('#deckMarker').style.left = `${progress(f)}%`;
-  const buddies = members.filter((m) => m.id !== myId && m.focus).length;
+  const buddies = members.filter((m) => m.id !== myId && m.focus && !m.focus.pausedAt).length;
   $('#deckNote').innerHTML = buddies
     ? `Earning ${Math.ceil(f.minutes * buddyMultiplier(buddies))} ${coin()} · ✨ ×${buddyMultiplier(buddies)} with ${buddies} studying`
     : `Earning ${f.minutes} ${coin()}`;
@@ -1139,6 +1141,7 @@ function armGiveUp(b: HTMLButtonElement, label: string) {
   setTimeout(() => { b.classList.remove('armed'); text.textContent = label; }, 3000);
 }
 $<HTMLButtonElement>('#giveUp').addEventListener('click', (e) => armGiveUp(e.currentTarget as HTMLButtonElement, 'Give up'));
+$('#pauseFocus').addEventListener('click', () => send({ t: myMember()?.focus?.pausedAt ? 'focus_resume' : 'focus_pause' }));
 $('#hideDeck').addEventListener('click', () => { deckHidden = true; tickTimers(); });
 $('#focusChip').addEventListener('click', () => { deckHidden = false; tickTimers(); });
 $('#skipBreak').addEventListener('click', () => { endBreak(); tickTimers(); setPanel('focus'); });
@@ -1195,8 +1198,14 @@ const tilePicker = (act: string, list: string[], current: string, kind: 'floor' 
 let storeShelf = 'all'; // Decorate's storage, filtered to one shop shelf
 // Focus panel extras: today's finished sessions as tomatoes, and one tap to go again with the last length and subject.
 function tomatoes() {
-  const n = me.sessions.filter((s) => isoDay(new Date(s.at)) === isoDay(new Date())).length;
+  const n = me.sessions.filter((s) => !s.early && isoDay(new Date(s.at)) === isoDay(new Date())).length;
   return n ? `<p class="center tomatoes" title="Sessions finished today">${'🍅'.repeat(Math.min(n, 12))}${n > 12 ? ` ×${n}` : ''} <small class="hint">${n} today · long break every 4</small></p>` : '';
+}
+// What finishing a session now would make the streak, and the bonus that pays.
+function streakLine() {
+  const now = Date.now(), days = streakDays([...me.sessions, { at: now }], now, new Date().getTimezoneOffset());
+  const bonus = streakBonus(days);
+  return days > 1 ? `<p class="center hint">🔥 Finish one today for a ${days}-day streak${bonus ? `: +${bonus * 100}% coins` : ''}. (3 days +10%, 7 days +25%, 30 days +50%)</p>` : '';
 }
 function againButton() {
   const len = Number(localStorage.getItem('auralis.length'));
@@ -1358,15 +1367,15 @@ function panelBody(mine: Member) {
   if (openPanel === 'calendar') return calendarBody();
   if (openPanel === 'focus') {
     const f = mine.focus;
-    const others = members.filter((m) => m.id !== myId && m.focus);
+    const others = members.filter((m) => m.id !== myId && m.focus && !m.focus.pausedAt);
     const together = others.length ? `<p class="center">Studying with you: <b>${others.map((m) => esc(m.name)).join(', ')}</b> ✨ ×${buddyMultiplier(others.length)} coins</p>` : '';
     return (f
       ? `<p class="hint center">Studying at your desk…</p>
-         <p class="big" id="ptimer">${fmt(f.endsAt - Date.now())}</p>
+         <p class="big" id="ptimer">${fmt(focusEnd(f) - Date.now())}</p>
          <div class="bar panel-bar"><i id="pbar" style="width:${progress(f)}%"></i></div>
          <p class="center">Finish to earn <b>${f.minutes}</b> ${coin()}</p>${together}
          <div class="center"><button class="danger" data-act="cancel">Give up</button></div>`
-      : `${tomatoes()}${againButton()}${group && group.by !== myId ? `<div class="invite">📚 <b>${esc(group.byName)}</b> is studying <b>${esc(group.tag)}</b>, ${fmt(group.endsAt - Date.now())} left.
+      : `${tomatoes()}${streakLine()}${againButton()}${group && group.by !== myId ? `<div class="invite">📚 <b>${esc(group.byName)}</b> is studying <b>${esc(group.tag)}</b>, ${fmt(group.endsAt - Date.now())} left.
            <button data-act="joingroup">Join them</button></div>` : ''}
          <h3>What are you studying?</h3>
          <div class="row"><input id="tag" maxlength="24" placeholder="Study" value="${esc(lastTag)}" aria-label="Subject">
@@ -1383,10 +1392,10 @@ function panelBody(mine: Member) {
     return `<div class="me">${avatarPreview(mine.look)}<div class="me-info">
         <label>Name <input id="name" maxlength="16" value="${esc(mine.name)}"></label>
         <p class="hint">Total focus: <b>${mine.totalMinutes}</b> min</p>
-        <button class="off small-chip" data-act="logout">Log out</button>
+        <div class="me-actions"><button class="off small-chip" data-act="logout">Log out</button>
         <button class="off small-chip" data-act="chimes">${chimes ? '🔔 Sounds on' : '🔕 Sounds off'}</button>
         ${installPrompt ? '<button class="off small-chip" data-act="install">📲 Install app</button>' : ''}
-        <a class="hint" href="/privacy.html" target="_blank" rel="noopener">Privacy policy</a></div></div>
+        <a class="hint" href="/privacy.html" target="_blank" rel="noopener">Privacy policy</a></div></div></div>
       ${mine.pets.length ? `<h3>Your pets</h3>${mine.pets.map((p, slot) => {
         const coats = PETS[p.kind as PetKey]?.coats ?? [];
         const accs = me.petAccs ?? [];
@@ -1453,7 +1462,7 @@ panel.addEventListener('click', (e) => {
       localStorage.setItem('auralis.tag', lastTag);
       localStorage.setItem('auralis.length', v);
       endBreak();
-      send({ t: 'focus_start', minutes: Number(v), tag: lastTag || 'Study', group: !!panel.querySelector<HTMLInputElement>('#groupInvite')?.checked });
+      send({ t: 'focus_start', minutes: Number(v), tag: lastTag || 'Study', tz: new Date().getTimezoneOffset(), group: !!panel.querySelector<HTMLInputElement>('#groupInvite')?.checked });
       setPanel(null);
       break;
     }
@@ -1543,7 +1552,7 @@ panel.addEventListener('click', (e) => {
       renderPanel();
       break;
     }
-    case 'joingroup': send({ t: 'focus_join' }); setPanel(null); break;
+    case 'joingroup': send({ t: 'focus_join', tz: new Date().getTimezoneOffset() }); setPanel(null); break;
     case 'examadd': {
       const subject = panel.querySelector<HTMLInputElement>('#examSubject')!.value.trim(), date = panel.querySelector<HTMLInputElement>('#examDate')!.value;
       if (subject && date) send({ t: 'exam_add', subject, date });

@@ -8,7 +8,7 @@ import { openStore, checkPassword } from './store.js';
 import { openPgStore } from './store-pg.js';
 import { files, isPng } from './files.js';
 import {
-  ITEMS, WALLPAPERS, FLOORS, SKINS, HAIRS, SHIRTS, STYLES, FACES, OUTFITS, FOCUS_LENGTHS, canPlace, placeSwaps, focusReward,
+  ITEMS, WALLPAPERS, FLOORS, SKINS, HAIRS, SHIRTS, STYLES, FACES, OUTFITS, FOCUS_LENGTHS, canPlace, placeSwaps, focusReward, quitReward, quitMinutes, focusEnd, streakDays, streakBonus,
   WALL_PATTERNS, FLOOR_STYLES, PETS, MAX_PETS, EXPAND_COST, colorsFor, USES, PET_ACCS, MAX_ROOMS, ROOM_COST,
   isPlant, TASK_COINS, TASK_REWARDS_PER_DAY, discounted, GIFT_COINS, GIFTS_PER_DAY, nextRot, sellPrice,
 } from '../shared/game.js';
@@ -170,7 +170,13 @@ function broadcastHouse(code) {
 }
 
 // The room a message is about: m.r picks one of the player's rooms (the first when missing).
+const setTz = (p, tz) => { if (Number.isFinite(tz)) p.tz = Math.max(-840, Math.min(840, Math.round(tz))); };
 const roomOf = (p, m) => p.rooms[m.r ?? 0] ?? null;
+// Housemates studying now (not paused), or who finished in the last two minutes (so whoever ends first isn't counted out).
+const buddiesOf = (p, now) => db.houses[p.house].members.filter((id) => {
+  const o = db.players[id];
+  return id !== p.id && ((o.focus && !o.focus.pausedAt) || now - (o.lastDoneAt ?? 0) < 120_000);
+}).length;
 function newRoom() { return { wallpaper: WALLPAPERS[0], floor: FLOORS[0], furniture: [] }; }
 
 function handle(p, m) {
@@ -272,6 +278,7 @@ function handle(p, m) {
       return; // no full broadcast for movement
     case 'focus_start':
       if (!FOCUS_LENGTHS.includes(m.minutes) || p.focus) return;
+      setTz(p, m.tz);
       p.focus = { minutes: m.minutes, endsAt: Date.now() + m.minutes * 60_000, tag: cleanText(m.tag, 24) || 'Study' };
       p.hiddenSubjects = (p.hiddenSubjects ?? []).filter((t) => t !== p.focus.tag); // using a subject again brings it back
       if (m.group) db.houses[p.house].group = { by: p.id, byName: p.name, minutes: m.minutes, endsAt: p.focus.endsAt, tag: p.focus.tag };
@@ -279,29 +286,52 @@ function handle(p, m) {
     case 'focus_join': { // join a housemate's group session: same subject, and the timer ends when theirs does
       const g = db.houses[p.house].group, left = g ? g.endsAt - Date.now() : 0;
       if (p.focus || left < 60_000) return;
+      setTz(p, m.tz);
       p.focus = { minutes: Math.round(left / 60_000), endsAt: g.endsAt, tag: g.tag };
       break;
     }
-    case 'focus_cancel':
-      p.focus = null;
+    case 'focus_pause':
+      if (!p.focus || p.focus.pausedAt) return;
+      p.focus.pausedAt = Date.now();
       break;
-    case 'focus_done': {
-      if (!p.focus || Date.now() < p.focus.endsAt - 2000) return;
+    case 'focus_resume':
+      if (!p.focus?.pausedAt) return;
+      p.focus.endsAt = focusEnd(p.focus);
+      p.focus.pausedAt = null;
+      break;
+    case 'focus_cancel': {
+      if (!p.focus) return;
       const now = Date.now();
-      // Housemates studying now, or who finished in the last two minutes (so whoever ends first isn't counted out).
-      const buddies = db.houses[p.house].members.filter((id) => {
-        const o = db.players[id];
-        return id !== p.id && (o.focus || now - (o.lastDoneAt ?? 0) < 120_000);
-      }).length;
-      const reward = focusReward(p.focus.minutes, buddies);
+      const elapsed = now - (focusEnd(p.focus, now) - p.focus.minutes * 60_000); // paused time doesn't count
+      const reward = quitReward(p.focus.minutes, buddiesOf(p, now), elapsed);
+      const minutes = quitMinutes(p.focus.minutes, elapsed);
       p.coins += reward;
+      if (minutes) {
+        p.totalMinutes += minutes;
+        p.sessions ??= [];
+        // early: counts toward stats and the leaderboard, not toward tomatoes or the long break
+        p.sessions.push({ at: now, minutes, tag: p.focus.tag ?? 'Study', early: true });
+        if (p.sessions.length > 3000) p.sessions.splice(0, p.sessions.length - 3000);
+      }
+      p.focus = null;
+      if (reward) send(sockets.get(p.id), { t: 'reward', coins: reward, text: `Ended early: +${reward} coins and ${minutes} focus min for the time you put in.` });
+      else send(sockets.get(p.id), { t: 'error', text: 'Ended too early to earn anything. Stay a quarter of the way for a reward.' });
+      break;
+    }
+    case 'focus_done': {
+      if (!p.focus || Date.now() < focusEnd(p.focus) - 2000) return;
+      const now = Date.now();
+      const buddies = buddiesOf(p, now);
       p.totalMinutes += p.focus.minutes;
       p.lastDoneAt = now;
       p.sessions ??= [];
       p.sessions.push({ at: now, minutes: p.focus.minutes, tag: p.focus.tag ?? 'Study' });
       if (p.sessions.length > 3000) p.sessions.splice(0, p.sessions.length - 3000);
+      const streak = streakDays(p.sessions, now, p.tz); // includes today, now that this session counts
+      const reward = focusReward(p.focus.minutes, buddies) + Math.ceil(p.focus.minutes * streakBonus(streak));
+      p.coins += reward;
       p.focus = null;
-      send(sockets.get(p.id), { t: 'reward', coins: reward, buddies });
+      send(sockets.get(p.id), { t: 'reward', coins: reward, buddies, streak });
       break;
     }
     case 'buy': {

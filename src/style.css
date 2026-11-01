@@ -271,6 +271,9 @@ label { display: flex; flex-direction: column; gap: 6px; font-weight: 700; }
 
 .me { display: flex; gap: 14px; align-items: center; margin-bottom: 4px; }
 .me-info { flex: 1; min-width: 0; }
+/* Log out, sounds, install and privacy: wrap onto as many rows as needed, with room between them. */
+.me-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 6px; }
+.me-actions .hint { margin: 0; }
 .preview { width: 88px; height: 121px; padding: 6px; background: var(--theme); border: 3px solid var(--ink); border-radius: 12px; }
 
 /* ---------- toast ---------- */
