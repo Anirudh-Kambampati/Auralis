@@ -3,7 +3,7 @@ export const T = 16;
 const OUT = '#3a2633';
 
 type Ctx = CanvasRenderingContext2D;
-export type Look = { skin: string; hair: string; shirt: string; style?: string; face?: string; outfit?: string };
+export type Look = { skin: string; hair: string; shirt: string; style?: string; face?: string; outfit?: string; body?: string; acc?: string };
 
 // Furniture palette: while furniture is drawn, the original candy colours become warmer, muted ones (teak and walnut,
 // olive, mustard, terracotta, dusty blue, cream) with warm brown outlines. Characters, pets and icons keep theirs.
@@ -69,6 +69,17 @@ function disc(c: Ctx, cx: number, cy: number, rad: number, color: string) {
     const half = Math.floor(Math.sqrt(rad * rad + rad * 0.6 - dy * dy));
     r(c, cx - half, cy + dy, half * 2 + 1, 1, color);
   }
+}
+
+function pix(c: Ctx, x: number, y: number, rows: string[], pal: Record<string, string>) {
+  rows.forEach((row, dy) => {
+    for (let i = 0; i < row.length;) {
+      let j = i;
+      while (j < row.length && row[j] === row[i]) j++;
+      if (row[i] !== '.') r(c, x + i, y + dy, j - i, 1, pal[row[i]]);
+      i = j;
+    }
+  });
 }
 
 function heart(c: Ctx, cx: number, cy: number, color: string) {
@@ -159,9 +170,20 @@ const STYLE_OVERLAY: Record<string, Overlay> = {
     0: '...oooooooooo...', 1: '..ohhhhhhhhhho..', 2: '.ohhlhhhhhhhhho.', 3: 'ohhllhhhhhhhhhho', ...rows(4, 7, 'o' + 'h'.repeat(14) + 'o'),
     8: 'ohHssssssssssHho', ...rows(9, 11, 'oh............ho'),
   },
+  wavy: { 2: '.....oooooo.....', 3: '...oohhhhhhoo...', 4: '..ohhlhhhhhhho..', 5: '.ohhllhhhhhhhho.', 6: '.ohhhhhHhhhhhho.', 7: '.ohHhhHhhhHhhHo.', 8: 'ohHhsHhhhHshhHho', 9: 'ohhssssssssssHho', 10: 'oHh..........hHo', 11: 'ohH..........Hho', 12: 'oHh..........hHo', 13: '.oo..........oo.' },
+  shaggy: { 1: '....o.oooo.o....', 2: '...ohohhhhohoo..', 3: '..ohhhhhhhhhhho.', 4: '.ohhlhhhhhhhhhho', 5: 'ohhllhhhhhhhhhho', 6: 'ohhhhhHhhHhhhhHo', 7: 'oHhhHhhHhhHhhHho', 8: '.oHHsHhHhHshHHo.', 9: '.oHssHsHssHssHo.', 10: 'oHh..........hHo', 11: '.oH..........Ho.', 12: '..o..........o..' },
+  pixie: { 2: '.....oooooo.....', 3: '...oohhhhhhoo...', 4: '..ohhhhhhlhhho..', 5: '.ohhhhhhhllhhho.', 6: '.ohhhhhhhhhhhho.', 7: '.oHHhhhhhhhhhho.', 8: '.osHHHhhhhhhhho.', 9: '.osssHHHhhhHHho.' },
+  emo: { 2: '.....oooooo.....', 3: '...oohhhhhhoo...', 4: '..ohhhhhhlhhho..', 5: '.ohhhhhhllhhhho.', 6: '.ohhhhhhhhhhhho.', 7: '.ohhhhhhhhhhhho.', 8: '.ohhhhhhhhHHsho.', 9: '.ohhhhhhHHsssho.', 10: '.ohhhhhH........', 11: '.ohhhhH.........' },
+  bowl: { 2: '.....oooooo.....', 3: '...oohhhhhhoo...', 4: '..ohhlhhhhhhho..', 5: '.ohhllhhhhhhhho.', 6: '.ohhhhhhhhhhhho.', 7: '.ohhhhhhhhhhhho.', 8: '.ohhhhhhhhhhhho.', 9: '.oHHHHHHHHHHHHo.' },
+  twintails: { 5: 'ho............oh', 6: 'ho............oh', 7: 'ho............oh', 8: 'hho..........ohh', 9: 'hho..........ohh', 10: 'Hho..........ohH', 11: 'Hho..........ohH', 12: 'oHo..........oHo', 13: '.o............o.' },
+  halfup: { 0: '......ooo.......', 1: '.....ohlho......', 2: '.....oooooo.....', 3: '...oohhhhhhoo...', 4: '..ohhlhhhhhhho..', 5: '.ohhllhhhhhhhho.', 6: '.ohhhhhhhhhhhho.', 7: '.ohhHhhhhhhHhho.', 8: '.ohHsHhhhhHsHho.', 9: 'oh............ho', 10: 'oh............ho', 11: 'oh............ho', 12: 'oh............ho', 13: 'oh............ho', 14: '.o............o.' },
+  manbun: { 0: '.......ooo......', 1: '......ohlho.....', 2: '.....ooHhHoo....', 3: '...oohhhhhhoo...', 4: '..ohhhlhhhhhho..', 5: '.ohhhllhhhhhhho.', 6: '.ohhhhhhhhhhhho.', 7: '.ohHhhhhhhhhHho.', 8: '.ohsHHhhhhHHsho.', 9: '.ohssssssssssho.' },
+  wolf: { 1: '.....oooooo.....', 2: '...oohhhhhhoo...', 3: '..ohhhlhhhhhho..', 4: '.ohhhllhhhhhhho.', 5: '.ohhhhhhhhhhhho.', 6: 'ohhHhhhhHhhhHhho', 7: 'oHhhHhhHhhHhhhHo', 8: 'ohHhsHhHhhsHhHho', 9: 'oHhssHssssHsshHo', 10: 'oh............ho', 11: '.oh..........ho.', 12: '..o..........o..' },
+  sidelong: { 2: '.....oooooo.....', 3: '...oohhhhhhoo...', 4: '..ohhhhhhhlhho..', 5: '.ohhhhhhhhllhho.', 6: '.ohhhhhhhhhhhho.', 7: '.ohhhhhhhhhhhho.', 8: '.ohhhhhhhHHHsho.', 9: '.ohhhhhHHssssho.', 10: 'oh............ho', 11: 'oh............ho', 12: 'oh............ho', 13: 'oh............ho', 14: 'oh............ho', 15: '.oo..........oo.' },
+  braids: { 9: 'oh............ho', 10: 'oh............ho', 11: 'oh............ho', 12: 'oh............ho', 13: 'oho..........oho', 14: 'oHo..........oHo', 15: 'oho..........oho', 16: '.y............y.' },
 };
 // Short styles keep the hair off the cheeks: no long sideburns down the face.
-const CROPPED = new Set(['short', 'side part', 'spiky', 'messy', 'undercut', 'quiff', 'fauxhawk', 'topknot', 'slick', 'curtains', 'crop', 'mohawk']);
+const CROPPED = new Set(['short', 'side part', 'spiky', 'messy', 'undercut', 'quiff', 'fauxhawk', 'topknot', 'slick', 'curtains', 'crop', 'mohawk', 'bowl', 'manbun', 'pixie']);
 const FACE_OVERLAY: Record<string, Overlay> = {
   happy: {},
   sleepy: { 10: '.oh' + 'ssssssssss' + 'ho.' },
@@ -176,6 +198,14 @@ const FACE_OVERLAY: Record<string, Overlay> = {
   fierce: { 9: '.oh' + 'seessssees' + 'ho.', 12: '.oh' + 'sbsmmmmsbs' + 'ho.' },
   // a wink, a wide grin and the tongue poking out
   silly: { 10: '.ohswesssssssho.', 12: '.ohsbsmmmmsbsho.', 13: '..oSssssbbssSo..' },
+  calm: { 12: '.ohssssmmssssho.' },
+  laugh: { 10: '.ohssessssessho.', 11: '.ohsesessesesho.', 12: '.ohbbsmmmmsbbho.', 13: '..oSssmmmmssSo..' },
+  sad: { 12: '.ohssssssssssho.', 13: '..oSssmssmssSo..' },
+  cry: { 12: '.ohsqssssssqsho.', 13: '..oSqsmssmsqSo..' },
+  angry: { 9: '.ohseeesseeesho.', 12: '.ohssssssssssho.', 13: '..oSssmmmmssSo..' },
+  shy: { 10: '.ohsewssssewsho.', 12: '.ohbbssmsssbbho.' },
+  pout: { 12: '.ohsbssssssbsho.', 13: '..oSssssmsssSo..' },
+  starry: { 10: '.ohsyessssyesho.', 12: '.ohsbsmmmmsbsho.' },
 };
 const OUTFIT_OVERLAY: Record<string, Overlay> = {
   tee: {},
@@ -198,10 +228,47 @@ const OUTFIT_OVERLAY: Record<string, Overlay> = {
   hawaiian: { 14: '..otttccccttto..', 15: '.ostyttgttyttso.', 16: '.osttgttyttgtso.', 17: '..oTTTTTTTTTTo..' },
   puffer: { 14: '..otttTTTTttto..', 15: '.osttttttttttso.', 16: '.osTTTTTTTTTTso.', 17: '..otttttttttto..' },
   overalls: { 15: '.os' + 'tvttttttvt' + 'so.', 16: '.os' + 'vvvvvvvvvv' + 'so.', 17: '..o' + 'VVVVVVVVVV' + 'o..' },
+  flannel: { 14: '..otTtccctTto...', 15: '.osTtTttTtTtTso.', 16: '.ostTtTTtTtTtso.', 17: '..oTtTtTtTtTto..' },
+  varsity: { 14: '..occtccccctcco.', 15: '.occtttcctttcco.', 16: '.occttttttttcco.', 17: '..occcccccccco..' },
+  denim: { 14: '..ovvvccccvvvo..', 15: '.osvvvttttvvvso.', 16: '.osvvvttttvvvso.', 17: '..oVVVttttVVVo..' },
+  turtleneck: { 13: '....oTTTTTTo....', 14: '..otttTTTTttto..', 15: '.osttttttttttso.', 16: '.osttttttttttso.', 17: '..oTTTTTTTTTTo..' },
+};
+// Accessories go on top of everything; hats, headphones and ears also show from behind. a = the accessory's colour.
+const ACC_OVERLAY: Record<string, Overlay> = {
+  glasses: { 10: '...kwekkkkwek...', 11: '...keeksskeek...' },
+  round: { 9: '....kk....kk....', 10: '...kwek..kwek...', 11: '...keekkkkeek...' },
+  shades: { 10: '..kkkkkkkkkkkk..', 11: '...kwkk..kwkk...' },
+  bandage: { 11: '..........c.....', 12: '.........cbc....', 13: '..........c.....' },
+  mask: { 11: '..c..........c..', 12: '..cccccccccccc..', 13: '...cccccccccc...' },
+  earring: { 13: '.y..............', 14: '.y..............' },
+  headphones: { 2: '....oaaaaaao....', 3: '...oa......ao...', 4: '..oa........ao..', 5: '.oa..........ao.', 6: '.oa..........ao.', 7: '.oa..........ao.', 8: '.oa..........ao.', 9: 'oaao........oaao', 10: 'oAbo........obAo', 11: 'oaao........oaao' },
+  cap: { 2: '.....oooooo.....', 3: '...ooaaaaaaoo...', 4: '..oaaaaaaaaaao..', 5: '.oaalaaaaaaaaao.', 6: '.oaaaaaaaaaaaao.', 7: '.oAAAAAAAAAAAAo.', 8: 'oAAAAAAAAAAAAAo.' },
+  beanie: { 0: '......owwo......', 1: '.....owwwwo.....', 2: '....ooaaaaoo....', 3: '...oaaaaaaaao...', 4: '..oaaaaaaaaaao..', 5: '.oaaaaaaaaaaaao.', 6: '.oaaaaaaaaaaaao.', 7: '.oAaAaAaAaAaAAo.', 8: '.oAAAAAAAAAAAAo.' },
+  catears: { 0: '...o........o...', 1: '..oao......oao..', 2: '..oabo....obao..' },
+};
+const ACC_BACK = new Set(['headphones', 'cap', 'beanie', 'catears']);
+const ACC_COL: Record<string, string> = { glasses: '#3a3448', round: '#b07a4e', shades: '#2b2530', headphones: '#e8e3dc', cap: '#e06a5a', beanie: '#5a5070', catears: '#3a3448', bandage: '#f2d8c0', mask: '#fffaf3', earring: '#ffd34d' };
+// Body types reshape the torso a pixel at a time, so they work with every outfit.
+const edges = (row: string) => [row.search(/[^.]/), row.length - 1 - [...row].reverse().join('').search(/[^.]/)];
+function widen(row: string) {
+  const s = [...row], [i, j] = edges(row);
+  if (i < 0) return row;
+  if (i > 0) { s[i - 1] = 'o'; s[i] = row[i + 1]; }
+  if (j < 15) { s[j + 1] = 'o'; s[j] = row[j - 1]; }
+  return s.join('');
+}
+function narrow(row: string) {
+  const s = [...row], [i, j] = edges(row);
+  if (i < 0) return row;
+  s[i] = '.'; s[i + 1] = 'o'; s[j] = '.'; s[j - 1] = 'o';
+  return s.join('');
+}
+const BODY_SHAPE: Record<string, Record<number, (row: string) => string>> = {
+  lean: { 16: narrow, 17: narrow }, athletic: { 14: widen, 15: widen }, chubby: { 15: widen, 16: widen, 17: widen },
 };
 
 for (const rows of [HEAD_FRONT, HEAD_BACK, BODY_FRONT, BODY_BACK, ...LEGS,
-  ...[STYLE_OVERLAY, FACE_OVERLAY, OUTFIT_OVERLAY].flatMap((o) => Object.values(o).map((m) => Object.values(m)))]) {
+  ...[STYLE_OVERLAY, FACE_OVERLAY, OUTFIT_OVERLAY, ACC_OVERLAY].flatMap((o) => Object.values(o).map((m) => Object.values(m)))]) {
   console.assert(rows.every((row) => row.length === 16), 'sprite rows must be 16 wide', rows);
 }
 
@@ -216,19 +283,26 @@ function avatarRows(look: Look, step: number, up: boolean) {
     rows = rows.map((row, y) => (over[y] ? [...row].map((ch, x) => (over[y][x] !== '.' ? over[y][x] : ch)).join('') : row));
   }
   if (!up && CROPPED.has(look.style ?? 'short')) rows = rows.map((row, y) => (y >= 9 && y <= 12 ? `${row.slice(0, 2)}s${row.slice(3, 13)}s${row.slice(14)}` : row));
+  const acc = ACC_OVERLAY[look.acc ?? ''];
+  if (acc && (!up || ACC_BACK.has(look.acc!))) rows = rows.map((row, y) => (acc[y] ? [...row].map((ch, x) => (acc[y][x] !== '.' ? acc[y][x] : ch)).join('') : row));
+  const shape = BODY_SHAPE[look.body ?? ''];
+  if (shape) rows = rows.map((row, y) => shape[y]?.(row) ?? row);
   return rows;
 }
 
 // x, y = top-left of the tile the avatar stands on; the sprite overhangs the tile above.
+const lookPal = (look: Look): Record<string, string> => {
+  const acc = ACC_COL[look.acc ?? ''] ?? '#5a5070';
+  return {
+    o: OUT, h: look.hair, H: shade(look.hair, -0.15), l: shade(look.hair, 0.2),
+    s: look.skin, S: shade(look.skin, -0.1), e: '#2a1e26', w: '#ffffff', b: '#f7a0a8', m: '#c8606a', q: '#7fc4f0',
+    t: look.shirt, T: shade(look.shirt, -0.15), c: '#fff4e6', d: '#7a5040', a: acc, A: shade(acc, -0.15),
+    v: '#6a8ad0', V: '#5a78bc', r: '#e06a5a', y: '#ffd34d', k: '#3a3448', g: '#8fd0a8', p: look.outfit === 'overalls' ? '#5a78bc' : '#5a5080',
+  };
+};
 export function drawAvatar(c: Ctx, look: Look, x: number, y: number, step: number, up: boolean) {
   const key = `av|${Object.values(look).join()}|${step}${up}`;
-  const sprite = baked(key, 16, AVATAR_H, (g) =>
-    paintRows(g, avatarRows(look, step, up), {
-      o: OUT, h: look.hair, H: shade(look.hair, -0.15), l: shade(look.hair, 0.2),
-      s: look.skin, S: shade(look.skin, -0.1), e: '#2a1e26', w: '#ffffff', b: '#f7a0a8', m: '#c8606a',
-      t: look.shirt, T: shade(look.shirt, -0.15), c: '#fff4e6', d: '#7a5040',
-      v: '#6a8ad0', V: '#5a78bc', r: '#e06a5a', y: '#ffd34d', k: '#3a3448', g: '#8fd0a8', p: look.outfit === 'overalls' ? '#5a78bc' : '#5a5080',
-    }));
+  const sprite = baked(key, 16, AVATAR_H, (g) => paintRows(g, avatarRows(look, step, up), lookPal(look)));
   r(c, x + 4, y + 14, 8, 2, 'rgba(58,38,51,0.22)');
   r(c, x + 3, y + 15, 10, 1, 'rgba(58,38,51,0.12)');
   c.drawImage(sprite, x, y + T - AVATAR_H + (step ? -1 : 0) + 1);
@@ -288,11 +362,7 @@ const CHAIRS: Record<string, { col: string; back: ChairPart; seat: ChairPart }> 
 // Head and body only, for poses where something hides the legs.
 function seatedSprite(look: Look) {
   return baked(`sit|${Object.values(look).join()}`, 16, 18, (g) =>
-    paintRows(g, avatarRows(look, 0, false).slice(0, 18), {
-      o: OUT, h: look.hair, H: shade(look.hair, -0.15), l: shade(look.hair, 0.2),
-      s: look.skin, S: shade(look.skin, -0.1), e: '#2a1e26', w: '#ffffff', b: '#f7a0a8', m: '#c8606a',
-      t: look.shirt, T: shade(look.shirt, -0.15), c: '#fff4e6', v: '#6a8ad0', V: '#5a78bc', r: '#e06a5a', y: '#ffd34d', k: '#3a3448', g: '#8fd0a8',
-    }));
+    paintRows(g, avatarRows(look, 0, false).slice(0, 18), lookPal(look)));
 }
 
 // Seated in a chair facing us: gentle bob, and sparkles drifting up while studying.
@@ -642,7 +712,7 @@ export function drawPainting(c: Ctx, x: number, y: number) {
 export const OVERHANG: Record<string, number> = {
   desk: 6, chair: 6, plant: 8, lamp: 12, rug: 0, bookshelf: 16, bed: 26, sofa: 8, aquarium: 14,
   books: 2, cactus: 8, sunflower: 12, globe: 8, beanbag: 0, roundRug: 0, coffeeTable: 2, armchair: 6, plush: 2,
-  mirror: 14, recordPlayer: 4, guitar: 12, easel: 14, bonsai: 4, wardrobe: 18, piano: 12,
+  mirror: 14, recordPlayer: 4, guitar: 12, cello: 14, easel: 14, bonsai: 4, wardrobe: 18, piano: 12,
   workTable: 6, pcDesk: 14, gamingDesk: 12, officeChair: 7, gamingChair: 11, miniFridge: 6,
   coffee: 0, energyCan: 0, soda: 0, wine: 1, gymBall: 0, dumbbells: 4, punchingBag: 16, exerciseBike: 9, treadmill: 12,
   petBall: 0, petBed: 0, doghouse: 10, catTower: 14,
@@ -658,6 +728,164 @@ export const SURFACE: Record<string, number> = { desk: 9, workTable: 9, pcDesk: 
 // col is the owner's chosen colour (undefined = the item's own default).
 // bare: tiles of a desk with something placed on them (bit 1 = left, 2 = right); its built-in clutter there isn't drawn.
 type Draw = (c: Ctx, x: number, y: number, t: number, col?: string, bare?: number) => void;
+// Pixel maps for the instruments: one character per art pixel, '.' is empty (palettes below).
+const GUITAR_ROWS = [
+  '......oooo......',
+  '.....ohhhho.....',
+  '....gohhhhog....',
+  '.....ohhhho.....',
+  '....gohhhhog....',
+  '.....oohhoo.....',
+  '......onno......',
+  '......onno......',
+  '......ommo......',
+  '......onno......',
+  '......onno......',
+  '......ommo......',
+  '....ooonnooo....',
+  '...oLLLnnbbbo...',
+  '..oLLLLnnbbbbo..',
+  '..oLLLLnnbbbbo..',
+  '..oLLLoSSobbbo..',
+  '..oLLLSSSSbbbo..',
+  '..oLLLoSSobbbo..',
+  '...oLLLwwbbbo...',
+  '...oLLLwwbbdo...',
+  '..oLLLbwwbbbdo..',
+  '.oLLLbbwwbbbbdo.',
+  '.oLLbBBBBBBbbdo.',
+  '.oLbbbbbbbbbbdo.',
+  '.obbbbbbbbbbddo.',
+  '..obbbbbbbbddo..',
+  '...oooooooooo...',
+];
+const ELECTRIC_ROWS = [
+  '.......ooo......',
+  '......oRRRo.....',
+  '.....goRRo......',
+  '......oRRog.....',
+  '.....goRRo......',
+  '......oRRog.....',
+  '......onno......',
+  '......onno......',
+  '......ommo......',
+  '......onno......',
+  '......onno......',
+  '......ommo......',
+  '..oo..onno..oo..',
+  '..oRo.onno.oRo..',
+  '..oRRoRnnRoRRo..',
+  '..oRRRRnnRRRRo..',
+  '..oRRRRnnRRRRo..',
+  '..oRRRppppRRRo..',
+  '..oRRRRwwRRRRo..',
+  '...oRRRwwRRRo...',
+  '..oRRRRwwRRRRo..',
+  '.oRRRRppppRRRRo.',
+  '.oRRRRRwwRRRRDo.',
+  '.oRRRRBBBBRRRDo.',
+  '.oRRRRRRRRRRRDo.',
+  '..oRRRRRRRRRDo..',
+  '...oRRRRRRRDo...',
+  '....oooooooo....',
+];
+const CELLO_ROWS = [
+  '................',
+  '.....oooo.....v.',
+  '....ohhhho....v.',
+  '....oohhoo....v.',
+  '...gohhhhog...v.',
+  '....oohhoo....v.',
+  '.....onno.....v.',
+  '.....onno.....v.',
+  '.....onno.....v.',
+  '.....onno.....v.',
+  '.....onno.....v.',
+  '....oonnoo....v.',
+  '...obbnnbbo...v.',
+  '..obbbnnbbbo..v.',
+  '..oLbbnnbbdo..v.',
+  '..oLbbnnbbdo..v.',
+  '...oLbwwbdo...v.',
+  '...oLbwwbdo...v.',
+  '..oLbbwwbbdo..v.',
+  '.oLbfbwwbfbdo.v.',
+  '.oLbfbwwbfbdo.v.',
+  '.oLbbBBBBbbdo.v.',
+  '.oLbbbTTbbbdo.h.',
+  '.oLbbbTTbbbdo.h.',
+  '.obbbbbbbbbdo.v.',
+  '..obbbbbbbdo....',
+  '...oooooooo.....',
+  '......oo........',
+  '......oo........',
+  '................',
+];
+const UPRIGHT_ROWS = [
+  '.oooooooooooooooooooooooooooooo.',
+  'oLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLo',
+  'oWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWo',
+  'oDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDo',
+  '.oWWWWWWWWWWWWWWWWWWWWWWWWWWWWo.',
+  '.oWWgggWWWWWWWWWWWWWWWWWWgggWWo.',
+  '.oWgWWWgWWWWMMMMMMMMWWWWgWWWgWo.',
+  '.oWgWWWWWWWWMNMNMNMMWWWWWWWWgWo.',
+  '.oWWgggWWWWWMMMMMMMMWWWWWgggWWo.',
+  '.oDDDDDDDDDDDDDDDDDDDDDDDDDDDDo.',
+  'oLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLo',
+  'oKkKkKKkKkKkKKkKkKKkKkKKkKkKkKKo',
+  'oKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKo',
+  'oDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDo',
+  '.oWWWWWWWWWWWWWWWWWWWWWWWWWWWWo.',
+  '.oWddddddddddddWWddddddddddddWo.',
+  '.oWdWWWWWWWWWWdWWdWWWWWWWWWWdWo.',
+  '.oWdWWWWWWWWWWdWWdWWWWWWWWWWdWo.',
+  '.oWddddddddddddWWddddddddddddWo.',
+  '.oWWWWWWWWWWWWWWWWWWWWWWWWWWWWo.',
+  '.oWWWWWWWWWWoPPPPPPoWWWWWWWWWWo.',
+  '.oDDDDDDDDDDooooooooDDDDDDDDDDo.',
+  'oWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWo',
+  'oDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDo',
+  '.oooooooooooooooooooooooooooooo.',
+  '.oWDo......................oWDo.',
+  '..oo........................oo..',
+  '................................',
+];
+const GRAND_ROWS = [
+  '................................',
+  '................................',
+  '................................',
+  '................................',
+  '................................',
+  '................................',
+  '................................',
+  '.......................oooo.....',
+  '...................ooooLLLLo....',
+  '...............ooooLLLLLLLLo....',
+  '...........ooooLLLLLLLLLLLLo....',
+  '.......ooooLLLLLLLLLLLLLLLLo....',
+  '......oDDDDDDDDDDDDDDDDDDDDo....',
+  '......oGsGGGGGGGGGGGGGGGGGGGo...',
+  '.oooooGsGGGGGGGGGGGGGGGGGGGGGoo.',
+  'oKKKKoWWWWWWWWWWWWWWWWWWWWWWWWWo',
+  'okkkkoWWWWWWWWWWWWWWWWWWWWWWWWWo',
+  'oKKKKoWWWWWWWWWWWWWWWWWWWWWWWWDo',
+  'oDDDDoDDDDDDDDDDDDDDDDDDDDDDDDDo',
+  '.oooooooooooooooooooooooooooooo.',
+  '..oWo......oo...........oWo.oWo.',
+  '..oWo......oo...........oWo.oWo.',
+  '..oWo......oo...........oWo.oWo.',
+  '..oWo......oo...........oWo.oWo.',
+  '..oWo.....oPPo..........oWo.oWo.',
+  '..oPo...................oPo.oPo.',
+  '..ooo...................ooo.ooo.',
+  '................................',
+];
+const STRINGED: Record<string, string> = { o: OUT, h: '#5a3620', g: '#e8b43c', n: '#3a3448', m: '#a8a0b8', w: '#fff4e6' };
+const keysPal = (col: string): Record<string, string> => ({
+  o: OUT, W: col, L: shade(col, 0.12), D: shade(col, -0.18), K: '#fffaf3', k: '#2b2530', P: '#e8b43c',
+});
+
 const DRAW: Record<string, Draw> = {
   desk(c, x, y, t, col = '#d9a06a', bare = 0) {
     const Y = y - 6;
@@ -1066,16 +1294,10 @@ const DRAW: Record<string, Draw> = {
     box(c, x + 1, Y + 50, 30, 4, wood);
   },
   guitar(c, x, y) {
-    const Y = y - 12;
-    r(c, x + 7, Y + 1, 2, 13, '#8a5a3c');
-    box(c, x + 5, Y - 1, 6, 4, '#5a3620');
-    disc(c, x + 8, Y + 21, 6, OUT);
-    disc(c, x + 8, Y + 14, 4, OUT);
-    disc(c, x + 8, Y + 21, 5, '#e8a050');
-    disc(c, x + 8, Y + 14, 3, '#e8a050');
-    disc(c, x + 8, Y + 17, 1, '#5a3620');
-    r(c, x + 6, Y + 23, 4, 1, '#5a3620');
-    r(c, x + 5, Y + 19, 1, 3, '#f2c48a');
+    pix(c, x, y - 12, GUITAR_ROWS, { ...STRINGED, b: '#e8a050', L: '#f2c48a', d: '#c88a4a', S: OUT, B: '#5a3620' });
+  },
+  cello(c, x, y) {
+    pix(c, x, y - 14, CELLO_ROWS, { ...STRINGED, b: '#b07a4e', L: '#c58b5a', d: '#8a5a3c', f: OUT, B: '#f0d2a8', T: '#3a3448', v: '#a8a0b8' });
   },
   easel(c, x, y) {
     const Y = y - 14;
@@ -1161,16 +1383,8 @@ const DRAW: Record<string, Draw> = {
     r(c, x + 4, Y + 4, 1, 4, 'rgba(255,255,255,0.6)');
     r(c, x + 2, Y + 1, 28, 1, '#e8f6ff');
   },
-  piano(c, x, y, _t, col = '#8a5a3c') {
-    const Y = y - 12;
-    box(c, x, Y, 32, 24, col);
-    r(c, x + 1, Y + 1, 30, 2, shade(col, 0.12));
-    box(c, x + 8, Y + 3, 16, 6, '#fffaf3');
-    r(c, x + 10, Y + 5, 12, 1, '#c8c0d0');
-    box(c, x + 1, Y + 12, 30, 6, '#fffaf3');
-    for (let k = 0; k < 7; k++) r(c, x + 4 + k * 4, Y + 13, 2, 3, OUT);
-    r(c, x + 3, Y + 24, 2, 4, OUT);
-    r(c, x + 27, Y + 24, 2, 4, OUT);
+  piano(c, x, y, _t, col = '#8a5a3c') { // upright: carved panel, sheet music, keys, gold pedals, little feet
+    pix(c, x, y - 12, UPRIGHT_ROWS, { ...keysPal(col), g: shade(col, 0.2), d: shade(col, -0.1), M: '#cfeaf5', N: '#5a5070' });
   },
   // ---- kitchen ----
   counter(c, x, y, _t, col = '#d9a06a') {
@@ -1653,6 +1867,8 @@ const DRAW: Record<string, Draw> = {
 
 // Extra styles: ALT[item][s - 1] draws style s (style 0 is the item's own DRAW entry).
 const ALT: Record<string, Draw[]> = {
+  guitar: [(c, x, y) => pix(c, x, y - 12, ELECTRIC_ROWS, { ...STRINGED, R: '#e06a5a', D: '#a04a3a', p: '#a8a0b8', B: '#3a3448' })],
+  piano: [(c, x, y, _t, col = '#8a5a3c') => pix(c, x, y - 12, GRAND_ROWS, { ...keysPal(col), G: '#e8b43c', s: '#a8a0b8' })],
   sofa: [
     (c, x, y, _t, col = '#9db4ee') => { // modern: low, square, dark legs
       const Y = y - 6;
@@ -2000,7 +2216,6 @@ const RECIPES: Record<string, [number, string, string]> = {
   bubbleTea: [0, '', 'r8,1,1,5,#f48a8a|b5,5,6,9,#f2d8c0|r6,10,4,3,#5a3a2a|r6,11,1,1,#3a2633|r8,12,1,1,#3a2633|r5,5,6,1,#fffaf3'],
   orangeJuice: [0, '', 'r9,2,1,4,#8fd0a8|b5,5,6,9,#ffd27a|r6,6,4,2,#fff3b0|o12,6,2,#f28a3a'],
   harp: [18, '', 'r2,2,2,30,#d9a628|r2,2,10,2,#d9a628|r11,4,2,4,#d9a628|r12,8,1,24,#d9a628|r4,6,1,24,#fff4e6|r6,6,1,24,#fff4e6|r8,7,1,24,#fff4e6|r10,8,1,23,#fff4e6|r1,31,14,3,#b07a4e'],
-  cello: [14, '', 'r7,0,2,10,#5a3620|o8,14,4,#b07a4e|o8,22,5,#b07a4e|r7,12,1,12,#fff4e6|r6,17,4,1,#5a3620|r8,26,1,4,#5a3620'],
   violin: [8, '', 'r3,4,1,18,#5a5070|r12,4,1,18,#5a5070|r3,20,10,1,#5a5070|r7,0,2,6,#5a3620|o8,9,3,#c88a4a|o8,14,4,#c88a4a|r8,8,1,8,#fff4e6'],
   microphone: [14, '', 'o8,2,2,#5a5070|r7,4,2,4,#3a3448|r7,8,1,20,#a8a0b8|r4,28,8,2,#a8a0b8|f11,0,1,2,#f4a6c8|f13,2,1,2,#f4a6c8'],
   sewingTable: [8, '', 'b0,8,16,6,#d9a06a|r2,14,1,10,#8a5a3c|r13,14,1,10,#8a5a3c|b2,1,11,8,#fffaf3|r3,2,8,2,#f4a6b8|r10,6,2,4,#a8a0b8|b6,7,3,2,#9db4ee'],

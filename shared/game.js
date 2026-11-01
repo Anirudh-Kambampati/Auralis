@@ -28,13 +28,13 @@ export const ITEMS = {
   mirror: { name: 'Mirror', w: 1, h: 1, price: 40, solid: true, colors: 'wood', use: 'primp' },
   recordPlayer: { name: 'Record player', w: 1, h: 1, price: 40, solid: true, colors: 'wood', use: 'dance' },
   bed: { name: 'Bed', w: 2, h: 3, price: 45, solid: true, colors: 'pastel', act: 'sleep', looks: ['Classic', 'Canopy', 'Futon'] },
-  guitar: { name: 'Guitar', w: 1, h: 1, price: 45, solid: true , use: 'strum' },
+  guitar: { name: 'Guitar', w: 1, h: 1, price: 45, solid: true, looks: ['Acoustic', 'Electric'], use: 'strum' },
   easel: { name: 'Easel', w: 1, h: 1, price: 50, solid: true , use: 'paint' },
   sofa: { name: 'Sofa', w: 3, h: 1, price: 55, solid: true, colors: 'pastel', act: 'sit', looks: ['Classic', 'Modern', 'Chesterfield'] },
   bonsai: { name: 'Bonsai', w: 1, h: 1, price: 55, solid: true , use: 'water' },
   wardrobe: { name: 'Wardrobe', w: 2, h: 1, price: 60, solid: true, colors: 'wood', looks: ['Classic', 'Mirrored', 'Sliding'] , use: 'dress' },
   aquarium: { name: 'Aquarium', w: 2, h: 1, price: 70, solid: true , use: 'feed' },
-  piano: { name: 'Piano', w: 2, h: 1, price: 115, solid: true, colors: 'wood', use: 'music' },
+  piano: { name: 'Piano', w: 2, h: 1, price: 115, solid: true, colors: 'wood', looks: ['Upright', 'Grand'], use: 'music' },
   // workspace
   workTable: { name: 'Work table', w: 2, h: 1, price: 40, solid: true, colors: 'wood', table: true },
   pcDesk: { name: 'PC desk', w: 2, h: 1, price: 70, solid: true, colors: 'wood', table: true },
@@ -464,12 +464,14 @@ export const WALL_PATTERNS = ['plain', 'stripes', 'dots', 'hearts', 'checks', 's
 export const FLOORS = ['#c8935f', '#b07a58', '#e0b382', '#9fae86', '#b3a2c9', '#d8a0a0', '#e8e3dc', '#8a7a8e', '#a8c4d8', '#d9b48a',
   '#7a5a40', '#e8d0b0', '#5a5a60', '#c0c8c8', '#e8b8a8', '#a8b8e0', '#88b098', '#f0e8d8', '#6a4a58', '#d8c068'];
 export const FLOOR_STYLES = ['planks', 'tiles', 'carpet', 'herringbone', 'marble', 'parquet', 'stone', 'checker'];
-export const SKINS = ['#ffe0c8', '#f5c9a5', '#d9a07a', '#a8714f', '#6e4630'];
-export const HAIRS = ['#3a2a35', '#7a4a32', '#f2c46a', '#e8735a', '#8a7ad8', '#f4b6c8', '#7ec8c0'];
-export const SHIRTS = ['#f48a8a', '#7fb2e8', '#8fd0a8', '#ffd27a', '#b89af0', '#f4b6d0'];
-export const STYLES = ['short', 'side part', 'buzz', 'spiky', 'curly', 'bob', 'long', 'ponytail', 'buns', 'messy', 'undercut', 'quiff', 'fauxhawk', 'topknot', 'slick', 'curtains', 'crop', 'mohawk', 'afro'];
-export const FACES = ['happy', 'sleepy', 'wink', 'grin', 'cool', 'surprised', 'blush', 'smirk', 'fierce', 'silly'];
-export const OUTFITS = ['tee', 'tie', 'sweater', 'jacket', 'hoodie', 'overalls', 'dress', 'skirt', 'striped', 'vest', 'tank', 'kimono', 'polo', 'suit', 'cardigan', 'apron', 'raincoat', 'sailor', 'hawaiian', 'puffer'];
+export const SKINS = ['#ffe0c8', '#f5c9a5', '#d9a07a', '#a8714f', '#6e4630', '#f8d4b4', '#e8b48a', '#c08a60', '#8a5a3a', '#4e3020'];
+export const HAIRS = ['#3a2a35', '#7a4a32', '#f2c46a', '#e8735a', '#8a7ad8', '#f4b6c8', '#7ec8c0', '#a8714f', '#f4e2b0', '#c8c0c8', '#c0483a', '#5a7ad0', '#6cae6a'];
+export const SHIRTS = ['#f48a8a', '#7fb2e8', '#8fd0a8', '#ffd27a', '#b89af0', '#f4b6d0', '#3a3448', '#f4f2ee', '#e8d2b0', '#5a8a5a', '#a0704a', '#4a5a90'];
+export const STYLES = ['short', 'side part', 'buzz', 'spiky', 'curly', 'bob', 'long', 'ponytail', 'buns', 'messy', 'undercut', 'quiff', 'fauxhawk', 'topknot', 'slick', 'curtains', 'crop', 'mohawk', 'afro', 'wavy', 'shaggy', 'pixie', 'emo', 'bowl', 'twintails', 'halfup', 'manbun', 'wolf', 'sidelong', 'braids'];
+export const FACES = ['happy', 'sleepy', 'wink', 'grin', 'cool', 'surprised', 'blush', 'smirk', 'fierce', 'silly', 'calm', 'laugh', 'sad', 'cry', 'angry', 'shy', 'pout', 'starry'];
+export const OUTFITS = ['tee', 'tie', 'sweater', 'jacket', 'hoodie', 'overalls', 'dress', 'skirt', 'striped', 'vest', 'tank', 'kimono', 'polo', 'suit', 'cardigan', 'apron', 'raincoat', 'sailor', 'hawaiian', 'puffer', 'flannel', 'varsity', 'denim', 'turtleneck'];
+export const BODIES = ['regular', 'lean', 'athletic', 'chubby'];
+export const ACCESSORIES = ['none', 'glasses', 'round', 'shades', 'bandage', 'mask', 'earring', 'headphones', 'cap', 'beanie', 'catears'];
 
 export const FOCUS_LENGTHS = [15, 25, 45, 60, 90];
 

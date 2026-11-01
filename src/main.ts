@@ -1,6 +1,6 @@
 import {
   SHELVES, buildGrid, walkable, canPlace, placeSwaps,roomSize, MAX_ROOMS, ROOM_COST, colorsFor, ITEMS, PETS, PET_ACCS, MAX_PETS, EXPAND_COST, ROOM_SIZES,
-  WALLPAPERS, WALL_PATTERNS, FLOORS, FLOOR_STYLES, SKINS, HAIRS, SHIRTS, STYLES, FACES, OUTFITS, FOCUS_LENGTHS,
+  WALLPAPERS, WALL_PATTERNS, FLOORS, FLOOR_STYLES, SKINS, HAIRS, SHIRTS, STYLES, FACES, OUTFITS, BODIES, ACCESSORIES, FOCUS_LENGTHS,
   WALL_H, WALL, FLOOR, DOOR, BLOCKED, VOID, buddyMultiplier, focusEnd, streakDays, streakBonus, sellPrice, footprint, lying, THIRSTY_MS, isPlant, discounted, GIFT_COINS, activeEvents, nextEvent,
 } from '../shared/game.js';
 import {
@@ -413,6 +413,10 @@ function interact(si: number, fi: number) {
   const pass = (x: number, y: number) => walkable(grid.at(x, y));
   const taken = new Set([...avatars].filter(([id]) => id !== myId).map(([, b]) => tileKey(b.tx, b.ty)));
   const fp = footprint(f);
+  // Fallback when the usual spot is blocked (a sofa in front of the TV, a bed in a corner): any open tile beside the piece.
+  const beside = (cx: number, cy: number) => pass(cx, cy) && !taken.has(tileKey(cx, cy))
+    && cx >= o.x + f.x - 1 && cx <= o.x + f.x + fp.w && cy >= o.y + f.y - 1 && cy <= o.y + f.y + fp.h
+    && (cx >= o.x + f.x && cx < o.x + f.x + fp.w || cy >= o.y + f.y && cy < o.y + f.y + fp.h); // not diagonal
   if (it.act) { // on top of it
     const tiles: { x: number; y: number }[] = [];
     for (let dy = 0; dy < fp.h; dy++) for (let dx = 0; dx < fp.w; dx++) {
@@ -420,11 +424,12 @@ function interact(si: number, fi: number) {
       if (acts.has(tileKey(x, y)) && !taken.has(tileKey(x, y))) tiles.push({ x, y });
     }
     if (!tiles.length) { toast('Someone is already using that.'); return true; }
-    const p = bfs(start, (cx, cy) => pass(cx, cy) && tiles.some((u) => Math.abs(cx - u.x) + Math.abs(cy - u.y) === 1), pass);
+    const p = bfs(start, (cx, cy) => pass(cx, cy) && tiles.some((u) => Math.abs(cx - u.x) + Math.abs(cy - u.y) === 1), pass)
+      ?? bfs(start, beside, pass); // then climb on from wherever there's room
     if (!p) { toast("You can't reach that from here."); return true; }
     const end = p[p.length - 1];
     path = p.slice(1);
-    seat = tiles.find((u) => Math.abs(end.x - u.x) + Math.abs(end.y - u.y) === 1)!;
+    seat = tiles.find((u) => Math.abs(end.x - u.x) + Math.abs(end.y - u.y) === 1) ?? tiles[0];
     stayMs = it.act === 'sleep' ? NAP_MS : 60_000;
     if (it.act === 'sleep') arrive = () => startBreak(NAP_MS, "😴 Taking a 5-minute break. You'll wake up with a chime.");
     return true;
@@ -432,7 +437,8 @@ function interact(si: number, fi: number) {
   // In front of it: the row just below.
   const fronts = Array.from({ length: fp.w }, (_, k) => ({ x: o.x + f.x + k, y: o.y + f.y + fp.h }))
     .filter((u) => (pass(u.x, u.y) || (u.x === start.x && u.y === start.y)) && !taken.has(tileKey(u.x, u.y)));
-  const p = bfs(start, (cx, cy) => fronts.some((u) => u.x === cx && u.y === cy), pass);
+  const p = bfs(start, (cx, cy) => fronts.some((u) => u.x === cx && u.y === cy), pass)
+    ?? bfs(start, beside, pass);
   if (!p) { toast("You can't reach that from here."); return true; }
   arrive = afterUse(f, m, ri, fi);
   if (p.length > 1) { path = p.slice(1); useNext = it.use!; return true; }
@@ -1213,8 +1219,29 @@ function againButton() {
   const len = Number(localStorage.getItem('auralis.length'));
   return FOCUS_LENGTHS.includes(len) ? `<div class="center"><button data-act="focus" data-v="${len}">▶ Again: ${len} min${lastTag ? ` of ${esc(lastTag)}` : ''}</button></div>` : '';
 }
-const choices = (act: string, list: string[], current?: string) =>
-  `<div class="row">${list.map((v) => `<button class="${v === current ? 'on' : 'off'}" data-act="${act}" data-v="${v}">${v}</button>`).join('')}</div>`;
+// Character options as pictures: my character wearing each choice, the whole body or just the head.
+const LOOK_LABEL: Record<string, string> = { halfup: 'half up', twintails: 'twin tails', manbun: 'man bun', sidelong: 'side long', catears: 'cat ears', round: 'round glasses' };
+const lookPics = new Map<string, string>();
+function lookTiles(act: keyof Look, list: string[], look: Look, head = false) {
+  const current = look[act] ?? list[0];
+  return `<div class="row tile-picks">${list.map((v) => {
+    const key = `${head}|${Object.values({ ...look, [act]: v }).join()}`;
+    let url = lookPics.get(key);
+    if (!url) {
+      const c = document.createElement('canvas');
+      c.width = 16; c.height = head ? 16 : 22;
+      drawAvatar(c.getContext('2d')!, { ...look, [act]: v }, 0, head ? 4 : 5, 0, false);
+      url = c.toDataURL();
+      lookPics.set(key, url);
+    }
+    return `<button class="tile-pick ${v === current ? 'on' : 'off'}" data-act="${act}" data-v="${v}" aria-label="${LOOK_LABEL[v] ?? v}" aria-pressed="${v === current}">
+      <img class="${head ? 'head' : 'full'}" src="${url}" alt=""><small>${LOOK_LABEL[v] ?? v}</small></button>`;
+  }).join('')}</div>`;
+}
+const randomLook = (): Look => ({
+  skin: pickOne(SKINS), hair: pickOne(HAIRS), shirt: pickOne(SHIRTS), style: pickOne(STYLES), face: pickOne(FACES), outfit: pickOne(OUTFITS),
+  body: pickOne(BODIES), acc: Math.random() < 0.5 ? 'none' : pickOne(ACCESSORIES),
+});
 
 const esc = (s: string) => s.replace(/[&<>"]/g, (ch) => `&#${ch.charCodeAt(0)};`);
 
@@ -1405,12 +1432,15 @@ function panelBody(mine: Member) {
           <div class="swatches">${coats.map((c, k) => `<button class="swatch${(p.coat ?? 0) === k ? ' on' : ''}" style="background:${c}" data-act="petcoat" data-slot="${slot}" data-v="${k}" aria-label="Coat ${k + 1}"></button>`).join('')}</div>
           ${accs.length ? `<div class="row">${['', ...accs].map((a) => `<button class="${(p.acc ?? '') === a ? 'on' : 'off'}" data-act="petacc" data-slot="${slot}" data-v="${a}">${a ? PET_ACCS[a as keyof typeof PET_ACCS].name : 'None'}</button>`).join('')}</div>` : ''}</div>`;
       }).join('')}${(me.petAccs ?? []).length ? '' : '<p class="hint">Get bows, hats and more for your pets in Shop → Pet style.</p>'}` : ''}
-      <h3>Face</h3>${choices('face', FACES, mine.look.face)}
-      <h3>Outfit</h3>${choices('outfit', OUTFITS, mine.look.outfit)}
-      <h3>Outfit colour</h3>${swatches('shirt', SHIRTS, mine.look.shirt)}
-      <h3>Hair style</h3>${choices('style', STYLES, mine.look.style)}
+      <div class="center"><button class="off" data-act="randomlook">🎲 Randomize look</button></div>
+      <h3>Body type</h3>${lookTiles('body', BODIES, mine.look)}
+      <h3>Skin tone</h3>${swatches('skin', SKINS, mine.look.skin)}
+      <h3>Hair style</h3>${lookTiles('style', STYLES, mine.look, true)}
       <h3>Hair colour</h3>${swatches('hair', HAIRS, mine.look.hair)}
-      <h3>Skin</h3>${swatches('skin', SKINS, mine.look.skin)}`;
+      <h3>Face</h3>${lookTiles('face', FACES, mine.look, true)}
+      <h3>Accessory</h3>${lookTiles('acc', ACCESSORIES, mine.look, true)}
+      <h3>Outfit</h3>${lookTiles('outfit', OUTFITS, mine.look)}
+      <h3>Outfit colour</h3>${swatches('shirt', SHIRTS, mine.look.shirt)}`;
   }
   // house
   const away = !!me.home && me.home !== houseCode;
@@ -1521,8 +1551,9 @@ panel.addEventListener('click', (e) => {
     case 'shape': if (moving !== null) send({ t: 'shape', r: editRoom, index: moving, s: Number(v) }); break;
     case 'wallpaper': case 'floor': case 'pattern': case 'floorStyle':
       send({ t: 'room', r: editRoom, wallpaper: room.wallpaper, floor: room.floor, pattern: room.pattern, floorStyle: room.floorStyle, [b.dataset.act]: v }); break;
-    case 'skin': case 'hair': case 'shirt': case 'style': case 'face': case 'outfit':
+    case 'skin': case 'hair': case 'shirt': case 'style': case 'face': case 'outfit': case 'body': case 'acc':
       send({ t: 'look', name: mine.name, look: { ...mine.look, [b.dataset.act]: v } }); break;
+    case 'randomlook': send({ t: 'look', name: mine.name, look: randomLook() }); break;
     case 'copy': copyCode(); break;
     case 'join': send({ t: 'join', code: panel.querySelector<HTMLInputElement>('#join')!.value.trim() }); break;
     case 'home': send({ t: 'leave' }); break;
@@ -2185,7 +2216,7 @@ function drawBuddy() {
   $('#buddyTags').textContent = `${buddyLook.style} · ${buddyLook.outfit} · ${buddyLook.face}`;
 }
 $('#shuffleBuddy').addEventListener('click', () => {
-  buddyLook = { skin: pickOne(SKINS), hair: pickOne(HAIRS), shirt: pickOne(SHIRTS), style: pickOne(STYLES), face: pickOne(FACES), outfit: pickOne(OUTFITS) };
+  buddyLook = randomLook();
   drawBuddy();
   buddy.classList.remove('pop');
   void buddy.offsetWidth;

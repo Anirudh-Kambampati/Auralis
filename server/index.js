@@ -8,7 +8,7 @@ import { openStore, checkPassword } from './store.js';
 import { openPgStore } from './store-pg.js';
 import { files, isPng } from './files.js';
 import {
-  ITEMS, WALLPAPERS, FLOORS, SKINS, HAIRS, SHIRTS, STYLES, FACES, OUTFITS, FOCUS_LENGTHS, canPlace, placeSwaps, focusReward, quitReward, quitMinutes, focusEnd, streakDays, streakBonus,
+  ITEMS, WALLPAPERS, FLOORS, SKINS, HAIRS, SHIRTS, STYLES, FACES, OUTFITS, BODIES, ACCESSORIES, FOCUS_LENGTHS, canPlace, placeSwaps, focusReward, quitReward, quitMinutes, focusEnd, streakDays, streakBonus,
   WALL_PATTERNS, FLOOR_STYLES, PETS, MAX_PETS, EXPAND_COST, colorsFor, USES, PET_ACCS, MAX_ROOMS, ROOM_COST,
   isPlant, TASK_COINS, TASK_REWARDS_PER_DAY, discounted, GIFT_COINS, GIFTS_PER_DAY, nextRot, sellPrice,
 } from '../shared/game.js';
@@ -192,6 +192,8 @@ function handle(p, m) {
         style: pick(STYLES, m.look?.style, p.look.style ?? STYLES[0]),
         face: pick(FACES, m.look?.face, p.look.face ?? FACES[0]),
         outfit: pick(OUTFITS, m.look?.outfit, p.look.outfit ?? OUTFITS[0]),
+        body: pick(BODIES, m.look?.body, p.look.body ?? BODIES[0]),
+        acc: pick(ACCESSORIES, m.look?.acc, p.look.acc ?? ACCESSORIES[0]),
       };
       break;
     case 'join': {
