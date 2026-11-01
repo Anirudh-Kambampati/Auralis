@@ -519,12 +519,20 @@ function handle(p, m) {
       p.petAccs.push(m.acc);
       break;
     }
+    // Say goodbye to a pet for good (the client asks twice first). Accessories you bought stay yours.
+    case 'pet_release': {
+      if (!Number.isInteger(m.slot) || !p.pets?.[m.slot]) return;
+      const [gone] = p.pets.splice(m.slot, 1);
+      send(sockets.get(p.id), { t: 'error', text: `Waved goodbye to your ${PETS[gone.kind]?.name.toLowerCase() ?? 'pet'}. 💛` });
+      break;
+    }
     // Dress up a pet: a free coat colour, and an accessory you own (or '' for none).
     case 'pet_style': {
       const pet = p.pets?.[m.slot];
       if (!pet) return;
       if (Number.isInteger(m.coat) && m.coat >= 0 && m.coat < PETS[pet.kind].coats.length) pet.coat = m.coat;
       if (m.acc === '' || (p.petAccs ?? []).includes(m.acc)) pet.acc = m.acc || undefined;
+      if (typeof m.away === 'boolean') pet.away = m.away || undefined; // kept, but not out in the room
       break;
     }
     case 'todo_add': {

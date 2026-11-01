@@ -19,7 +19,7 @@ type Furniture = { item: string; x: number; y: number; v?: number; s?: number; f
 type Room = { wallpaper: string; floor: string; pattern?: string; floorStyle?: string; level?: number; curtains?: boolean; furniture: Furniture[] };
 type Member = {
   id: string; name: string; look: Look; rooms: Room[]; focus: Focus | null;
-  totalMinutes: number; online: boolean; pos: { x: number; y: number } | null; pets: { kind: string; coat?: number; acc?: string }[]; fedAt?: number;
+  totalMinutes: number; online: boolean; pos: { x: number; y: number } | null; pets: { kind: string; coat?: number; acc?: string; away?: boolean }[]; fedAt?: number;
   exams?: { subject: string; date: string }[]; // YYYY-MM-DD, soonest first
 };
 type Todo = { id: number; text: string; done: boolean; by: string; all?: boolean; ticks?: string[] }; // all: everyone has to tick it
@@ -310,7 +310,7 @@ const STARS = ['🌠 A shooting star! Make a wish.', "✨ You spotted Orion's be
 function afterUse(f: Furniture, owner: Member, ri: number, fi: number): (() => void) | null {
   const it = ITEMS[f.item as ItemKey] as { name: string; use?: string };
   if (isPlant(f.item)) return () => { send({ t: 'water', owner: owner.id, r: ri, index: fi }); toast(`💧 Watered the ${it.name.toLowerCase()}.`); };
-  if (f.item === 'foodBowl') return () => (owner.pets.length ? send({ t: 'feed', owner: owner.id, r: ri, index: fi }) : toast('No pets here to feed yet.'));
+  if (f.item === 'foodBowl') return () => (owner.pets.some((p) => !p.away) ? send({ t: 'feed', owner: owner.id, r: ri, index: fi }) : toast('No pets here to feed yet.'));
   if (f.item === 'giftBox') return () => { setPanel('house'); toast('Pick a housemate to send a gift.'); };
   if (f.item === 'whiteboard') return () => openSide('todos', '#todoInput');
   if (TVS.has(f.item)) return () => { openSide('chat', '#chatInput', '/watch '); toast('Paste a YouTube, Vimeo or Twitch link after <b>/watch</b> to watch it together.'); };
@@ -947,7 +947,7 @@ function render(t: number) {
     });
     if (ri === 0) m.pets?.forEach((p, slot) => { // pets live in their owner's first room
       const spots = petSpots[i];
-      if (!spots?.length) return;
+      if (!spots?.length || p.away) return; // switched off in the You panel
       const pos = petPos(seedOf(m.id, slot), now, spots, petToys[i]);
       const fed = now - (m.fedAt ?? 0); // just fed: a heart floats up for a few seconds
       sprites.push({ y: pos.y + 0.9, draw: () => {
@@ -1479,6 +1479,8 @@ function panelBody(mine: Member) {
         const coats = PETS[p.kind as PetKey]?.coats ?? [];
         const accs = me.petAccs ?? [];
         return `<div class="pet-row"><span class="pet-chip">${petIcon(p.kind, 'chip-icon', p.coat, p.acc)}${PETS[p.kind as PetKey]?.name ?? p.kind}</span>
+          <button class="${p.away ? 'off' : 'on'} small-chip" data-act="petshow" data-slot="${slot}" data-v="${p.away ? 'in' : 'out'}" aria-pressed="${!p.away}" title="Show this pet in your room">${p.away ? 'Hidden' : 'In room'}</button>
+          <button class="danger small-chip" data-act="petrelease" data-slot="${slot}" title="Let this pet go for good">Release</button>
           <div class="swatches">${coats.map((c, k) => `<button class="swatch${(p.coat ?? 0) === k ? ' on' : ''}" style="background:${c}" data-act="petcoat" data-slot="${slot}" data-v="${k}" aria-label="Coat ${k + 1}"></button>`).join('')}</div>
           ${accs.length ? `<div class="row">${['', ...accs].map((a) => `<button class="${(p.acc ?? '') === a ? 'on' : 'off'}" data-act="petacc" data-slot="${slot}" data-v="${a}">${a ? PET_ACCS[a as keyof typeof PET_ACCS].name : 'None'}</button>`).join('')}</div>` : ''}</div>`;
       }).join('')}${(me.petAccs ?? []).length ? '' : '<p class="hint">Get bows, hats and more for your pets in Shop → Pet style.</p>'}` : ''}
@@ -1577,6 +1579,7 @@ panel.addEventListener('click', (e) => {
     case 'buyacc': send({ t: 'buy_acc', acc: v }); toast(`Bought the <b>${PET_ACCS[v as keyof typeof PET_ACCS].name}</b>! Put it on a pet from the You panel.`); break;
     case 'petcoat': send({ t: 'pet_style', slot: Number(b.dataset.slot), coat: Number(v) }); break;
     case 'petacc': send({ t: 'pet_style', slot: Number(b.dataset.slot), acc: v }); break;
+    case 'petshow': send({ t: 'pet_style', slot: Number(b.dataset.slot), away: v === 'out' }); break;
     case 'adopt': send({ t: 'adopt', kind: v }); toast(`${petIcon(v)} Welcome home, <b>${PETS[v as PetKey].name}</b>!`, 'reward'); break;
     case 'addroom': send({ t: 'add_room' }); editRoom = mine.rooms.length; toast('A new room! Find it next to your others.', 'reward'); break;
     case 'editroom': editRoom = Number(v); moving = null; placing = null; renderPanel(); break;
@@ -1611,6 +1614,13 @@ panel.addEventListener('click', (e) => {
     case 'rejoin': send({ t: 'join', code: v }); break;
     case 'forget': send({ t: 'forget', code: v }); break;
     case 'unban': send({ t: 'unban', id: v }); break;
+    case 'petrelease': // two taps: a pet can't be brought back
+      if (!b.classList.contains('armed')) {
+        b.classList.add('armed');
+        b.textContent = 'Tap again to release';
+        setTimeout(() => { b.classList.remove('armed'); b.textContent = 'Release'; }, 3000);
+      } else send({ t: 'pet_release', slot: Number(b.dataset.slot) });
+      break;
     case 'kick': // two taps, so nobody gets removed by a stray click
       if (!b.classList.contains('armed')) {
         b.classList.add('armed');
