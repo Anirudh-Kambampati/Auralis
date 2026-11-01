@@ -7,3 +7,10 @@ auralis.db-*
 .env
 .neon
 .env.local
+# Android (Play Store) build: the signing key must never be committed, and Bubblewrap regenerates the rest.
+android/*
+!android/twa-manifest.json
+*.keystore
+*.jks
+*.apk
+*.aab

@@ -1,96 +1,128 @@
-// Pets: original 12x10 chibi sprites (big shiny eyes, blush, soft outlines), and wandering that every viewer
+// Pets: original chibi sprites (12x10 faces, or 16x12 side-on animals), and wandering that every viewer
 // sees the same way (positions come from the clock and a per-pet seed, so nothing needs to be synced).
 import { PETS } from '../shared/game.js';
 import { shade } from './draw';
 
 // a = coat colour (swapped for the owner's pick), b = a darker/accent tone, i = eye shine, e = eye, p = blush, n = nose.
 // o is the outline: a dark version of the coat, so pets read soft instead of harsh.
-type Sprite = { rows: string[]; pal: Record<string, string>; b?: number };
+// acc: where hats, bows and glasses go, as a shift from the 12x10 face they were drawn for (side-on heads sit to the right).
+type Sprite = { rows: string[]; pal: Record<string, string>; b?: number; acc?: [number, number] };
 const EYES = { i: '#ffffff', e: '#3a2633', p: '#f7a0b0', n: '#e86a8a', m: '#c8606a' };
 const SPRITES: Record<string, Sprite> = {
   hamster: {
-    rows: ['............', '.oo.oooo.oo.', 'opaoaaaaoapo', 'oaaaaaaaaaao', 'oaaaaaaaaaao', 'oaieaaaaieao', 'oaeeawwaeeao', 'opaawnnwaapo', 'oawwwwwwwwao', '.oooooooooo.'],
-    pal: { w: '#fff8ee' },
+    rows: ['................', '................', '.........oo..oo.', '......oooaaooaao', '....ooaaaaaaaaao', '...oaaaaaaaeaaeo',
+      '..oaaaaaaaaapnpo', '..oaaaaaaawwwwwo', '..oaaaaaawwwwwo.', '...oaaaawwwwwo..', '....oooooooooo..', '.....oo....oo...'],
+    pal: { w: '#fff8ee' }, acc: [4, 2],
   },
   duckling: {
-    rows: ['....oooo....', '...oaaaao...', '..oaaaaaao..', '.oaaaaaaaao.', '.oaieaaieao.', '.oaeeaaeeao.', 'ooapyyyypaoo', 'oaaaayyaaaao', '.oaaaaaaaao.', '..oyo..oyo..'],
-    pal: { y: '#f2a03a' },
+    rows: ['................', '.......oooo.....', '......oaaaao....', '.....oaaaaaao...', '.....oaaeaaeao..', '..o..oapaayyyo..',
+      '.oao.oaaaaaaao..', '.oaaaaaaaaaaaao.', '.oaabbbbaaaaaao.', '..oaaaaaaaaaao..', '...oooooooooo...', '.....yy..yy.....'],
+    pal: { y: '#f2a03a' }, acc: [1, 1],
   },
   frog: {
-    rows: ['.ooo....ooo.', 'oaieo..oaieo', 'oaeeoaaoaeeo', 'oaaaaaaaaaao', 'opaaaaaaaapo', 'oaamaaaamaao', 'oaaammmmaaao', 'oaaaaaaaaaao', '.owwwwwwwwo.', 'oo.oo..oo.oo'],
-    pal: { w: '#fff4d8' },
+    rows: ['................', '........ooo.ooo.', '.......oaieoaieo', '......oaaeeaaeeo', '....ooaaaaaaaaao', '...oaaaaaaaaaaao',
+      '..oaaaaaaaammmao', '..oaaaaaaawwwwao', '.oaaobaaaawwwwo.', 'oaaaobbaaaaaao..', 'oooooo.oa..oa...', '.......oo..oo...'],
+    pal: { w: '#fff4d8' }, acc: [3, 0],
   },
   bunny: {
-    rows: ['..oo....oo..', '.oapo..opao.', '.oapo..opao.', '.oaaooooaao.', 'oaaaaaaaaaao', 'oaieaaaaieao', 'oaeeaaaaeeao', 'opaaannaaapo', '.oaaaaaaaao.', '..owo..owo..'],
-    pal: { w: '#ffffff' },
+    rows: ['.........oo.oo..', '.........opoopo.', '.........opoopo.', '........oaaaaaao', '........oaeaaeao', '.oo.....oapanapo',
+      'owwo.ooooaaaaao.', '.oo.oaaaaaawwao.', '...oaaaaaaawwo..', '...oaaaaaaaaao..', '...owo.....owo..', '...oo......oo...'],
+    pal: { w: '#ffffff' }, acc: [4, 2],
   },
   hedgehog: {
-    rows: ['..o.o.o.o...', '.obobobobo..', 'obbbbbbbbbo.', 'obbbbbbbbbbo', 'obwwwwwwwwbo', 'obwiewwiewbo', 'obweewweewbo', 'obpwwnnwwpbo', '.obwwwwwwbo.', '..oo....oo..'],
-    pal: { w: '#fff0dc' },
+    rows: ['................', '....o.o.o.o.....', '...obobobobo....', '..obbbbbbbbbo...', '.obbbbbbbbbbwoo.', 'obbbbbbbbbbwwwwo',
+      'obbbbbbbbbbwwewo', 'obbbbbbbbbwwwpno', '.obbbbbbbbwwwwo.', '..oowwwwwwwwoo..', '...ow.ow..ow.ow.', '...oo.oo..oo.oo.'],
+    pal: { w: '#fff0dc' }, b: -0.2, acc: [4, 3],
   },
   penguin: {
-    rows: ['...oooooo...', '..oaaaaaao..', '.oaaaaaaaao.', '.oawwwwwwao.', 'oawiewwiewao', 'oaweewweewao', 'oawpwyywpwao', 'oaawwwwwwaao', '.oawwwwwwao.', '..oyo..oyo..'],
-    pal: { w: '#fffaf3', y: '#f2a03a' },
+    rows: ['................', '.......oooo.....', '......oaaaao....', '.....oaaaeaao...', '.....oaaawwaayyo', '.....oaawwwwao..',
+      '....oaaawwwwwao.', '...oaaaawwwwwao.', '...obaaawwwwwao.', '....oaaawwwwao..', '.....oooooooo...', '.....yyy..yyy...'],
+    pal: { w: '#fffaf3', y: '#f2a03a' }, acc: [2, 1],
   },
   cat: {
-    rows: ['.oo......oo.', 'oapo....opao', 'oaaooooooaao', 'oaaaaaaaaaao', 'oabaaaaaabao', 'oaieaaaaieao', 'oaeeaaaaeeao', 'opaaannaaapo', '.oaaaaaaaao.', '..owo..owo..'],
-    pal: { w: '#fff4e6' }, b: -0.14,
+    rows: ['.........o....o.', '........oao..oao', '.oo.....oaaaaaao', '.oao....oawwwwwo', '.oao....owewwewo', '.oao....owpwnwpo',
+      '..oaoooooowwwwo.', '..oaaaawwwwwwo..', '..owaaawwwwwwo..', '..owwwwwwwwwwo..', '..ow.ow..ow.ow..', '..oo.oo..oo.oo..'],
+    pal: { w: '#fff4e6' }, acc: [4, 1],
   },
   puppy: {
-    rows: ['...oooooo...', '..oaaaaaao..', '.obaaaaaabo.', 'obbaaaaaabbo', 'obbaaaaaabbo', 'obaieaaieabo', 'obaeeaaeeabo', '.opawnnwapo.', 'oaaawwwwaaao', '.owo.oo.owo.'],
-    pal: { w: '#fff4e6' }, b: -0.22,
+    rows: ['................', '.........oooo...', '........oaaaao..', '.......obaaaaao.', '.o.....obaeaaeo.', 'oao....obawwwwno',
+      '.oa.oooobawwwwo.', '..oaaaaaaawwwo..', '..oaaaaaawwwwo..', '..owwaaaawwwwo..', '..ow.ow..ow.ow..', '..oo.oo..oo.oo..'],
+    pal: { w: '#fff4ea' }, b: -0.2, acc: [4, 1],
   },
   capybara: {
-    rows: ['.....yy.....', '.oo..yy..oo.', 'oaooooooooao', 'oaaaaaaaaaao', 'oaaaaaaaaaao', 'oaeaaaaaaeao', 'oaaaabbaaaao', 'opaabnnbaapo', 'oaaabbbbaaao', '.oo.o..o.oo.'],
-    pal: { y: '#ffd27a' }, b: -0.12,
+    rows: ['................', '................', '...........oo...', '.....ooooooaaoo.', '...ooaaaaaaaaaao', '..oaaaaaaaaaeaao',
+      '..oaaaaaaaaaaaao', '..oaaaaaaaaaapno', '..oaaaaaaaaaaaao', '..obbbbbbbbbbbo.', '...oa.oa...oa.oa', '...oo.oo...oo.oo'],
+    pal: {}, acc: [4, 2],
   },
   owl: {
-    rows: ['oo........oo', 'oaooooooooao', 'oaaaaaaaaaao', 'oawwaaaawwao', 'owiewaawiewo', 'oweewyyweewo', 'oawwaaaawwao', 'oaabbbbbbaao', '.oabbbbbbao.', '..oyo..oyo..'],
-    pal: { w: '#fffaf3', y: '#f2a03a' }, b: 0.12,
+    rows: ['................', '......o.....o...', '......oaooooao..', '.....oaaaaaaaao.', '.....owwaaaawwo.', '.....oweaayaewo.',
+      '.....owwaaaawwo.', '....obaawwwwaabo', '....obbawwwwabbo', '.....obawwwwabo.', '......oooooooo..', '.......yy..yy...'],
+    pal: { w: '#fff4e6', y: '#f2a03a' }, acc: [2, 1],
   },
   panda: {
-    rows: ['.oo......oo.', 'okko....okko', '.oooaaaaooo.', 'oaaaaaaaaaao', 'oakkaaaakkao', 'oaikaaaaikao', 'opaaakkaaapo', 'oaaaaaaaaaao', 'okkaaaaaakko', '.oko....oko.'],
-    pal: { k: '#3a3448' },
+    rows: ['................', '........kk...kk.', '.......okaaaaako', '.......oaaaaaaao', '.......oakiaakio', '.......oaapanapo',
+      '..oooookkkaaaao.', '.oaaaaakkkaaaao.', '.oaaaaaakkaaaao.', '..oaaaaaaaaaao..', '..ok.ok..ok.ok..', '..kk.kk..kk.kk..'],
+    pal: { k: '#3a3448' }, acc: [4, 1],
   },
   fox: {
-    rows: ['oo........oo', 'oao......oao', 'oapo....opao', 'oaaooooooaao', 'oaaaaaaaaaao', 'oaieaaaaieao', 'oaeeaaaaeeao', 'owwpaaaapwwo', '.owwwnnwwwo.', '..oooooooo..'],
-    pal: { w: '#fff4e6', n: '#3a2633' },
+    rows: ['.........o....o.', '........oao..oao', '.oo.....oaaaaaao', 'oaao....oaaaaaao', 'oaao....oaeaaeao', '.owo....owwwnwwo',
+      '..oaooooooawwo..', '..oaaaaaaaawwo..', '..oaaaaaaawwwo..', '..oaaaaaaaaaao..', '..ob.ob..ob.ob..', '..oo.oo..oo.oo..'],
+    pal: { w: '#fffaf3' }, b: -0.25, acc: [4, 1],
   },
   axolotl: {
-    rows: ['............', 'p..oooooo..p', 'pp.oaaaao.pp', '.pooaaaaoop.', 'ppoaaaaaaopp', '.oaieaaieao.', '.oaeeaaeeao.', 'oapaammaapao', 'oabaaaaaabao', '.oo.oooo.oo.'],
-    pal: { p: '#e86a8a' }, b: -0.1,
+    rows: ['................', '.........p.p.p..', '........pooooop.', '.......poaaaaaop', '........oaeaaeao', '.oo.....oaamaaao',
+      'oaaoooooaaaaaao.', 'oaaaaaaaaaaaao..', '.oaaaaaaaaaaao..', '..oowwwwwwwwo...', '...oa.oa..oa.oa.', '...oo.oo..oo.oo.'],
+    pal: { w: '#fff0f4' }, acc: [4, 1],
   },
   piglet: {
-    rows: ['.oo......oo.', 'oapo....opao', 'oaaooooooaao', 'oaaaaaaaaaao', 'oaieaaaaieao', 'oaeeaaaaeeao', 'opaabbbbaapo', 'oaaabkkbaaao', '.oaaaaaaaao.', '..obo..obo..'],
-    pal: { k: '#d9607a' },
+    rows: ['................', '.........oo.oo..', '........oaaaaao.', '........oaeaaeao', '........oapaanno', '.o.oooooaaaaaao.',
+      'oaoaaaaaaaaaao..', '..oaaaaaaaaaao..', '..oaaaaaaaaaao..', '..oabbbbbbbbao..', '..oa.oa..oa.oa..', '..oo.oo..oo.oo..'],
+    pal: {}, acc: [4, 1],
   },
   sheep: {
-    rows: ['...oooooo...', '.ooaaaaaaoo.', 'oaaaaaaaaaao', 'oaaffffffaao', 'oaffffffffao', 'oafieffiefao', 'oafeeffeefao', 'oafpfnnfpfao', 'oaaaaaaaaaao', '.ofo....ofo.'],
-    pal: { f: '#f7d8c8' },
+    rows: ['................', '..........oooo..', '...oooo..oabbbo.', '..oaaaaoobebbeo.', '.oaaaaaaaobpbbpo', 'oaaaaaaaaaobbbo.',
+      'oaaaaaaaaaaooo..', 'oaaaaaaaaaaaao..', '.oaaaaaaaaaaao..', '..oaaaaaaaaao...', '...ob.ob.ob.ob..', '...oo.oo.oo.oo..'],
+    pal: {}, b: -0.3, acc: [4, 1],
   },
   turtle: {
-    rows: ['....ooooo...', '...ossssso..', '...oseseso..', '...opssspo..', '.ooaaaaaaoo.', 'oaabaabaabao', 'oabaabaabaao', 'oaaaaaaaaaao', 'soaaaaaaaaos', '.oo......oo.'],
-    pal: { s: '#b8e0a8' },
+    rows: ['................', '................', '.....oooooo.....', '....obbabbbo....', '...obabbbabbo.oo', '..obbbabbbabboao',
+      '..obabbbabbbbaeo', '..oooooooooooaao', '...oaaaaaaaaaao.', '...oa.oa..oa.oa.', '...oo.oo..oo.oo.', '................'],
+    pal: {}, b: -0.22, acc: [5, 3],
   },
   koala: {
-    rows: ['.oo......oo.', 'owwo....owwo', 'owaooooooawo', 'oaaaaaaaaaao', 'oaaaaaaaaaao', 'oaieaaaaieao', 'oaeeakkaeeao', 'opaaakkaaapo', '.oaaaaaaaao.', '..owo..owo..'],
-    pal: { w: '#f4eef0', k: '#3a3448' },
+    rows: ['................', '......ooo..ooo..', '.....owwao.oawwo', '.....oaaaaaaaaao', '......oaeakkaeao', '......oapakkapo.',
+      '.......oaaaaao..', '.....oaaawwwaao.', '....oaaaawwwaaao', '....oaaaaaaaaao.', '.....ooaooooaoo.', '................'],
+    pal: { w: '#f4f0ec', k: '#3a3448' }, acc: [4, 1],
   },
   raccoon: {
-    rows: ['.oo......oo.', 'oaao....oaao', 'oaaooooooaao', 'owwaaaaaawwo', 'okkkwaawkkko', 'okiekwwkieko', 'okeekwwkeeko', 'oawwwnnwwwao', '.oaaaaaaaao.', '..owo..owo..'],
-    pal: { k: '#3a3448', w: '#fff4e6', n: '#3a2633' },
+    rows: ['.........o....o.', '........oao..oao', '.ob.....oaaaaaao', '.oao....owwwwwwo', '.obo....obibbibo', '.oao....owwwnwwo',
+      '..obooooooowwwo.', '..oaaaaaaaaaao..', '..oaaaaaaaaaao..', '..obaaaaaaaabo..', '..ob.ob..ob.ob..', '..oo.oo..oo.oo..'],
+    pal: { w: '#f4f0ec' }, b: -0.35, acc: [4, 1],
   },
   unicorn: {
-    rows: ['.....yy.....', '.o..oyyo..o.', 'oaooooooooao', 'oaaaaaaaaamo', 'oaaaaaaaammo', 'oaieaaaaiemo', 'oaeeaaaaeemo', 'opaaaaaaapmo', '.oaaaaaaaao.', '..oyo..oyo..'],
-    pal: { y: '#ffd34d', m: '#b89af0' },
+    rows: ['..........o.y...', '.........oaoyo..', '........moaaaaoo', '.......mmoaeaaao', '......mmmoaaaaao', '......mmoaaaapno',
+      '.m....mooaaaooo.', 'mmooooooaaaao...', 'm.oaaaaaaaaao...', '..oaaaaaaaaao...', '..ob.ob..ob.ob..', '..oo.oo..oo.oo..'],
+    pal: { y: '#ffd27a', m: '#b89af0' }, acc: [3, 0],
   },
   dragon: {
-    rows: ['..y......y..', '..oaaaaaao..', '.oaaaaaaaao.', 'woaaaaaaaaow', 'woaieaaieaow', 'woaeeaaeeaow', '.oapaaaapao.', '..oaccccao..', '..oaccccao..', '..oo.oo.oo..'],
-    pal: { y: '#ffd27a', w: '#f4b6c8', c: '#fff0c8' },
+    rows: ['...y........y...', '..oaaaaaaaaaao..', 'w.oaaaaaaaaaao.w', 'wwoaieaaaaieaoww', 'wwoaeeaaaaeeaoww', '.wopaaannaaapow.',
+      '..oaaaaaaaaaao..', '...oaaccccaao...', '...oaaccccaao...', '...oaaaaaaaao...', '...oao....oao...', '...oo......oo...'],
+    pal: { y: '#ffd27a', w: '#f4b6c8', c: '#fff0c8' }, acc: [2, 0],
+  },
+  platypus: {
+    rows: ['................', '................', '........oooo....', '.......oaaaao...', '......oaaeaaao..', '......oaaaaayyyo',
+      'bbbo.ooaaaaayyyo', 'bbbbaaaaaaaaoo..', 'bbbboaaaaaaaao..', '.ooooaaaaaaao...', '...oy.oy..oy.oy.', '...yy.yy..yy.yy.'],
+    pal: { y: '#f2a03a' }, b: -0.2, acc: [4, 2],
+  },
+  trex: {
+    rows: ['.........oooooo.', '........oaaaaaao', '........oaieaaao', '........oaeeaaao', '........oapawwwo', '.o.....oaaaaao..',
+      'oao..oaaaaaabo..', '.oaooaaaaaaao...', '..oaaaaawwwao...', '...oaaaaaaao....', '....oao.oao.....', '....oo..oo......'],
+    pal: { w: '#fff4d8' }, acc: [4, -1],
   },
 };
 for (const [k, { rows }] of Object.entries(SPRITES)) {
-  console.assert(rows.length === 10 && rows.every((row) => row.length === 12), `pet ${k} must be 12x10`);
+  const big = rows.length === 12 && rows.every((row) => row.length === 16);
+  console.assert(big || (rows.length === 10 && rows.every((row) => row.length === 12)), `pet ${k} must be 12x10 or 16x12`);
   console.assert(k in PETS, `pet ${k} must be in PETS`);
 }
 
@@ -108,11 +140,11 @@ export function petCanvas(kind: string, coat = 0) {
     const a = coatOf(kind, coat);
     const pal: Record<string, string> = { ...EYES, a, b: shade(a, sp.b ?? -0.12), o: shade(a, -0.42), ...sp.pal };
     cv = document.createElement('canvas');
-    cv.width = 12;
-    cv.height = 10;
+    cv.width = sp.rows[0].length;
+    cv.height = sp.rows.length;
     const g = cv.getContext('2d')!;
     sp.rows.forEach((row, y) => {
-      for (let x = 0; x < 12; x++) if (row[x] !== '.') { g.fillStyle = pal[row[x]] ?? a; g.fillRect(x, y, 1, 1); }
+      for (let x = 0; x < row.length; x++) if (row[x] !== '.') { g.fillStyle = pal[row[x]] ?? a; g.fillRect(x, y, 1, 1); }
     });
     cache.set(key, cv);
   }
@@ -124,8 +156,9 @@ export function petIconURL(kind: string, coat = 0, acc?: string) {
   const cv = document.createElement('canvas');
   cv.width = 16; cv.height = 16;
   const g = cv.getContext('2d')!;
-  g.drawImage(petCanvas(kind, coat), 2, 5);
-  drawAcc(g, acc, 2, 5);
+  const pet = petCanvas(kind, coat), px = (16 - pet.width) / 2, py = 15 - pet.height, [ax, ay] = SPRITES[kind]?.acc ?? [0, 0];
+  g.drawImage(pet, px, py);
+  drawAcc(g, acc, px + ax, py + ay);
   return cv.toDataURL();
 }
 
@@ -151,6 +184,7 @@ function drawAcc(c: CanvasRenderingContext2D, acc: string, px: number, py: numbe
   else if (acc === 'starClip') { r(9, 0, 3, 1, '#ffd34d'); r(10, -1, 1, 3, '#ffd34d'); }
   else if (acc === 'flower') { r(9, -1, 3, 3, '#f48a8a'); r(10, 0, 1, 1, '#ffd34d'); }
   else if (acc === 'cape') { r(0, 6, 2, 4, '#e06a5a'); r(10, 6, 2, 4, '#e06a5a'); r(2, 8, 8, 1, '#ffd34d'); }
+  else if (acc === 'fedora') { r(3, -4, 6, 3, '#8a6a48'); r(5, -4, 2, 1, '#6a4a32'); r(3, -2, 6, 1, '#3a2633'); r(1, -1, 10, 1, '#6a4a32'); }
   else if (acc === 'crown') { r(3, -1, 6, 2, '#ffd34d'); r(3, -2, 1, 1, '#ffd34d'); r(5, -3, 2, 2, '#ffd34d'); r(8, -2, 1, 1, '#ffd34d'); r(5, 0, 2, 1, '#f48a8a'); }
 }
 
@@ -205,10 +239,11 @@ export function drawPet(c: CanvasRenderingContext2D, kind: string, x: number, y:
     c.fillRect(zx, zy, 3, 1); c.fillRect(zx + 1, zy + 1, 1, 1); c.fillRect(zx, zy + 2, 3, 1);
     c.globalAlpha = 1;
   }
-  const px = x + 2, py = y + 5 + hop;
+  const pet = petCanvas(kind, coat), [ax, ay] = SPRITES[kind]?.acc ?? [0, 0];
+  const px = x + (16 - pet.width) / 2, py = y + 15 - pet.height + hop; // feet on the tile's bottom edge
   c.save();
-  if (left) { c.translate(px * 2 + 12, 0); c.scale(-1, 1); }
-  c.drawImage(petCanvas(kind, coat), px, py);
-  if (acc) drawAcc(c, acc, px, py);
+  if (left) { c.translate(px * 2 + pet.width, 0); c.scale(-1, 1); }
+  c.drawImage(pet, px, py);
+  if (acc) drawAcc(c, acc, px + ax, py + ay);
   c.restore();
 }

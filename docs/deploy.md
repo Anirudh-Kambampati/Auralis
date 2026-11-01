@@ -68,3 +68,24 @@ The code is on the `launch` branch.
   ```
 
   Do this before real players sign up, because it removes every account. Test snapshots under `snapshots/` in the `assets` bucket can be removed from the Neon console's storage view.
+
+## Search engines (sitemap)
+
+`public/sitemap.xml` lists the pages worth indexing (the landing page and the privacy policy), and `public/robots.txt`
+lets crawlers in, keeps them off the offline page, and points to the sitemap. Both are copied into `dist/` on build.
+
+To submit the sitemap to Google:
+
+1. Open [Google Search Console](https://search.google.com/search-console) and add a **URL prefix** property for
+   `https://auralis-ebon.vercel.app/`.
+2. Verify you own it. The easiest way on Vercel is the **HTML tag** method: copy the `<meta name="google-site-verification" …>`
+   tag into the `<head>` of `index.html`, deploy, then press **Verify**.
+3. Go to **Sitemaps**, enter `sitemap.xml` and press **Submit**. Google shows it as *Success* once it has read it; indexing
+   itself can take a few days.
+
+When a page is added or changes a lot, update its `<lastmod>` date in `sitemap.xml`.
+
+**If the site moves to a custom domain**, update the address in `public/sitemap.xml` (every `<loc>`), the `Sitemap:` line in
+`public/robots.txt`, and the link-preview tags (`og:url`, `og:image`, `twitter:image`) in `index.html`, then add the new
+domain as its own property in Search Console and submit the sitemap there. The Play Store files listed in
+`docs/play-store.md` need the new domain too.

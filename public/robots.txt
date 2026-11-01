@@ -1,0 +1,5 @@
+User-agent: *
+Allow: /
+Disallow: /offline.html
+
+Sitemap: https://auralis-ebon.vercel.app/sitemap.xml

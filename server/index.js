@@ -754,6 +754,7 @@ wss.on('connection', (ws) => {
       for (const k of Object.keys(p.inventory)) if (!ITEMS[k]) delete p.inventory[k];
       if (!STYLES.includes(p.look.style)) p.look.style = STYLES[0]; // retired hairstyles fall back to the default
       p.pets ??= hadCat ? [{ kind: 'cat' }] : [];
+      p.pets = p.pets.filter((pet) => PETS[pet.kind]); // pet kinds that were retired
       ensureHome(p);
       if (!db.houses[p.house]?.members.includes(p.id)) goHome(p); // new player, or their house is gone
       sockets.get(p.id)?.close();

@@ -5,13 +5,28 @@ const OUT = '#3a2633';
 type Ctx = CanvasRenderingContext2D;
 export type Look = { skin: string; hair: string; shirt: string; style?: string; face?: string; outfit?: string };
 
+// Furniture palette: while furniture is drawn, the original candy colours become warmer, muted ones (teak and walnut,
+// olive, mustard, terracotta, dusty blue, cream) with warm brown outlines. Characters, pets and icons keep theirs.
+const MUTED: Record<string, string> = {
+  [OUT]: '#33241f', '#2b2530': '#2e211c', '#3a3448': '#3b3436', '#5a5070': '#5b5052', '#7a7090': '#7d7068', '#a8a0b8': '#a89c90',
+  '#fffaf3': '#f6eee0', '#fff4e6': '#f2e6d2', '#ffffff': '#fbf6ec', '#e8e3dc': '#e6dccb',
+  '#f48a8a': '#d47a62', '#f4a6b8': '#d9a49a', '#f4a6c8': '#dcaaa8', '#f7a0a8': '#d89a8c', '#f06a8a': '#c86a5e', '#e06a5a': '#c0583e',
+  '#8fd0a8': '#9fb47a', '#6cbf7a': '#7f9c55', '#4f9a6a': '#5e7a45', '#a8e6a0': '#b8c890',
+  '#9db4ee': '#7f9cb2', '#7fb2e8': '#6f93ad', '#cfe1f7': '#c8d6dc', '#a8dcf5': '#a9c6d2', '#d4f0fb': '#d4e2e4', '#cfeaf5': '#cddfe2', '#9cc4f0': '#8fb0c2',
+  '#ffd27a': '#e0b04c', '#ffd34d': '#e8b43c', '#fff3b0': '#f4e2a8', '#ffe0a8': '#f0d4a0',
+  '#b89af0': '#a08cb0', '#7a6a8a': '#5c5560',
+  '#f2b48a': '#dc8a55', '#e8956e': '#d07a4c', '#d97a55': '#c06a42', '#f28a3a': '#d8742c', '#e8a050': '#d08e40',
+  '#e98a9a': '#c88a72', '#d9a06a': '#c08048', '#b07a4e': '#9a6038', '#8a5a3c': '#704428', '#f0d2a8': '#e2c494', '#9a6440': '#82522f', '#5a3620': '#4a2c18', '#c58b5a': '#b07a48',
+};
+let furnishing = false; // true while drawFurniture runs
+const tone = (color: string) => (furnishing ? MUTED[color] ?? color : color);
 const r = (c: Ctx, x: number, y: number, w: number, h: number, color: string) => {
-  c.fillStyle = color;
+  c.fillStyle = tone(color);
   c.fillRect(x, y, w, h);
 };
 
 export function shade(hex: string, amt: number) {
-  const n = parseInt(hex.slice(1, 7), 16);
+  const n = parseInt(tone(hex).slice(1, 7), 16);
   const f = (v: number) => Math.max(0, Math.min(255, Math.round(v + amt * 255))).toString(16).padStart(2, '0');
   return `#${f(n >> 16)}${f((n >> 8) & 255)}${f(n & 255)}`;
 }
@@ -35,15 +50,18 @@ function paintRows(c: Ctx, rows: string[], pal: Record<string, string>) {
   });
 }
 
-// Outlined box with rounded corners, a top highlight and a bottom shadow.
+// Outlined box with rounded corners, lit from the top left: a bright top, a shaded right side and a darker base.
 function box(c: Ctx, x: number, y: number, w: number, h: number, fill: string) {
   r(c, x + 1, y, w - 2, 1, OUT);
   r(c, x + 1, y + h - 1, w - 2, 1, OUT);
   r(c, x, y + 1, 1, h - 2, OUT);
   r(c, x + w - 1, y + 1, 1, h - 2, OUT);
   r(c, x + 1, y + 1, w - 2, h - 2, fill);
-  r(c, x + 1, y + 1, w - 2, 1, shade(fill, 0.1));
-  if (h > 3) r(c, x + 1, y + h - 2, w - 2, 1, shade(fill, -0.1));
+  if (w > 5 && h > 4) r(c, x + w - 2, y + 2, 1, h - 3, shade(fill, -0.06));
+  r(c, x + 1, y + 1, w - 2, 1, shade(fill, 0.12));
+  if (h > 7) r(c, x + 1, y + 2, w - 2, 1, shade(fill, 0.05));
+  if (h > 3) r(c, x + 1, y + h - 2, w - 2, 1, shade(fill, -0.12));
+  if (h > 9) r(c, x + 1, y + h - 3, w - 2, 1, shade(fill, -0.05));
 }
 
 function disc(c: Ctx, cx: number, cy: number, rad: number, color: string) {
@@ -903,10 +921,15 @@ const DRAW: Record<string, Draw> = {
     r(c, x + 6, Y + 3, 1, 4, 'rgba(255,255,255,0.6)');
   },
   rug(c, x, y, _t, col = '#e98a9a') {
+    // Woven: a border band, a field of soft stripes and a row of diamonds, with fringe at the ends.
     box(c, x + 3, y + 2, 42, 28, col);
-    r(c, x + 6, y + 5, 36, 22, shade(col, 0.14));
-    r(c, x + 7, y + 6, 34, 20, shade(col, 0.2));
-    for (let i = 0; i < 4; i++) heart(c, x + 12 + i * 8, y + 11 + (i % 2) * 6, shade(col, 0.04));
+    r(c, x + 6, y + 5, 36, 22, shade(col, 0.16));
+    for (let k = 0; k < 5; k++) r(c, x + 7, y + 7 + k * 4, 34, 1, shade(col, 0.06));
+    for (let i = 0; i < 5; i++) {
+      const dx = x + 11 + i * 6, dy = y + 15;
+      r(c, dx, dy - 2, 1, 1, shade(col, -0.06)); r(c, dx - 1, dy - 1, 3, 1, shade(col, -0.06));
+      r(c, dx - 2, dy, 5, 1, shade(col, -0.06)); r(c, dx - 1, dy + 1, 3, 1, shade(col, -0.06)); r(c, dx, dy + 2, 1, 1, shade(col, -0.06));
+    }
     for (let k = 0; k < 13; k++) {
       r(c, x + 1, y + 4 + k * 2, 2, 1, '#fff4e6');
       r(c, x + 45, y + 4 + k * 2, 2, 1, '#fff4e6');
@@ -962,25 +985,32 @@ const DRAW: Record<string, Draw> = {
     }
   },
   coffeeTable(c, x, y, _t, col = '#d9a06a') {
+    // Low table: a wide top with plank lines, a shelf underneath, a mug and a book.
     const Y = y - 2;
     box(c, x + 3, Y + 10, 3, 8, shade(col, -0.2));
     box(c, x + 26, Y + 10, 3, 8, shade(col, -0.2));
-    box(c, x + 1, Y + 2, 30, 10, col);
-    r(c, x + 2, Y + 9, 28, 2, shade(col, -0.12));
-    box(c, x + 6, Y, 5, 5, '#fff4e6');
-    r(c, x + 7, Y + 1, 3, 1, '#9a6440');
-    box(c, x + 15, Y + 3, 9, 3, '#f4a6b8');
-    r(c, x + 16, Y + 4, 7, 1, '#fffaf3');
+    r(c, x + 5, Y + 14, 22, 2, shade(col, -0.16));
+    box(c, x + 1, Y + 1, 30, 9, shade(col, 0.05));
+    r(c, x + 2, Y + 4, 28, 1, shade(col, -0.03));
+    box(c, x + 2, Y + 8, 28, 4, shade(col, -0.12));
+    box(c, x + 6, Y - 1, 5, 5, '#fff4e6');
+    r(c, x + 7, Y, 3, 1, '#9a6440');
+    box(c, x + 15, Y + 2, 10, 4, '#7f9cb2');
+    r(c, x + 16, Y + 3, 8, 1, '#fffaf3');
   },
   armchair(c, x, y, _t, col = '#f2b48a') {
+    // Mid-century lounge chair: tall cushioned back, a seat you see the top of, wooden arms and tapered legs.
     const Y = y - 6;
-    r(c, x + 3, Y + 20, 2, 2, OUT);
-    r(c, x + 11, Y + 20, 2, 2, OUT);
-    box(c, x + 2, Y, 12, 12, shade(col, -0.05));
-    heart(c, x + 8, Y + 3, shade(col, 0.15));
-    box(c, x + 3, Y + 10, 10, 9, col);
-    box(c, x, Y + 7, 4, 13, shade(col, -0.15));
-    box(c, x + 12, Y + 7, 4, 13, shade(col, -0.15));
+    r(c, x + 2, Y + 19, 2, 3, '#5a3620');
+    r(c, x + 12, Y + 19, 2, 3, '#5a3620');
+    box(c, x + 2, Y, 12, 11, shade(col, -0.06));
+    r(c, x + 7, Y + 3, 2, 1, shade(col, -0.16));
+    box(c, x + 3, Y + 9, 10, 5, shade(col, 0.08));
+    box(c, x + 3, Y + 13, 10, 6, shade(col, -0.12));
+    for (const ax of [x, x + 12]) {
+      box(c, ax, Y + 8, 4, 12, '#b07a4e');
+      r(c, ax + 1, Y + 9, 2, 1, shade('#b07a4e', 0.14));
+    }
   },
   plush(c, x, y, t, col = '#f2b48a') {
     const Y = y - 2 + (Math.floor(t / 900) % 2);
@@ -1018,16 +1048,22 @@ const DRAW: Record<string, Draw> = {
     r(c, x + 14 + n, Y - 3 - n, 1, 3, '#b89af0');
   },
   bed(c, x, y, _t, col = '#9cc4f0') {
-    const Y = y - 6;
-    box(c, x, Y, 32, 14, '#c58b5a');
-    heart(c, x + 16, Y + 4, '#f4a6b8');
-    box(c, x + 1, Y + 8, 30, 46, '#a8714a');
+    // Wooden headboard with a panel, two plump pillows, a folded-back quilt and a footboard.
+    const Y = y - 6, wood = '#c58b5a';
+    box(c, x, Y, 32, 13, wood);
+    box(c, x + 3, Y + 2, 26, 7, shade(wood, 0.06));
+    box(c, x + 1, Y + 8, 30, 46, shade(wood, -0.1));
     r(c, x + 3, Y + 10, 26, 42, '#fff8f0');
-    box(c, x + 5, Y + 11, 22, 9, '#ffffff');
-    r(c, x + 6, Y + 17, 20, 1, '#e8e0f0');
-    box(c, x + 1, Y + 24, 30, 30, col);
-    box(c, x + 1, Y + 22, 30, 6, shade(col, 0.1));
-    for (let i = 0; i < 4; i++) for (let j = 0; j < 3; j++) r(c, x + 6 + i * 6, Y + 32 + j * 7 + (i % 2) * 3, 2, 2, shade(col, 0.16));
+    for (const px of [x + 4, x + 17]) {
+      box(c, px, Y + 11, 11, 8, '#ffffff');
+      r(c, px + 2, Y + 16, 7, 1, '#e8e0f0');
+    }
+    box(c, x + 2, Y + 22, 28, 30, col);
+    box(c, x + 2, Y + 21, 28, 6, '#fff8f0');
+    r(c, x + 3, Y + 26, 26, 1, shade(col, -0.1));
+    for (const qy of [33, 41]) r(c, x + 3, Y + qy, 26, 1, shade(col, -0.07));
+    r(c, x + 16, Y + 27, 1, 24, shade(col, -0.07));
+    box(c, x + 1, Y + 50, 30, 4, wood);
   },
   guitar(c, x, y) {
     const Y = y - 12;
@@ -1053,17 +1089,24 @@ const DRAW: Record<string, Draw> = {
     r(c, x, Y + 14, 16, 2, '#b07a4e');
   },
   sofa(c, x, y, _t, col = '#9db4ee') {
+    // Seen from a little above: tufted back, two seat cushions with their tops showing, rounded arms, wooden feet.
     const Y = y - 8;
-    r(c, x + 4, Y + 21, 2, 3, OUT);
-    r(c, x + 42, Y + 21, 2, 3, OUT);
-    box(c, x + 3, Y, 42, 14, shade(col, -0.05));
-    box(c, x + 6, Y + 2, 18, 11, col);
-    box(c, x + 24, Y + 2, 18, 11, col);
-    box(c, x + 4, Y + 11, 40, 10, shade(col, -0.1));
-    box(c, x, Y + 5, 8, 17, shade(col, -0.18));
-    box(c, x + 40, Y + 5, 8, 17, shade(col, -0.18));
-    box(c, x + 9, Y + 5, 9, 8, '#f4a6b8');
-    heart(c, x + 13, Y + 7, '#fff4e6');
+    r(c, x + 5, Y + 21, 3, 3, '#5a3620');
+    r(c, x + 40, Y + 21, 3, 3, '#5a3620');
+    box(c, x + 3, Y, 42, 12, shade(col, -0.08));
+    for (const bx of [x + 6, x + 25]) {
+      box(c, bx, Y + 1, 17, 9, col);
+      r(c, bx + 8, Y + 4, 1, 1, shade(col, -0.16));
+    }
+    box(c, x + 5, Y + 9, 38, 7, shade(col, 0.07));
+    r(c, x + 24, Y + 10, 1, 5, shade(col, -0.08));
+    box(c, x + 4, Y + 14, 40, 8, shade(col, -0.12));
+    for (const ax of [x, x + 40]) {
+      box(c, ax, Y + 5, 8, 17, shade(col, -0.04));
+      r(c, ax + 1, Y + 6, 6, 3, shade(col, 0.1));
+    }
+    box(c, x + 8, Y + 4, 9, 8, '#e0b04c');
+    r(c, x + 10, Y + 7, 5, 1, shade('#e0b04c', -0.12));
   },
   bonsai(c, x, y) {
     const Y = y - 4;
@@ -1075,16 +1118,20 @@ const DRAW: Record<string, Draw> = {
     r(c, x + 3, Y + 15, 10, 1, '#9a8aaa');
   },
   wardrobe(c, x, y, _t, col = '#f0d2a8') {
+    // A crown on top, two panelled doors with brass knobs, a plinth and little feet.
     const Y = y - 18;
-    box(c, x, Y, 32, 34, col);
-    r(c, x + 1, Y + 1, 30, 2, shade(col, 0.1));
-    r(c, x + 15, Y + 4, 2, 28, shade(col, -0.2));
-    box(c, x + 3, Y + 5, 11, 26, shade(col, 0.05));
-    box(c, x + 18, Y + 5, 11, 26, shade(col, 0.05));
-    r(c, x + 12, Y + 16, 1, 3, OUT);
-    r(c, x + 19, Y + 16, 1, 3, OUT);
-    heart(c, x + 8, Y + 9, '#f4a6c8');
-    heart(c, x + 24, Y + 9, '#f4a6c8');
+    box(c, x, Y, 32, 5, shade(col, 0.04));
+    box(c, x + 1, Y + 4, 30, 27, col);
+    for (const dx of [x + 3, x + 17]) {
+      box(c, dx, Y + 6, 12, 23, shade(col, 0.04));
+      r(c, dx + 2, Y + 8, 8, 8, shade(col, -0.05));
+      r(c, dx + 2, Y + 18, 8, 9, shade(col, -0.05));
+    }
+    r(c, x + 13, Y + 16, 1, 2, '#e8b43c');
+    r(c, x + 18, Y + 16, 1, 2, '#e8b43c');
+    box(c, x + 1, Y + 29, 30, 4, shade(col, -0.1));
+    r(c, x + 3, Y + 32, 3, 2, '#5a3620');
+    r(c, x + 26, Y + 32, 3, 2, '#5a3620');
   },
   aquarium(c, x, y, t) {
     const Y = y - 14;
@@ -1169,14 +1216,18 @@ const DRAW: Record<string, Draw> = {
     r(c, x + 4, Y + 16, 3, 1, '#9db4ee');
   },
   diningTable(c, x, y, _t, col = '#b07a4e') {
+    // A deep plank top you look down on, a runner and a vase, a shaded apron and tapered legs.
     const Y = y - 4;
-    box(c, x + 3, Y + 10, 3, 10, shade(col, -0.2));
-    box(c, x + 26, Y + 10, 3, 10, shade(col, -0.2));
-    box(c, x, Y + 2, 32, 10, col);
-    r(c, x + 9, Y + 3, 14, 8, '#fffaf3');
-    r(c, x + 9, Y + 6, 14, 1, '#f48a8a');
-    box(c, x + 14, Y - 2, 4, 6, '#9db4ee');
-    heart(c, x + 16, Y - 5, '#f48a8a');
+    box(c, x + 3, Y + 11, 3, 9, shade(col, -0.2));
+    box(c, x + 26, Y + 11, 3, 9, shade(col, -0.2));
+    box(c, x, Y + 1, 32, 10, shade(col, 0.05));
+    for (const py of [4, 7]) r(c, x + 1, Y + py, 30, 1, shade(col, -0.03));
+    box(c, x + 1, Y + 9, 30, 4, shade(col, -0.12));
+    r(c, x + 9, Y + 2, 14, 7, '#fffaf3');
+    r(c, x + 9, Y + 5, 14, 1, '#9fb47a');
+    box(c, x + 14, Y - 3, 4, 7, '#9db4ee');
+    r(c, x + 15, Y - 6, 2, 3, '#6cbf7a');
+    r(c, x + 15, Y - 7, 2, 1, '#e8b43c');
   },
   barStool(c, x, y, _t, col = '#f4a6b8') {
     const Y = y - 4;
@@ -1257,23 +1308,27 @@ const DRAW: Record<string, Draw> = {
   // ---- bedroom ----
   nightstand(c, x, y, t, col = '#d9a06a') {
     const Y = y - 4;
-    r(c, x + 3, Y + 17, 2, 3, OUT);
-    r(c, x + 11, Y + 17, 2, 3, OUT);
-    box(c, x + 2, Y + 4, 12, 14, col);
-    r(c, x + 3, Y + 10, 10, 1, shade(col, -0.2));
-    r(c, x + 7, Y + 13, 2, 1, OUT);
+    r(c, x + 3, Y + 17, 2, 3, '#5a3620');
+    r(c, x + 11, Y + 17, 2, 3, '#5a3620');
+    box(c, x + 1, Y + 3, 14, 4, shade(col, 0.06));
+    box(c, x + 2, Y + 6, 12, 12, col);
+    box(c, x + 3, Y + 7, 10, 5, shade(col, 0.03));
+    box(c, x + 3, Y + 12, 10, 5, shade(col, 0.03));
+    r(c, x + 7, Y + 9, 2, 1, '#e8b43c');
+    r(c, x + 7, Y + 14, 2, 1, '#e8b43c');
     box(c, x + 4, Y, 6, 5, '#f48a8a');
     r(c, x + 5, Y + 1, 4, 2, '#fffaf3');
     r(c, x + 7, Y + 1, 1, 1 + (Math.floor(t / 1000) % 2), OUT);
   },
   dresser(c, x, y, _t, col = '#f0d2a8') {
+    // A top you can see, three rows of drawers with brass pulls, and tapered legs.
     const Y = y - 6;
-    r(c, x + 3, Y + 21, 2, 2, OUT);
-    r(c, x + 27, Y + 21, 2, 2, OUT);
-    box(c, x + 1, Y + 4, 30, 18, col);
-    r(c, x + 2, Y + 10, 28, 1, shade(col, -0.2));
-    r(c, x + 2, Y + 16, 28, 1, shade(col, -0.2));
-    for (const k of [7, 23]) for (const j of [7, 13, 19]) r(c, x + k, Y + j, 2, 1, OUT);
+    r(c, x + 3, Y + 21, 2, 2, '#5a3620');
+    r(c, x + 27, Y + 21, 2, 2, '#5a3620');
+    box(c, x, Y + 3, 32, 4, shade(col, 0.06));
+    box(c, x + 1, Y + 6, 30, 16, col);
+    for (const j of [7, 12, 17]) for (const dx of [x + 2, x + 16]) box(c, dx, Y + j, 14, 5, shade(col, 0.03));
+    for (const k of [8, 22]) for (const j of [9, 14, 19]) r(c, x + k, Y + j, 2, 1, '#e8b43c');
     box(c, x + 4, Y, 7, 6, '#fffaf3');
     heart(c, x + 7, Y + 1, '#f4a6b8');
   },
@@ -1380,9 +1435,11 @@ const DRAW: Record<string, Draw> = {
   },
   sideTable(c, x, y, _t, col = '#d9a06a') {
     const Y = y - 2;
-    r(c, x + 3, Y + 8, 2, 10, shade(col, -0.2));
-    r(c, x + 11, Y + 8, 2, 10, shade(col, -0.2));
-    box(c, x + 1, Y + 2, 14, 7, col);
+    r(c, x + 3, Y + 9, 2, 9, shade(col, -0.2));
+    r(c, x + 11, Y + 9, 2, 9, shade(col, -0.2));
+    r(c, x + 4, Y + 14, 8, 1, shade(col, -0.2));
+    box(c, x + 1, Y + 1, 14, 7, shade(col, 0.05));
+    box(c, x + 2, Y + 6, 12, 4, shade(col, -0.12));
   },
   // ---- games and music ----
   arcade(c, x, y, t, col = '#b89af0') {
@@ -2051,6 +2108,7 @@ const RECIPES: Record<string, [number, string, string]> = {
   easterLilies: [4, '', 'b4,12,8,8,#c8805a|r5,13,6,1,#e8a070|r7,5,1,7,#4f9a6a|r10,6,1,6,#4f9a6a|r4,7,1,5,#4f9a6a|o7,4,2,#fffaf3|o11,5,2,#fffaf3|o4,6,2,#fffaf3|r7,4,1,1,#ffd34d|r11,5,1,1,#ffd34d|r4,6,1,1,#ffd34d'],
   hotCrossBuns: [0, '', 'r1,12,14,2,#e8e3dc|o4,10,3,#d9a06a|o11,10,3,#d9a06a|r2,10,5,1,#fffaf3|r4,8,1,5,#fffaf3|r9,10,5,1,#fffaf3|r11,8,1,5,#fffaf3'],
   lotusLamp: [0, '', 'r4,13,8,1,#8fd0a8|r3,10,10,3,#f4a6c8|r2,9,2,2,#f4a6c8|r12,9,2,2,#f4a6c8|r5,7,2,4,#f7c0c8|r9,7,2,4,#f7c0c8|r7,6,2,5,#fbd8e0|f7,3,2,3,#ffd34d|r7,5,2,1,#c8805a'],
+  sharkPlush: [6, '', 'r1,3,3,2,#6a5a9a|r2,5,3,2,#6a5a9a|r3,7,4,5,#6a5a9a|r2,12,3,2,#6a5a9a|r1,14,3,2,#6a5a9a|r13,0,1,6,#6a5a9a|r14,1,2,2,#86a6d0|r14,3,4,2,#86a6d0|r14,5,6,2,#86a6d0|b5,6,26,12,#86a6d0|r30,9,1,6,#86a6d0|r31,10,1,4,#6a5a9a|r15,13,14,3,#fbf6ec|r23,14,4,1,#c8306a|r25,9,1,2,O|r18,9,1,3,#6a5a9a|r20,9,1,3,#6a5a9a|r10,18,5,3,#86a6d0|r10,20,5,1,#6a5a9a|r22,18,4,3,#86a6d0|r22,20,4,1,#6a5a9a|f28,0,1,3,#e8b43c|f27,1,3,1,#e8b43c'],
   deskCalendar: [0, '', 'b3,4,10,10,#fffaf3|r3,4,10,3,#e06a5a|r5,2,1,3,#3a3448|r10,2,1,3,#3a3448|r5,9,1,1,#a8a0b8|r7,9,1,1,#a8a0b8|r9,9,1,1,#e06a5a|r5,11,1,1,#a8a0b8|r7,11,1,1,#a8a0b8|r9,11,1,1,#a8a0b8'],
 };
 type Shape = { k: string; n: number[]; col: string };
@@ -2086,6 +2144,10 @@ for (const [k, [up]] of Object.entries(RECIPES)) OVERHANG[k] ??= up;
 export function drawFurniture(c: Ctx, item: string, x: number, y: number, t: number, col?: string, flip = false, w = 1, s = 0, bare = 0, rot = 0, h = 1, lying = false) {
   const draw = (s && ALT[item]?.[s - 1]) || DRAW[item] || recipeDraw(item);
   if (!draw) return;
+  furnishing = true;
+  try { paintFurniture(c, draw, item, x, y, t, col, flip, w, h, bare, rot, lying); } finally { furnishing = false; }
+}
+function paintFurniture(c: Ctx, draw: Draw, item: string, x: number, y: number, t: number, col: string | undefined, flip: boolean, w: number, h: number, bare: number, rot: number, lying: boolean) {
   if (rot) { drawTurned(c, draw, item, x, y, t, col, flip, w, h, bare, rot, lying); return; }
   if (!flip) { draw(c, x, y, t, col, bare); return; }
   // Turned pieces are mirrored around the middle of their footprint.

@@ -169,7 +169,9 @@ function onMessage(m: any) {
         const it = ITEMS[f.item as ItemKey] as { w: number; h: number; act?: string; pet?: string };
         if (!it) continue;
         const d = footprint(f);
-        if (it.act) for (let y = 0; y < d.h; y++) for (let x = 0; x < d.w; x++) acts.set(tileKey(o.x + f.x + x, o.y + f.y + y), { item: f.item, act: it.act, col: furnColor(f) });
+        // Beds: only the pillow row is a place to lie down, so sleepers are on the bed, head on the pillow.
+        const rows = it.act === 'sleep' && !f.rot ? 1 : d.h;
+        if (it.act) for (let y = 0; y < rows; y++) for (let x = 0; x < d.w; x++) acts.set(tileKey(o.x + f.x + x, o.y + f.y + y), { item: f.item, act: it.act, col: furnColor(f) });
         if (it.pet) toys.push({ x: o.x + f.x, y: o.y + f.y, act: it.pet });
       }
       return toys;
@@ -265,6 +267,17 @@ let restUntil = 0; // pause before wandering on: short after a walk, longer whil
 let quietUntil = 0; // longer pause after you click or steer, so the sprite obeys you
 let arrive: (() => void) | null = null; // what to do once I reach furniture I clicked (water it, nap...)
 let stayMs = 0; // how long to stay on furniture I picked myself, instead of a random little while
+
+// Installing to the home screen: the browser offers it once the page qualifies; we keep that offer for the You panel's button.
+let installPrompt: (Event & { prompt: () => void }) | null = null;
+addEventListener('beforeinstallprompt', (e) => {
+  e.preventDefault();
+  installPrompt = e as Event & { prompt: () => void };
+  if (openPanel === 'avatar') renderPanel();
+});
+addEventListener('appinstalled', () => toast('📲 Auralis is on your home screen!', 'reward'));
+// Only the built site has the service worker (it serves an offline page); in development it would cache stale pages.
+if ('serviceWorker' in navigator && import.meta.env.PROD) navigator.serviceWorker.register('/sw.js').catch(() => {});
 
 // Notification sounds (rewards, new messages), on unless turned off in the You panel.
 let chimes = localStorage.getItem('auralis.chimes') !== 'off';
@@ -1371,7 +1384,9 @@ function panelBody(mine: Member) {
         <label>Name <input id="name" maxlength="16" value="${esc(mine.name)}"></label>
         <p class="hint">Total focus: <b>${mine.totalMinutes}</b> min</p>
         <button class="off small-chip" data-act="logout">Log out</button>
-        <button class="off small-chip" data-act="chimes">${chimes ? '🔔 Sounds on' : '🔕 Sounds off'}</button></div></div>
+        <button class="off small-chip" data-act="chimes">${chimes ? '🔔 Sounds on' : '🔕 Sounds off'}</button>
+        ${installPrompt ? '<button class="off small-chip" data-act="install">📲 Install app</button>' : ''}
+        <a class="hint" href="/privacy.html" target="_blank" rel="noopener">Privacy policy</a></div></div>
       ${mine.pets.length ? `<h3>Your pets</h3>${mine.pets.map((p, slot) => {
         const coats = PETS[p.kind as PetKey]?.coats ?? [];
         const accs = me.petAccs ?? [];
@@ -1519,6 +1534,7 @@ panel.addEventListener('click', (e) => {
       renderPanel();
       break;
     case 'gift': send({ t: 'gift', to: v }); break;
+    case 'install': installPrompt?.prompt(); installPrompt = null; renderPanel(); break;
     case 'noteto': writeNote(v); break;
     case 'sendnote': {
       const text = panel.querySelector<HTMLInputElement>('#noteText')!.value.trim();

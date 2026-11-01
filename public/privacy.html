@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#efe6da" />
+    <link rel="icon" href="/icon.svg" type="image/svg+xml" />
+    <title>Auralis · Privacy policy</title>
+    <style>
+      body { margin: 0; background: #efe6da; color: #2b2530; font: 16px/1.6 system-ui, sans-serif; }
+      main { max-width: 720px; margin: 0 auto; padding: 32px 20px 64px; }
+      h1 { font-size: 30px; margin: 0 0 4px; }
+      h2 { font-size: 20px; margin: 28px 0 6px; }
+      .meta { color: #6b6070; margin: 0 0 24px; }
+      .todo { background: #ffd27a; padding: 0 4px; border-radius: 4px; }
+      a { color: #3a5bb0; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Privacy policy</h1>
+      <p class="meta">Auralis · Effective 1 November 2026</p>
+
+      <p>Auralis is a study app where you focus on timed sessions, keep to-dos, chat with housemates and decorate a pixel room.
+        This page explains what we store, why, and who else handles it. We don't sell your data, show ads, or use analytics or tracking.</p>
+
+      <h2>What we store</h2>
+      <ul>
+        <li><b>Your account:</b> username, email address, and your password, which is stored only as a salted scrypt hash.
+          Your email is used to let you log in; we don't send you marketing.</li>
+        <li><b>Your game and study data:</b> your character, rooms and furniture, coins, pets, focus sessions (when, how long and the subject you typed),
+          exam dates, to-dos, calendar events, and room snapshots (pictures of your room that you choose to save).</li>
+        <li><b>Messages:</b> house chat, private messages between housemates, notes left on desks, and house to-dos and calendar events.
+          Housemates can see what you share with the house; private messages are visible to the two people in them.</li>
+        <li><b>Sign-in sessions:</b> a login token so you stay signed in. The server keeps only a hash of it; the token itself stays on your device.</li>
+        <li><b>On your device:</b> the login token and preferences such as zoom, sound and which to-do list you last viewed, kept in your browser's local storage.</li>
+        <li><b>Connection details:</b> your IP address is seen by our servers when you connect and is used briefly, in memory, to limit repeated login attempts. It isn't stored.</li>
+      </ul>
+
+      <h2>Who else handles it</h2>
+      <ul>
+        <li><b>Neon</b> stores the database and saved room snapshots.</li>
+        <li><b>Render</b> runs the game server and <b>Vercel</b> serves the app's pages.</li>
+        <li><b>Google Fonts</b> provides the app's font, so Google sees your IP address when the font loads.</li>
+        <li><b>Video sites</b>: if someone in your house starts a "watch together" video, the player from that site
+          (YouTube, Vimeo, Twitch or Dailymotion) loads in the app and follows that site's own privacy policy.</li>
+      </ul>
+      <p>These providers process data on our behalf to run the app. All connections to Auralis are encrypted (HTTPS and secure WebSockets).</p>
+
+      <h2>How long we keep it</h2>
+      <p>We keep your account and data while your account exists. Some lists are trimmed automatically: the oldest chat messages,
+        private messages, desk notes and calendar entries drop off as newer ones are added.</p>
+
+      <h2 id="delete">Deleting your data</h2>
+      <p>To have your account and its data deleted, contact us at <span class="todo">[add a contact email before publishing]</span>
+        from the email address on your account, and we'll delete it.</p>
+
+      <h2>Children</h2>
+      <p>Auralis isn't directed at children under 13, and we don't knowingly collect data from them.</p>
+
+      <h2>Changes</h2>
+      <p>If this policy changes, we'll update this page and its effective date.</p>
+
+      <h2>Contact</h2>
+      <p>Questions about privacy: <span class="todo">[add a contact email before publishing]</span></p>
+    </main>
+  </body>
+</html>

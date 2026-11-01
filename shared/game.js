@@ -304,6 +304,7 @@ export const ITEMS = {
   hotCrossBuns: { name: 'Hot cross buns', w: 1, h: 1, price: 8, solid: false, top: true, shelf: 'seasonal' },
   lotusLamp: { name: 'Lotus lamp', w: 1, h: 1, price: 11, solid: false, top: true, shelf: 'seasonal' },
   deskCalendar: { name: 'Desk calendar', w: 1, h: 1, price: 9, solid: false, top: true, shelf: 'decor' },
+  sharkPlush: { name: 'Big shark plush', w: 2, h: 1, price: 45, solid: true, use: 'hug', shelf: 'decor' },
 };
 // Shop shelves in order. Items list their shelf; items with no shelf (the starter desk and chair, retired bathroom pieces) aren't sold.
 export const SHELVES = [
@@ -428,6 +429,8 @@ export const PETS = {
   axolotl: { name: 'Axolotl', price: 1300, coats: ['#f7b6c8', '#9db4ee', '#ffd27a', '#b89af0'] },
   unicorn: { name: 'Unicorn', price: 1800, coats: ['#fffaf3', '#f2c4d0', '#cfe1f7', '#e8d8f0'] },
   dragon: { name: 'Baby dragon', price: 2000, coats: ['#8fd0a8', '#b89af0', '#f48a8a', '#7fb2e8'] },
+  trex: { name: 'Baby T-rex', price: 1500, coats: ['#8fd07a', '#b0d870', '#9db4ee', '#f4a6b8'] },
+  platypus: { name: 'Platypus', price: 1000, coats: ['#4fb0b0', '#6fb8a8', '#5b9fd6'] },
 };
 // Things pets can wear. Bought once, then put on any of your pets for free.
 export const PET_ACCS = {
@@ -439,6 +442,7 @@ export const PET_ACCS = {
   glasses: { name: 'Heart glasses', price: 70 },
   partyHat: { name: 'Party hat', price: 80 },
   crown: { name: 'Crown', price: 150 },
+  fedora: { name: 'Fedora', price: 60 },
   scarf: { name: 'Cozy scarf', price: 45 },
   shades: { name: 'Cool shades', price: 70 },
   cap: { name: 'Ball cap', price: 50 },

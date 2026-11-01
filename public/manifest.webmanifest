@@ -1,7 +1,12 @@
 {
+  "id": "/",
   "name": "Auralis",
   "short_name": "Auralis",
+  "description": "A cozy study house: focus with friends, earn coins, and decorate your pixel room together.",
+  "categories": ["education", "productivity"],
+  "lang": "en",
   "start_url": "/",
+  "scope": "/",
   "display": "standalone",
   "orientation": "any",
   "background_color": "#efe6da",
@@ -9,6 +14,7 @@
   "icons": [
     { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
     { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
-    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" }
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
   ]
 }
