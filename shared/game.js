@@ -545,7 +545,8 @@ export function buildGrid(rooms) {
     for (const f of room.furniture) {
       const it = ITEMS[f.item];
       if (!it?.solid) continue;
-      for (let y = 0; y < it.h; y++) for (let x = 0; x < it.w; x++) set(o.x + f.x + x, o.y + f.y + y, BLOCKED);
+      const d = footprint(f);
+      for (let y = 0; y < d.h; y++) for (let x = 0; x < d.w; x++) set(o.x + f.x + x, o.y + f.y + y, BLOCKED);
     }
   });
   return { w, h, cols: COLS, cell, owner, origins, sizes, at: (x, y) => (inside(x, y) ? cell[y * w + x] : VOID) };
@@ -553,18 +554,29 @@ export function buildGrid(rooms) {
 
 export const walkable = (k) => k === FLOOR || k === DOOR;
 
+// Turning: rot 0 faces front, 1 and 3 sideways, 2 away. Sideways a piece's width and depth swap.
+export const footprint = (f) => { const it = ITEMS[f.item]; return f.rot % 2 ? { w: it.h, h: it.w } : { w: it.w, h: it.h }; };
+// Rugs, mats and beds are seen from above, so they turn as a whole picture; upright things show a side or their back.
+export const lying = (it) => (!it.solid && !it.top) || it.h > it.w;
+// The next way a piece can face. Square upright things only have a front and a back (their side looks like their front).
+export const nextRot = (f) => {
+  const it = ITEMS[f.item], r = f.rot ?? 0;
+  return it.w === it.h && !lying(it) ? (r ? 0 : 2) : (r + 1) % 4;
+};
+
 // Room-local placement check. Each layer only collides with itself: rugs, solid furniture, small tabletop things.
 const layer = (it) => (it.top ? 2 : it.solid ? 1 : 0);
-export function canPlace(room, item, x, y) {
+export function canPlace(room, item, x, y, rot = 0) {
   const it = ITEMS[item];
   const s = roomSize(room);
   if (!it || !Number.isInteger(x) || !Number.isInteger(y)) return false;
-  if (x < 0 || y < 0 || x + it.w > s.w || y + it.h > s.h) return false;
-  return !room.furniture.some((f) => hits(f, it, x, y));
+  const d = footprint({ item, rot });
+  if (x < 0 || y < 0 || x + d.w > s.w || y + d.h > s.h) return false;
+  return !room.furniture.some((f) => hits(f, it, x, y, d));
 }
-const hits = (f, it, x, y) => {
-  const o = ITEMS[f.item];
-  return o && layer(o) === layer(it) && x < f.x + o.w && f.x < x + it.w && y < f.y + o.h && f.y < y + it.h;
+const hits = (f, it, x, y, d) => {
+  const o = ITEMS[f.item], fd = o && footprint(f);
+  return o && layer(o) === layer(it) && x < f.x + fd.w && f.x < x + d.w && y < f.y + fd.h && f.y < y + d.h;
 };
 
 // Workspace pieces swap out the same kind of piece in their spot (desk for desk, chair for chair, drink for laptop)
@@ -572,7 +584,7 @@ const hits = (f, it, x, y) => {
 const swapKind = (it) => (it?.table ? 'table' : it?.chair ? 'chair' : it?.top && it.shelf === 'work' ? 'top' : null);
 export function placeSwaps(room, item, x, y) {
   const it = ITEMS[item], k = swapKind(it);
-  const out = k ? room.furniture.flatMap((f, i) => (swapKind(ITEMS[f.item]) === k && hits(f, it, x, y) ? [i] : [])) : [];
+  const out = k ? room.furniture.flatMap((f, i) => (swapKind(ITEMS[f.item]) === k && hits(f, it, x, y, footprint({ item })) ? [i] : [])) : [];
   return canPlace({ ...room, furniture: room.furniture.filter((_, i) => !out.includes(i)) }, item, x, y) ? out : null;
 }
 

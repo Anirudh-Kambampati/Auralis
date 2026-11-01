@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   buildGrid, canPlace, placeSwaps, focusReward, colorsFor, roomSize, PETS, EXPAND_COST,
-  ITEMS, EVENTS, easterSunday, activeEvents, nextEvent,
+  ITEMS, EVENTS, easterSunday, activeEvents, nextEvent, footprint, nextRot,
   DOOR, WALL, FLOOR, BLOCKED, VOID, ROOM_W, colsFor,
 } from './game.js';
 
@@ -128,4 +128,17 @@ test('festivals: Easter, windows across New Year', () => {
   assert.equal(nextEvent(new Date(2026, 10, 1)).id, 'gurpurab');
 
   for (const e of EVENTS) for (const k of e.items) assert.ok(ITEMS[k], `${e.id}: ${k}`);
+});
+
+test('turning: sideways swaps the footprint, square upright things only face front or back', () => {
+  assert.deepEqual(footprint({ item: 'wardrobe', rot: 1 }), { w: 1, h: 2 });
+  assert.deepEqual(footprint({ item: 'wardrobe', rot: 2 }), { w: 2, h: 1 });
+  assert.deepEqual([0, 1, 2, 3].map((rot) => nextRot({ item: 'tv', rot })), [1, 2, 3, 0]);
+  assert.equal(nextRot({ item: 'arcade' }), 2);
+  assert.equal(nextRot({ item: 'arcade', rot: 2 }), 0);
+  assert.equal(nextRot({ item: 'roundRug', rot: 1 }), 2); // rugs turn all the way round
+  const room = { furniture: [{ item: 'sofa', x: 0, y: 4, rot: 1 }] }; // a 3x1 sofa turned: 1 wide, 3 deep
+  assert.equal(canPlace(room, 'plant', 0, 6), false); // its third tile
+  assert.equal(canPlace(room, 'plant', 1, 4), true); // beside it, where it used to reach
+  assert.equal(canPlace({ furniture: [] }, 'sofa', 0, 6, 1), false); // 3 deep doesn't fit at the bottom edge
 });

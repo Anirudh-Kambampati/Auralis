@@ -1,7 +1,7 @@
 import {
   SHELVES, buildGrid, walkable, canPlace, placeSwaps,roomSize, MAX_ROOMS, ROOM_COST, colorsFor, ITEMS, PETS, PET_ACCS, MAX_PETS, EXPAND_COST, ROOM_SIZES,
   WALLPAPERS, WALL_PATTERNS, FLOORS, FLOOR_STYLES, SKINS, HAIRS, SHIRTS, STYLES, FACES, OUTFITS, FOCUS_LENGTHS,
-  WALL_H, WALL, FLOOR, DOOR, BLOCKED, VOID, THIRSTY_MS, isPlant, discounted, GIFT_COINS, activeEvents, nextEvent,
+  WALL_H, WALL, FLOOR, DOOR, BLOCKED, VOID, footprint, lying, THIRSTY_MS, isPlant, discounted, GIFT_COINS, activeEvents, nextEvent,
 } from '../shared/game.js';
 import {
   T, OVERHANG, SURFACE, drawSeated, drawActing, drawSeam, drawFloor, drawWall, drawWallFace, drawWallTop, drawDoor, drawWindow, drawPainting, drawFurniture, drawAvatar, drawDeskLamp, drawGlow, drawUsing, skyNow, NIGHT_TINT,
@@ -15,7 +15,7 @@ import { parseVideo } from '../shared/watch.js';
 import { chart, streak, rangeTitle, shift, hm, RANGES } from '../shared/stats.js';
 import './style.css';
 
-type Furniture = { item: string; x: number; y: number; v?: number; s?: number; flip?: boolean; wateredAt?: number; off?: boolean };
+type Furniture = { item: string; x: number; y: number; v?: number; s?: number; flip?: boolean; rot?: number; wateredAt?: number; off?: boolean };
 type Room = { wallpaper: string; floor: string; pattern?: string; floorStyle?: string; level?: number; curtains?: boolean; furniture: Furniture[] };
 type Member = {
   id: string; name: string; look: Look; rooms: Room[]; focus: { minutes: number; endsAt: number } | null;
@@ -165,7 +165,8 @@ function onMessage(m: any) {
       for (const f of room.furniture) {
         const it = ITEMS[f.item as ItemKey] as { w: number; h: number; act?: string; pet?: string };
         if (!it) continue;
-        if (it.act) for (let y = 0; y < it.h; y++) for (let x = 0; x < it.w; x++) acts.set(tileKey(o.x + f.x + x, o.y + f.y + y), { item: f.item, act: it.act, col: furnColor(f) });
+        const d = footprint(f);
+        if (it.act) for (let y = 0; y < d.h; y++) for (let x = 0; x < d.w; x++) acts.set(tileKey(o.x + f.x + x, o.y + f.y + y), { item: f.item, act: it.act, col: furnColor(f) });
         if (it.pet) toys.push({ x: o.x + f.x, y: o.y + f.y, act: it.pet });
       }
       return toys;
@@ -306,7 +307,7 @@ function goSit() {
   const it = (f: Furniture) => ITEMS[f.item as ItemKey] as { w: number; chair?: boolean; table?: boolean } | undefined;
   const chairs = mine.rooms.flatMap((room, ri) => room.furniture.filter((f) => it(f)?.chair).map((c) => ({
     c, i: slotOf(myId, ri),
-    desk: room.furniture.some((d) => it(d)?.table && c.x >= d.x && c.x < d.x + it(d)!.w && c.y + 1 === d.y),
+    desk: room.furniture.some((d) => it(d)?.table && c.x >= d.x && c.x < d.x + footprint(d).w && c.y + 1 === d.y),
   })));
   const pick = chairs.find((x) => x.desk) ?? chairs[0];
   if (!pick || pick.i < 0) return;
@@ -388,9 +389,10 @@ function interact(si: number, fi: number) {
   const o = grid.origins[si], start = { x: a.tx, y: a.ty };
   const pass = (x: number, y: number) => walkable(grid.at(x, y));
   const taken = new Set([...avatars].filter(([id]) => id !== myId).map(([, b]) => tileKey(b.tx, b.ty)));
+  const fp = footprint(f);
   if (it.act) { // on top of it
     const tiles: { x: number; y: number }[] = [];
-    for (let dy = 0; dy < it.h; dy++) for (let dx = 0; dx < it.w; dx++) {
+    for (let dy = 0; dy < fp.h; dy++) for (let dx = 0; dx < fp.w; dx++) {
       const x = o.x + f.x + dx, y = o.y + f.y + dy;
       if (acts.has(tileKey(x, y)) && !taken.has(tileKey(x, y))) tiles.push({ x, y });
     }
@@ -405,7 +407,7 @@ function interact(si: number, fi: number) {
     return true;
   }
   // In front of it: the row just below.
-  const fronts = Array.from({ length: it.w }, (_, k) => ({ x: o.x + f.x + k, y: o.y + f.y + it.h }))
+  const fronts = Array.from({ length: fp.w }, (_, k) => ({ x: o.x + f.x + k, y: o.y + f.y + fp.h }))
     .filter((u) => (pass(u.x, u.y) || (u.x === start.x && u.y === start.y)) && !taken.has(tileKey(u.x, u.y)));
   const p = bfs(start, (cx, cy) => fronts.some((u) => u.x === cx && u.y === cy), pass);
   if (!p) { toast("You can't reach that from here."); return true; }
@@ -469,8 +471,9 @@ function wander() {
       const plant = isPlant(f.item);
       const water = plant ? () => send({ t: 'water', owner: m.id, r: ri, index }) : undefined;
       const thirsty = plant && Date.now() - (f.wateredAt ?? Date.now()) > THIRSTY_MS;
-      for (let k = 0; k < it.w; k++) {
-        const fx = o.x + f.x + k, fy = o.y + f.y + it.h;
+      const fp = footprint(f);
+      for (let k = 0; k < fp.w; k++) {
+        const fx = o.x + f.x + k, fy = o.y + f.y + fp.h;
         if ((seen.has(tileKey(fx, fy)) || (fx === start.x && fy === start.y)) && !taken.has(tileKey(fx, fy))) fronts.push({ x: fx, y: fy, use: it.use, water, thirsty });
       }
     });
@@ -506,8 +509,8 @@ function furnitureAt(room: Room, lx: number, ly: number) {
   const hits = room.furniture
     .map((f, i) => ({ f, i }))
     .filter(({ f }) => {
-      const it = ITEMS[f.item as ItemKey];
-      return it && lx >= f.x && lx < f.x + it.w && ly >= f.y && ly < f.y + it.h;
+      const d = ITEMS[f.item as ItemKey] && footprint(f);
+      return d && lx >= f.x && lx < f.x + d.w && ly >= f.y && ly < f.y + d.h;
     });
   return (hits.find(({ f }) => ITEMS[f.item as ItemKey].solid) ?? hits[0])?.i ?? -1;
 }
@@ -562,7 +565,7 @@ canvas.addEventListener('pointerdown', (e) => {
       canvas.setPointerCapture(e.pointerId);
     } else if (moving !== null) {
       const f = myRoom()!.furniture[moving];
-      if (f && canPlace(without(myRoom()!, moving), f.item, lx, ly)) send({ t: 'move', r: editRoom, index: moving, x: lx, y: ly });
+      if (f && canPlace(without(myRoom()!, moving), f.item, lx, ly, f.rot)) send({ t: 'move', r: editRoom, index: moving, x: lx, y: ly });
       else toast("It doesn't fit there.");
     }
     renderPanel();
@@ -646,7 +649,7 @@ canvas.addEventListener('pointerup', () => {
   if (!drag || !mine) { drag = null; return; }
   const f = myRoom()!.furniture[drag.index];
   if (drag.moved && f) {
-    if (canPlace(without(myRoom()!, drag.index), f.item, drag.lx, drag.ly)) send({ t: 'move', r: editRoom, index: drag.index, x: drag.lx, y: drag.ly });
+    if (canPlace(without(myRoom()!, drag.index), f.item, drag.lx, drag.ly, f.rot)) send({ t: 'move', r: editRoom, index: drag.index, x: drag.lx, y: drag.ly });
     else toast("It doesn't fit there.");
   }
   drag = null;
@@ -835,27 +838,28 @@ function render(t: number) {
       const dragged = drag?.moved && m.id === myId && ri === editRoom && drag.index === idx;
       // Drinks and toys stand on top of whatever table they were put on.
       const under = it.top ? room.furniture.find((g) => {
-        const gi = ITEMS[g.item as ItemKey];
-        return gi?.solid && f.x >= g.x && f.x < g.x + gi.w && f.y >= g.y && f.y < g.y + gi.h;
+        const gi = ITEMS[g.item as ItemKey], gd = gi && footprint(g);
+        return gi?.solid && f.x >= g.x && f.x < g.x + gd.w && f.y >= g.y && f.y < g.y + gd.h;
       }) : undefined;
       const lift = under ? SURFACE[under.item] ?? 0 : 0;
       // Tiles of a desk that something stands on: its own built-in laptop/mug there is hidden (bit 1 = left, 2 = right, as drawn).
       let bare = 0;
-      if (it.solid) for (const g of room.furniture) {
+      const fp = footprint(f);
+      if (it.solid && !f.rot) for (const g of room.furniture) {
         if ((ITEMS[g.item as ItemKey] as { top?: boolean } | undefined)?.top &&g.y >= f.y && g.y < f.y + it.h && g.x >= f.x && g.x < f.x + it.w) bare |= 1 << (f.flip ? f.x + it.w - 1 - g.x : g.x - f.x);
       }
       const thirsty = isPlant(f.item) && now - (f.wateredAt ?? now) > THIRSTY_MS; // droops until someone waters it
       const draw = () => {
         if (dragged) ctx.globalAlpha = 0.35;
         if (thirsty) ctx.filter = 'grayscale(0.7) brightness(0.9)';
-        drawFurniture(ctx, f.item, (o.x + f.x) * T, (o.y + f.y) * T - lift, t, furnColor(f), f.flip, it.w, f.s, bare);
+        drawFurniture(ctx, f.item, (o.x + f.x) * T, (o.y + f.y) * T - lift, t, furnColor(f), f.flip, it.w, f.s, bare, f.rot, it.h, lying(it));
         ctx.filter = 'none';
         ctx.globalAlpha = 1;
         if (thirsty) drawDroplet(ctx, (o.x + f.x) * T + T / 2, (o.y + f.y) * T - lift - 6 + Math.round(Math.sin(t / 300)));
       };
       if (it.top) sprites.push({ y: o.y + f.y + 0.6, draw });
       else if (!it.solid) draw();
-      else sprites.push({ y: o.y + f.y + it.h - 0.5, draw });
+      else sprites.push({ y: o.y + f.y + fp.h - 0.5, draw });
     });
     if (ri === 0) m.pets?.forEach((p, slot) => { // pets live in their owner's first room
       const spots = petSpots[i];
@@ -921,11 +925,12 @@ function render(t: number) {
       const gx = drag?.moved ? drag.lx : f.x, gy = drag?.moved ? drag.ly : f.y;
       if (drag?.moved) {
         // Ghost of the piece being dragged, outlined green where it fits and red where it doesn't.
-        drawFurniture(ctx, f.item, (o.x + gx) * T, (o.y + gy) * T, t, furnColor(f), f.flip, it.w, f.s);
-        ctx.strokeStyle = canPlace(without(myRoom()!, moving!), f.item, gx, gy) ? '#6fcf8a' : '#e06a5a';
+        drawFurniture(ctx, f.item, (o.x + gx) * T, (o.y + gy) * T, t, furnColor(f), f.flip, it.w, f.s, 0, f.rot, it.h, lying(it));
+        ctx.strokeStyle = canPlace(without(myRoom()!, moving!), f.item, gx, gy, f.rot) ? '#6fcf8a' : '#e06a5a';
       } else ctx.strokeStyle = '#f2c14e';
       ctx.lineWidth = 2;
-      ctx.strokeRect((o.x + gx) * T + 1, (o.y + gy) * T + 1, it.w * T - 2, it.h * T - 2);
+      const fp = footprint(f);
+      ctx.strokeRect((o.x + gx) * T + 1, (o.y + gy) * T + 1, fp.w * T - 2, fp.h * T - 2);
     }
   }
 
@@ -1218,7 +1223,8 @@ function decorateBody(mine: Member) {
   const palette = sel ? colorsFor(sel.item) : [];
   const looks: string[] = sel ? (ITEMS[sel.item as ItemKey] as { looks?: string[] }).looks ?? [] : [];
   const selBar = sel ? `<div class="selected">${icon(sel.item)}<b>${ITEMS[sel.item as ItemKey].name}</b>
-      <button class="off" data-act="flip" title="Turn it to face the other way">↔ Turn</button>
+      <button class="off" data-act="rotate" title="Turn it: side, back, other side, front">⟳ Rotate</button>
+      <button class="off" data-act="flip" title="Mirror it to face the other way">↔ Flip</button>
       <button class="off" data-act="putaway">Put away</button><button data-act="deselect">Done</button></div>
       ${looks.length ? `<h3>Style</h3><div class="row styles">${looks.map((name, k) =>
         `<button class="${(sel.s ?? 0) === k ? 'on' : 'off'}" data-act="shape" data-v="${k}">${icon(sel.item, 'chip-icon', k)}${name}</button>`).join('')}</div>` : ''}
@@ -1422,6 +1428,7 @@ panel.addEventListener('click', (e) => {
     case 'putaway': if (moving !== null) send({ t: 'pickup', r: editRoom, index: moving }); moving = null; renderPanel(); break;
     case 'deselect': moving = null; renderPanel(); break;
     case 'flip': if (moving !== null) send({ t: 'flip', r: editRoom, index: moving }); break;
+    case 'rotate': if (moving !== null) send({ t: 'turn', r: editRoom, index: moving }); break;
     case 'recolor': if (moving !== null) send({ t: 'restyle', r: editRoom, index: moving, v: Number(v) }); break;
     case 'shape': if (moving !== null) send({ t: 'shape', r: editRoom, index: moving, s: Number(v) }); break;
     case 'wallpaper': case 'floor': case 'pattern': case 'floorStyle':

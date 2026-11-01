@@ -10,7 +10,7 @@ import { files, isPng } from './files.js';
 import {
   ITEMS, WALLPAPERS, FLOORS, SKINS, HAIRS, SHIRTS, STYLES, FACES, OUTFITS, FOCUS_LENGTHS, canPlace, placeSwaps, focusReward,
   WALL_PATTERNS, FLOOR_STYLES, PETS, MAX_PETS, EXPAND_COST, colorsFor, USES, PET_ACCS, MAX_ROOMS, ROOM_COST,
-  isPlant, TASK_COINS, TASK_REWARDS_PER_DAY, discounted, GIFT_COINS, GIFTS_PER_DAY,
+  isPlant, TASK_COINS, TASK_REWARDS_PER_DAY, discounted, GIFT_COINS, GIFTS_PER_DAY, nextRot,
 } from '../shared/game.js';
 import { parseVideo } from '../shared/watch.js';
 
@@ -173,7 +173,7 @@ function newRoom() { return { wallpaper: WALLPAPERS[0], floor: FLOORS[0], furnit
 
 function handle(p, m) {
   const room = roomOf(p, m);
-  if (['place', 'move', 'pickup', 'room', 'flip', 'restyle', 'shape', 'expand', 'curtains', 'light'].includes(m.t) && !room) return;
+  if (['place', 'move', 'pickup', 'room', 'flip', 'restyle', 'shape', 'expand', 'curtains', 'light', 'turn'].includes(m.t) && !room) return;
   switch (m.t) {
     case 'look':
       p.name = cleanName(m.name);
@@ -323,7 +323,7 @@ function handle(p, m) {
     case 'move': {
       const f = room.furniture[m.index];
       const rest = { ...room, furniture: room.furniture.filter((_, i) => i !== m.index) };
-      if (!f || !canPlace(rest, f.item, m.x, m.y)) return;
+      if (!f || !canPlace(rest, f.item, m.x, m.y, f.rot)) return;
       f.x = m.x;
       f.y = m.y;
       break;
@@ -405,6 +405,14 @@ function handle(p, m) {
       room.pattern = pick(WALL_PATTERNS, m.pattern, room.pattern ?? WALL_PATTERNS[0]);
       room.floorStyle = pick(FLOOR_STYLES, m.floorStyle, room.floorStyle ?? FLOOR_STYLES[0]);
       break;
+    case 'turn': { // face the next way (side, back, other side); sideways it has to fit where it stands
+      const f = room.furniture[m.index];
+      if (!f) return;
+      const rot = nextRot(f), rest = { ...room, furniture: room.furniture.filter((_, i) => i !== m.index) };
+      if (!canPlace(rest, f.item, f.x, f.y, rot)) return send(sockets.get(p.id), { t: 'error', text: "There isn't room to turn it here. Move it somewhere with more space first." });
+      f.rot = rot || undefined;
+      break;
+    }
     case 'flip': {
       const f = room.furniture[m.index];
       if (!f) return;

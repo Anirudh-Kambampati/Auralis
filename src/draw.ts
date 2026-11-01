@@ -2014,15 +2014,56 @@ function recipeDraw(item: string): Draw | undefined {
 for (const [k, [up]] of Object.entries(RECIPES)) OVERHANG[k] ??= up;
 
 // s = which style of the item (see ITEMS[item].looks); 0 is the original.
-export function drawFurniture(c: Ctx, item: string, x: number, y: number, t: number, col?: string, flip = false, w = 1, s = 0, bare = 0) {
+// rot = which way it faces (0 front, 1 and 3 sideways, 2 away); h = its depth; lying = seen from above (rugs, beds).
+export function drawFurniture(c: Ctx, item: string, x: number, y: number, t: number, col?: string, flip = false, w = 1, s = 0, bare = 0, rot = 0, h = 1, lying = false) {
   const draw = (s && ALT[item]?.[s - 1]) || DRAW[item] || recipeDraw(item);
   if (!draw) return;
+  if (rot) { drawTurned(c, draw, item, x, y, t, col, flip, w, h, bare, rot, lying); return; }
   if (!flip) { draw(c, x, y, t, col, bare); return; }
   // Turned pieces are mirrored around the middle of their footprint.
   c.save();
   c.translate(x * 2 + w * T, 0);
   c.scale(-1, 1);
   draw(c, x, y, t, col, bare);
+  c.restore();
+}
+
+// Every piece only has a front view, so turned pieces are made from it: painted on a spare canvas, then
+// rugs and beds turn as a whole; upright things show their front squeezed into the narrow side and slanted back
+// into the room (a column at a time, so pixels stay crisp), or from behind, mirrored and in shadow. Either way a
+// wardrobe still looks like a wardrobe.
+let spare: HTMLCanvasElement | undefined;
+function drawTurned(c: Ctx, draw: Draw, item: string, x: number, y: number, t: number, col: string | undefined, flip: boolean, w: number, h: number, bare: number, rot: number, lying: boolean) {
+  const W = w * T, up = OVERHANG[item] ?? 0, H = up + h * T;
+  spare ??= document.createElement('canvas');
+  spare.width = W; spare.height = H; // also clears it
+  const g = spare.getContext('2d')!;
+  g.globalCompositeOperation = 'source-over'; // the back view's shading switched it
+  draw(g, 0, up, t, col, bare);
+  const fw = (rot % 2 ? h : w) * T; // footprint width on screen
+  c.save();
+  if (flip) { c.translate(x * 2 + fw, 0); c.scale(-1, 1); }
+  if (lying) {
+    if (rot === 1) { c.translate(x + H, y); c.rotate(Math.PI / 2); } // the overhang (headboard) ends up on the right
+    else if (rot === 2) { c.translate(x + W, y + H); c.rotate(Math.PI); }
+    else { c.translate(x - up, y + W); c.rotate(-Math.PI / 2); }
+    c.drawImage(spare, 0, 0);
+  } else if (rot === 2) {
+    g.globalCompositeOperation = 'source-atop';
+    g.fillStyle = 'rgba(43,37,48,0.4)';
+    g.fillRect(0, 0, W, H);
+    c.translate(x * 2 + W, 0);
+    c.scale(-1, 1);
+    c.drawImage(spare, x, y - up);
+  } else {
+    if (rot === 3) { c.translate(x * 2 + fw, 0); c.scale(-1, 1); }
+    const D = (w - h) * T; // how far the far end sits back
+    const sw = Math.max(fw, Math.ceil(W / 2)); // long sofas get a wider face than their one tile, or they'd be a sliver
+    for (let dx = 0; dx < sw; dx++) {
+      const u = Math.floor(((dx + 0.5) * W) / sw);
+      c.drawImage(spare, u, 0, 1, H, x + dx, y + D - Math.round((dx * D) / sw) - up, 1, H);
+    }
+  }
   c.restore();
 }
 
