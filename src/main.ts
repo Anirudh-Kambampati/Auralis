@@ -80,10 +80,10 @@ let moving: number | null = null; // index of the furniture picked up in Decorat
 let drag: { index: number; gx: number; gy: number; lx: number; ly: number; moved: boolean } | null = null;
 let lastDoneTry = 0; // when we last told the server a finished session is done
 let view = { ox: 0, oy: 0, scale: 1 };
-// Extra integer scale steps on top of the fitted view (+ zooms in, - zooms out).
+// Extra scale steps (of AV) on top of the fitted view (+ zooms in, - zooms out).
 // Phones start one step closer, so faces and small things are easier to see; pinch or +/- changes it.
 const savedZoom = localStorage.getItem('auralis.zoom');
-let zoom = Math.max(-3, Math.min(4, savedZoom !== null ? Number(savedZoom) || 0 : innerWidth < 600 ? 1 : 0));
+let zoom = Math.max(-2, Math.min(2, savedZoom !== null ? Number(savedZoom) || 0 : innerWidth < 600 ? 1 : 0));
 let cam: { x: number; y: number; scale: number } | null = null; // camera target in art pixels, eased
 let camRoom = 0;
 
@@ -209,7 +209,7 @@ function onMessage(m: any) {
     }
     renderHud();
     renderSide();
-    if (openPanel && openPanel !== 'social') renderPanel();
+    if (openPanel && !isSide(openPanel)) renderPanel();
   } else if (m.t === 'pos') {
     const a = avatars.get(m.id);
     if (a) { a.tx = m.x; a.ty = m.y; a.use = m.use; }
@@ -238,7 +238,7 @@ function receiveChat(list: Chat[]) {
       if (c.from !== myId) {
         if (chatHidden()) pingOrHold();
         countUnseen();
-        if (!document.body.classList.contains('side-open') || dmPeer) unread = true;
+        if (document.body.dataset.side !== 'chat' || dmPeer) unread = true;
         noteUnreadChat();
       }
     }
@@ -367,9 +367,11 @@ function bfs(from: { x: number; y: number }, done: (x: number, y: number) => boo
       for (let k = key(c.x, c.y); k !== -1; k = prev.get(k)!) out.unshift({ x: k % grid.w, y: Math.floor(k / grid.w) });
       return out;
     }
+    // On furniture (in bed, on a chair) with no floor beside it: climb off over the furniture rather than be stuck.
+    const onFurniture = grid.at(c.x, c.y) === BLOCKED;
     for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
       const n = { x: c.x + dx, y: c.y + dy };
-      if (!prev.has(key(n.x, n.y)) && pass(n.x, n.y)) {
+      if (!prev.has(key(n.x, n.y)) && (pass(n.x, n.y) || (onFurniture && grid.at(n.x, n.y) === BLOCKED))) {
         prev.set(key(n.x, n.y), key(c.x, c.y));
         queue.push(n);
       }
@@ -384,6 +386,7 @@ function nearestWalkable(x: number, y: number) {
 }
 
 function walkTo(x: number, y: number) {
+  camPan.x = camPan.y = 0; // the camera follows me again
   const a = avatars.get(myId);
   if (!a) return;
   // Taps on the paper around the house, or outside it entirely, are ignored.
@@ -571,10 +574,44 @@ const lift = (e: PointerEvent) => { touches.delete(e.pointerId); if (touches.siz
 canvas.addEventListener('pointerup', lift);
 canvas.addEventListener('pointercancel', lift);
 
+// Drag the room to look around: a press that moves more than a few pixels scrolls the view instead of tapping.
+const camPan = { x: 0, y: 0 }; // art pixels away from what the camera would frame on its own
+let pan: { id: number; x: number; y: number; px: number; py: number; moved: boolean; down: PointerEvent } | null = null;
 canvas.addEventListener('pointerdown', (e) => {
   touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
-  if (touches.size === 2) { pinchFrom = spread(); drag = null; return; } // second finger: it's a pinch, not a tap
+  if (touches.size === 2) { pinchFrom = spread(); drag = null; pan = null; return; } // second finger: it's a pinch, not a tap
   if (touches.size > 2) return;
+  const { tx, ty } = tileAt(e);
+  // Decorate: pieces are grabbed (or placed) straight away; anywhere else the press may become a drag.
+  if (openPanel === 'decorate' && myRoom()) {
+    const o = grid.origins[mySlot()];
+    if (placing || furnitureAt(myRoom()!, tx - o.x, ty - o.y) >= 0) { tapAt(e); return; }
+  }
+  pan = { id: e.pointerId, x: e.clientX, y: e.clientY, px: camPan.x, py: camPan.y, moved: false, down: e };
+  canvas.setPointerCapture(e.pointerId);
+});
+canvas.addEventListener('pointermove', (e) => {
+  if (!pan || e.pointerId !== pan.id || touches.size > 1) return;
+  const dx = e.clientX - pan.x, dy = e.clientY - pan.y;
+  if (!pan.moved && Math.hypot(dx, dy) < 8) return;
+  if (!pan.moved) showTip(null);
+  pan.moved = true;
+  const k = (devicePixelRatio || 1) / view.scale; // screen pixels to art pixels
+  camPan.x = pan.px - dx * k;
+  camPan.y = pan.py - dy * k;
+  canvas.style.cursor = 'var(--grabbing)';
+});
+const endPan = (e: PointerEvent) => {
+  if (!pan || e.pointerId !== pan.id) return;
+  const tap = !pan.moved && e.type === 'pointerup' && touches.size === 0 ? pan.down : null;
+  if (pan.moved) canvas.style.cursor = '';
+  pan = null;
+  if (tap) tapAt(tap);
+};
+canvas.addEventListener('pointerup', endPan);
+canvas.addEventListener('pointercancel', endPan);
+
+function tapAt(e: PointerEvent) {
   const { tx, ty } = tileAt(e);
   const mine = myMember();
   if (openPanel === 'decorate' && mine) {
@@ -625,15 +662,15 @@ canvas.addEventListener('pointerdown', (e) => {
   }
   if (clicked && interact(si, fi)) return;
   walkTo(tx, ty);
-});
+}
 
 // Zoom: the buttons, Ctrl/Cmd + wheel, or + and - on the keyboard.
 const zoomInBtn = $<HTMLButtonElement>('#zoomIn'), zoomOutBtn = $<HTMLButtonElement>('#zoomOut');
 function setZoom(next: number) {
-  zoom = Math.max(-3, Math.min(4, next));
+  zoom = Math.max(-2, Math.min(2, next));
   localStorage.setItem('auralis.zoom', String(zoom));
-  zoomInBtn.disabled = zoom >= 4;
-  zoomOutBtn.disabled = zoom <= -3;
+  zoomInBtn.disabled = zoom >= 2;
+  zoomOutBtn.disabled = zoom <= -2;
 }
 zoomInBtn.addEventListener('click', () => setZoom(zoom + 1));
 zoomOutBtn.addEventListener('click', () => setZoom(zoom - 1));
@@ -652,6 +689,7 @@ setZoom(zoom);
 // In Decorate the cursor shows what a click will do: a target while placing, a hand over your furniture,
 // a closed hand while dragging. Otherwise the normal arrow applies.
 canvas.addEventListener('pointermove', (e) => {
+  if (pan?.moved) return; // dragging the view: keep the closed hand, no labels
   let c = '';
   if (openPanel === 'decorate' && myRoom()) {
     const { tx, ty } = tileAt(e), o = grid.origins[mySlot()];
@@ -789,17 +827,20 @@ function render(t: number) {
   const o = grid.origins[ri] ?? { x: 1, y: WALL_H }, size = grid.sizes[ri] ?? roomSize(undefined);
   const roomW = (size.w + 2) * T, roomH = (size.h + WALL_H + 1) * T; // room plus its walls
   const fit = Math.max(1, Math.floor(Math.min(aw / (roomW + T), ah / (roomH + T / 2))));
-  const scale = Math.min(10, Math.max(1, fit + zoom));
+  // Characters and redrawn furniture have AV times the detail, so keep the scale a multiple of AV: crisp half-pixels.
+  const scale = Math.min(5 * AV, Math.max(AV, (Math.floor(fit / AV) + zoom) * AV));
   const vw = aw / scale, vh = ah / scale;
   // Centre the whole room when it fits on screen; otherwise follow the player.
   const fits = roomW <= vw && roomH <= vh;
   // When following the player, stop at the house edges so the view never shows empty paper beyond them.
   const follow = (p: number, view: number, size: number) => (size + T <= view ? size / 2 : Math.max(view / 2 - T / 2, Math.min(size - view / 2 + T / 2, p)));
-  const tx = follow(fits ? (o.x - 1) * T + roomW / 2 : me_.x * T + 8, vw, grid.w * T);
-  const ty = follow(fits ? (o.y - WALL_H) * T + roomH / 2 : me_.y * T + 8, vh, grid.h * T);
+  const bx = fits ? (o.x - 1) * T + roomW / 2 : me_.x * T + 8, by = fits ? (o.y - WALL_H) * T + roomH / 2 : me_.y * T + 8;
+  const tx = follow(bx + camPan.x, vw, grid.w * T), ty = follow(by + camPan.y, vh, grid.h * T);
+  camPan.x = tx - bx; camPan.y = ty - by; // dragging past the edge of the house doesn't pile up
   if (!cam || cam.scale !== scale) cam = { x: tx, y: ty, scale };
-  cam.x += (tx - cam.x) * 0.12; // glide when moving to another room
-  cam.y += (ty - cam.y) * 0.12;
+  const ease = pan?.moved ? 1 : 0.12; // glide when moving to another room; stick to the finger while dragging
+  cam.x += (tx - cam.x) * ease;
+  cam.y += (ty - cam.y) * ease;
   view = { scale, ox: Math.round(coverLeft / scale + vw / 2 - cam.x), oy: Math.round(coverTop / scale + vh / 2 - cam.y) };
 
   ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -1120,7 +1161,7 @@ function tickTimers() {
   $('#deck').hidden = !showDeck;
   $('#dock').hidden = showDeck;
   if (showDeck && openPanel) setPanel(null);
-  document.querySelector('#dock [data-panel="social"]')?.classList.toggle('unread', unread);
+  document.querySelector('#dock [data-panel="chat"]')?.classList.toggle('unread', unread);
   if (!unread) $('#fold-chat').classList.remove('dot'); // read elsewhere: the folded card's dot goes too
   if (!f) return;
   const left = fmt(focusEnd(f) - Date.now());
@@ -1152,7 +1193,8 @@ $<HTMLButtonElement>('#giveUp').addEventListener('click', (e) => armGiveUp(e.cur
 $('#pauseFocus').addEventListener('click', () => send({ t: myMember()?.focus?.pausedAt ? 'focus_resume' : 'focus_pause' }));
 $('#hideDeck').addEventListener('click', () => { deckHidden = true; tickTimers(); });
 $('#focusChip').addEventListener('click', () => { deckHidden = false; tickTimers(); });
-$('#skipBreak').addEventListener('click', () => { endBreak(); tickTimers(); setPanel('focus'); });
+// Done resting early: get up out of bed (or off the sofa) and carry on.
+$('#skipBreak').addEventListener('click', () => { endBreak(); restUntil = 0; standUp(); tickTimers(); toast('Break ended.'); });
 $<HTMLImageElement>('#deckMarker').src = coinSrc;
 
 let toastTimer = 0;
@@ -1181,8 +1223,11 @@ function icon(item: string, cls = 'icon', style = 0) {
     const it = ITEMS[item as ItemKey];
     const c = document.createElement('canvas');
     const top = OVERHANG[item] ?? 0;
-    c.width = it.w * T; c.height = it.h * T + top;
-    drawFurniture(c.getContext('2d')!, item, 0, top, 0, undefined, false, 1, style);
+    c.width = it.w * T * AV; c.height = (it.h * T + top) * AV;
+    const g = c.getContext('2d')!;
+    g.imageSmoothingEnabled = false;
+    g.scale(AV, AV);
+    drawFurniture(g, item, 0, top, 0, undefined, false, 1, style);
     icons.set(key, c.toDataURL());
   }
   return `<img class="${cls}" src="${icons.get(key)}" alt="">`;
@@ -1222,7 +1267,7 @@ function againButton() {
   return FOCUS_LENGTHS.includes(len) ? `<div class="center"><button data-act="focus" data-v="${len}">▶ Again: ${len} min${lastTag ? ` of ${esc(lastTag)}` : ''}</button></div>` : '';
 }
 // Character options as pictures: my character wearing each choice, the whole body or just the head.
-const LOOK_LABEL: Record<string, string> = { halfup: 'half up', twintails: 'twin tails', manbun: 'man bun', sidelong: 'side long', catears: 'cat ears', round: 'round glasses' };
+const LOOK_LABEL: Record<string, string> = { halfup: 'half up', twintails: 'twin tails', manbun: 'man bun', sidelong: 'side long', catears: 'cat ears', round: 'round glasses', chubby: 'plus' };
 const lookPics = new Map<string, string>();
 function lookTiles(act: keyof Look, list: string[], look: Look, head = false) {
   const current = look[act] ?? list[0];
@@ -1470,7 +1515,7 @@ function panelBody(mine: Member) {
 
 function renderPanel() {
   const mine = myMember();
-  if (!openPanel || openPanel === 'social' || !mine) { panel.hidden = true; return; }
+  if (!openPanel || isSide(openPanel) || !mine) { panel.hidden = true; return; }
   const th = THEMES[openPanel];
   const scroll = panel.querySelector('.pb')?.scrollTop ?? 0;
   const railX = panel.querySelector('.rail')?.scrollLeft ?? 0; // keep the swiped category strip where it was
@@ -1757,6 +1802,9 @@ function welcome() {
 
 const requestBoard = () => send({ t: 'leaderboard', scope: boardScope, period: boardPeriod });
 
+// To-dos and chat live in the side cards: a column on wide screens, a sheet above the dock (one card at a time) on phones.
+const isSide = (name: string | null): name is SideCard => name === 'todos' || name === 'chat';
+const wideScreen = () => innerWidth >= 900;
 function setPanel(name: string | null) {
   if (name === 'stats' && statsTab === 'board') requestBoard();
   if (name === 'decorate' && token) snapshotsApi().catch(() => {});
@@ -1769,15 +1817,18 @@ function setPanel(name: string | null) {
   placing = null;
   moving = null;
   document.querySelectorAll<HTMLButtonElement>('#dock button').forEach((x) => x.classList.toggle('on', x.dataset.panel === name));
-  document.body.classList.toggle('side-open', name === 'social');
-  if (name === 'social') { unread = false; tickTimers(); scrollChat(); }
+  document.body.classList.toggle('side-open', isSide(name));
+  document.body.dataset.side = isSide(name) ? name : '';
+  if (name === 'chat') { unread = false; tickTimers(); scrollChat(); }
   renderPanel();
   document.body.classList.toggle('panel-open', !panel.hidden);
 }
 document.querySelectorAll<HTMLButtonElement>('#dock button').forEach((b) =>
   b.addEventListener('click', () => {
     if (b.dataset.panel === 'focus' && myMember()?.focus) { deckHidden = false; tickTimers(); return; }
-    setPanel(openPanel === b.dataset.panel ? null : b.dataset.panel!);
+    const card = b.dataset.panel!;
+    if (isSide(card) && wideScreen()) { openSide(card, card === 'chat' ? '#chatInput' : '#todoInput'); return; } // already on screen: unfold it
+    setPanel(openPanel === card ? null : card);
   }));
 
 // ---------- shared to-dos, private to-dos and chat ----------
@@ -1810,7 +1861,7 @@ function noteNewDms() {
     if (last.id <= seen) continue;
     const fresh = list.filter((c) => c.id > seen && c.from !== myId).length;
     // Unread unless that thread is open on screen right now.
-    const onScreen = dmPeer === peer && document.body.classList.contains('side-open');
+    const onScreen = dmPeer === peer && (wideScreen() ? !folds.chat : document.body.dataset.side === 'chat');
     if (dmReady) countUnseen(fresh);
     if (dmReady && fresh && !onScreen) {
       pingOrHold();
@@ -1930,7 +1981,7 @@ $('#chatPeer').addEventListener('change', () => {
   scrollChat();
 });
 $('#closeSide').addEventListener('click', () => setPanel(null));
-$<HTMLImageElement>('#todoIcon').src = uiIconURL('clock');
+$<HTMLImageElement>('#todoIcon').src = uiIconURL('todo');
 
 // Each side card folds down to its header, and remembers that between visits.
 type SideCard = 'todos' | 'chat';
@@ -1962,13 +2013,14 @@ function toggleFold(card: SideCard) {
 // Bring a side card into view (unfolded, and as a sheet on phones) and put the cursor in its input.
 function openSide(card: SideCard, input: string, text = '') {
   if (folds[card]) toggleFold(card);
-  setPanel(innerWidth < 900 ? 'social' : null);
+  setPanel(wideScreen() ? null : card);
+  if (card === 'chat') { unread = false; tickTimers(); scrollChat(); }
   const el = $<HTMLInputElement>(input);
   if (text) el.value = text;
   el.focus();
 }
 // Group chat you can't see right now: worth a ping.
-const chatHidden = () => document.hidden || !!folds.chat || (innerWidth < 900 && !document.body.classList.contains('side-open'));
+const chatHidden = () => document.hidden || !!folds.chat || (!wideScreen() && document.body.dataset.side !== 'chat');
 for (const card of ['todos', 'chat'] as SideCard[]) {
   applyFold(card);
   $(`#fold-${card}`).addEventListener('click', () => toggleFold(card));

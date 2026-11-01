@@ -470,7 +470,7 @@ export const SHIRTS = ['#f48a8a', '#7fb2e8', '#8fd0a8', '#ffd27a', '#b89af0', '#
 export const STYLES = ['short', 'side part', 'buzz', 'spiky', 'curly', 'bob', 'long', 'ponytail', 'buns', 'messy', 'undercut', 'quiff', 'fauxhawk', 'topknot', 'slick', 'curtains', 'crop', 'mohawk', 'afro', 'wavy', 'shaggy', 'pixie', 'emo', 'bowl', 'twintails', 'halfup', 'manbun', 'wolf', 'sidelong', 'braids'];
 export const FACES = ['happy', 'sleepy', 'wink', 'grin', 'cool', 'surprised', 'blush', 'smirk', 'fierce', 'silly', 'calm', 'laugh', 'sad', 'cry', 'angry', 'shy', 'pout', 'starry'];
 export const OUTFITS = ['tee', 'tie', 'sweater', 'jacket', 'hoodie', 'overalls', 'dress', 'skirt', 'striped', 'vest', 'tank', 'kimono', 'polo', 'suit', 'cardigan', 'apron', 'raincoat', 'sailor', 'hawaiian', 'puffer', 'flannel', 'varsity', 'denim', 'turtleneck'];
-export const BODIES = ['regular', 'lean', 'athletic', 'chubby'];
+export const BODIES = ['regular', 'lean', 'athletic', 'chubby', 'broad', 'stocky', 'petite', 'curvy'];
 export const ACCESSORIES = ['none', 'glasses', 'round', 'shades', 'bandage', 'mask', 'earring', 'headphones', 'cap', 'beanie', 'catears'];
 
 export const FOCUS_LENGTHS = [15, 25, 45, 60, 90];

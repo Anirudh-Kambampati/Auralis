@@ -250,23 +250,58 @@ const ACC_FACE: Record<string, Overlay> = {
 };
 const ACC_BACK = new Set(['headphones', 'cap', 'beanie', 'catears']);
 const ACC_COL: Record<string, string> = { glasses: '#3a3448', round: '#b07a4e', shades: '#2b2530', headphones: '#e8e3dc', cap: '#e06a5a', beanie: '#5a5070', catears: '#3a3448', bandage: '#f2d8c0', mask: '#fffaf3', earring: '#ffd34d' };
-// Body types reshape the torso a pixel at a time, so they work with every outfit.
-const edges = (row: string) => [row.search(/[^.]/), row.length - 1 - [...row].reverse().join('').search(/[^.]/)];
-function widen(row: string) {
-  const s = [...row], [i, j] = edges(row);
-  if (i < 0) return row;
-  if (i > 0) { s[i - 1] = 'o'; s[i] = row[i + 1]; }
-  if (j < 15) { s[j + 1] = 'o'; s[j] = row[j - 1]; }
-  return s.join('');
-}
-function narrow(row: string) {
-  const s = [...row], [i, j] = edges(row);
-  if (i < 0) return row;
-  s[i] = '.'; s[i + 1] = 'o'; s[j] = '.'; s[j - 1] = 'o';
-  return s.join('');
-}
-const BODY_SHAPE: Record<string, Record<number, (row: string) => string>> = {
-  lean: { 16: narrow, 17: narrow }, athletic: { 14: widen, 15: widen }, chubby: { 15: widen, 16: widen, 17: widen },
+// Full-detail chibi head (round, with ears) and bodies, rows of the 32x42 sprite: the head fills rows 0-27, a body rows 28-35.
+// Bodies: s skin (neck, hands), t/T shirt and its shade, c collar; outfits are painted onto these as a texture.
+const HEAD_HD = [
+  '................................',
+  '................................',
+  '................................',
+  '.............oooooo.............',
+  '..........ooossssssooo..........',
+  '........oossssssssssssoo........',
+  '.......osssssssssssssssso.......',
+  '......osssssssssssssssssso......',
+  '.....osssssssssssssssssssso.....',
+  '....osssssssssssssssssssssso....',
+  '...osssssssssssssssssssssssso...',
+  '..osssssssssssssssssssssssssso..',
+  '..osssssssssssssssssssssssssso..',
+  '..osssssssssssssssssssssssssso..',
+  '..osssssssssssssssssssssssssso..',
+  '.osssssssssssssssssssssssssssso.',
+  '.osssssssssssssssssssssssssssso.',
+  '.osssssssssssssssssssssssssssso.',
+  'osSssssssssssssssssssssssssssSso',
+  'osSssssssssssssssssssssssssssSso',
+  'osSssssssssssssssssssssssssssSso',
+  '.osossssssssssssssssssssssssoso.',
+  '..o.osssssssssssssssssssssso.o..',
+  '....osssssssssssssssssssssso....',
+  '.....oSSssssssssssssssssSSo.....',
+  '......ooSssssssssssssssSoo......',
+  '........oSSSssssssssSSSo........',
+  '.........oooSSSSSSSSooo.........',
+];
+const SKIRT_HD = ['.......oKKKKKKKK', '......oKKKoKKKKK', '.....oKKKKoKKKKK', '.....ooooooooooo']; // left halves, K = the outfit's colour
+const BODY_HD: Record<string, string[]> = {
+  regular: ['.............osssso.............', '.........oootttcctttooo.........', '........otttttttttttttto........', '.......ottoTttttttttTotto.......', '.......ottoTttttttttTotto.......', '.......ottoTttttttttTotto.......', '.......ossoTTTTTTTTTTosso.......', '........oooooooooooooooo........'],
+  lean: ['.............osssso.............', '..........oottccccttoo..........', '.........otttttttttttto.........', '........ottoTttttttTotto........', '........ottoTttttttTotto........', '........ottoTttttttTotto........', '........ossoTTTTTTTTosso........', '.........oooooooooooooo.........'],
+  athletic: ['.............osssso.............', '.......oooootttcctttooooo.......', '......otttttttttttttttttto......', '......otttoTttttttttTottto......', '......otttoTttttttttTottto......', '.......ottoTttttttttTotto.......', '.......ossoTTTTTTTTTTosso.......', '........oooooooooooooooo........'],
+  broad: ['.............osssso.............', '......ooooootttcctttoooooo......', '.....otttttttttttttttttttto.....', '.....otttoTttttttttttTottto.....', '.....otttoTttttttttttTottto.....', '.....otttoTttttttttttTottto.....', '.....osssoTTTTTTTTTTTTossso.....', '.......oooooooooooooooooo.......'],
+  stocky: ['.............osssso.............', '........oooottccccttoooo........', '.......otttttttttttttttto.......', '......otttoTttttttttTottto......', '......otttoTttttttttTottto......', '......osssoTttttttttTossso......', '.......ooooTTTTTTTTTToooo.......', '........oooooooooooooooo........'],
+  petite: ['.............osssso.............', '..........ootttcctttoo..........', '.........otttttttttttto.........', '.........otoTttttttToto.........', '.........otoTttttttToto.........', '.........otoTttttttToto.........', '.........osoTTTTTTTToso.........', '..........oooooooooooo..........'],
+  curvy: ['.............osssso.............', '.........oootttcctttooo.........', '........otttttttttttttto........', '.......ottoTttttttttTotto.......', '.......ottooTttttttTootto.......', '.......ottoTttttttttTotto.......', '.......ossoTTTTTTTTTTosso.......', '.......oooooooooooooooooo.......'],
+  chubby: ['.............osssso.............', '........oooottccccttoooo........', '.......otttttttttttttttto.......', '......ottottttttttttttotto......', '.....ottotTttttttttttTtotto.....', '.....ottotTttttttttttTtotto.....', '.....ossotTTTTTTTTTTTTtosso.....', '.......oooooooooooooooooo.......'],
+};
+const BODY_HD_BACK: Record<string, string[]> = {
+  regular: ['.............osssso.............', '.........ooottttttttooo.........', '........otttttttttttttto........', '.......ottoTttttttttTotto.......', '.......ottoTttttttttTotto.......', '.......ottoTttttttttTotto.......', '.......ossoTTTTTTTTTTosso.......', '........oooooooooooooooo........'],
+  lean: ['.............osssso.............', '..........oottttttttoo..........', '.........otttttttttttto.........', '........ottoTttttttTotto........', '........ottoTttttttTotto........', '........ottoTttttttTotto........', '........ossoTTTTTTTTosso........', '.........oooooooooooooo.........'],
+  athletic: ['.............osssso.............', '.......ooooottttttttooooo.......', '......otttttttttttttttttto......', '......otttoTttttttttTottto......', '......otttoTttttttttTottto......', '.......ottoTttttttttTotto.......', '.......ossoTTTTTTTTTTosso.......', '........oooooooooooooooo........'],
+  broad: ['.............osssso.............', '......oooooottttttttoooooo......', '.....otttttttttttttttttttto.....', '.....otttoTttttttttttTottto.....', '.....otttoTttttttttttTottto.....', '.....otttoTttttttttttTottto.....', '.....osssoTTTTTTTTTTTTossso.....', '.......oooooooooooooooooo.......'],
+  stocky: ['.............osssso.............', '........oooottttttttoooo........', '.......otttttttttttttttto.......', '......otttoTttttttttTottto......', '......otttoTttttttttTottto......', '......osssoTttttttttTossso......', '.......ooooTTTTTTTTTToooo.......', '........oooooooooooooooo........'],
+  petite: ['.............osssso.............', '..........oottttttttoo..........', '.........otttttttttttto.........', '.........otoTttttttToto.........', '.........otoTttttttToto.........', '.........otoTttttttToto.........', '.........osoTTTTTTTToso.........', '..........oooooooooooo..........'],
+  curvy: ['.............osssso.............', '.........ooottttttttooo.........', '........otttttttttttttto........', '.......ottoTttttttttTotto.......', '.......ottooTttttttTootto.......', '.......ottoTttttttttTotto.......', '.......ossoTTTTTTTTTTosso.......', '.......oooooooooooooooooo.......'],
+  chubby: ['.............osssso.............', '........oooottttttttoooo........', '.......otttttttttttttttto.......', '......ottottttttttttttotto......', '.....ottotTttttttttttTtotto.....', '.....ottotTttttttttttTtotto.....', '.....ossotTTTTTTTTTTTTtosso.....', '.......oooooooooooooooooo.......'],
 };
 
 for (const rows of [HEAD_FRONT, HEAD_BACK, BODY_FRONT, BODY_BACK, ...LEGS,
@@ -293,18 +328,70 @@ function thin(rows: string[]) {
   }).join(''));
 }
 
+// Legs at full detail: dark trousers and white sneakers with a grey sole, standing and the two walking steps.
+const LEGS_HD: string[][] = [
+  ['........oppppppppppppppo........', '........oppppppooppppppo........', '........oppppppooppppppo........', '.......onnnnnnnoonnnnnnno.......', '.......oNNNNNNNooNNNNNNNo.......', '........ooooooo..ooooooo........'],
+  ['........oppppppppppppppo........', '.......onnnnnnnooppppppo........', '.......oNNNNNNNooppppppo........', '........ooooooo.onnnnnnno.......', '................oNNNNNNNo.......', '.................ooooooo........'],
+  ['........oppppppppppppppo........', '........oppppppoonnnnnnno.......', '........oppppppooNNNNNNNo.......', '.......onnnnnnno.ooooooo........', '.......oNNNNNNNo................', '........ooooooo.................'],
+];
+// Scale2x: doubles pixel art but rounds off its staircase corners, so curves (heads, hair) stay curves.
+function scale2x(rows: string[]) {
+  const at = (x: number, y: number) => rows[y]?.[x] ?? '.';
+  const out: string[] = [];
+  rows.forEach((row, y) => {
+    let a = '', b = '';
+    for (let x = 0; x < row.length; x++) {
+      const E = row[x], B = at(x, y - 1), D = at(x - 1, y), F = at(x + 1, y), H = at(x, y + 1);
+      const corner = B !== H && D !== F;
+      a += (corner && D === B ? D : E) + (corner && B === F ? F : E);
+      b += (corner && D === H ? D : E) + (corner && H === F ? F : E);
+    }
+    out.push(a, b);
+  });
+  return out;
+}
+// Anime hair shine: a broken band of light across the hair (the "angel ring") and darker strands under it.
+function hairShine(rows: string[]) {
+  const isHair = (ch?: string) => ch === 'h' || ch === 'H' || ch === 'l';
+  const top = rows.findIndex((row) => [...row].some(isHair));
+  if (top < 0) return rows;
+  const ring = top + 5;
+  return rows.map((row, y) => [...row].map((ch, x) => {
+    if (ch !== 'h') return ch;
+    const solid = isHair(rows[y - 1]?.[x]) && isHair(rows[y + 1]?.[x]) && isHair(row[x - 1]) && isHair(row[x + 1]);
+    if (!solid) return ch;
+    if ((y === ring && x % 5 !== 0) || (y === ring + 1 && x % 5 > 1 && x % 5 < 4)) return 'l';
+    if (y > ring + 2 && (x * 7 + 3) % 6 === 0 && y < ring + 12) return 'H'; // strands
+    return ch;
+  }).join(''));
+}
+
 function avatarRows(look: Look, step: number, up: boolean) {
-  let rows = [BLANK, BLANK, ...(up ? HEAD_BACK : HEAD_FRONT), ...(up ? BODY_BACK : BODY_FRONT), ...LEGS[step]];
+  // The hair (and hats) come from the 16px art: built on the old head, then cut out, scaled up smoothly and shined.
+  let small = [BLANK, BLANK, ...(up ? HEAD_BACK : HEAD_FRONT), ...(up ? BODY_BACK : BODY_FRONT), ...LEGS[step]];
   const style = STYLE_OVERLAY[look.style ?? ''];
   const shaved = look.style === 'buzz' || look.style === 'mohawk' || look.style === 'undercut';
   const backStyle = style && up && !shaved ? Object.fromEntries(Object.entries(style).filter(([y]) => Number(y) < 8)) : style;
-  rows = lay(lay(rows, OUTFIT_OVERLAY[look.outfit ?? '']), backStyle);
-  if (!up && CROPPED.has(look.style ?? 'short')) rows = rows.map((row, y) => (y >= 9 && y <= 12 ? `${row.slice(0, 2)}s${row.slice(3, 13)}s${row.slice(14)}` : row));
-  if (!up || ACC_BACK.has(look.acc ?? '')) rows = lay(rows, ACC_OVERLAY[look.acc ?? '']);
-  const shape = BODY_SHAPE[look.body ?? ''];
-  if (shape) rows = rows.map((row, y) => shape[y]?.(row) ?? row);
-  // Hair, outfits and hats are 16px art for now, doubled; the face and what sits on it are drawn at full detail.
-  rows = thin(rows.flatMap((row) => { const d = [...row].map((ch) => ch + ch).join(''); return [d, d]; }));
+  small = lay(small, backStyle);
+  if (!up && CROPPED.has(look.style ?? 'short')) small = small.map((row, y) => (y >= 9 && y <= 12 ? `${row.slice(0, 2)}s${row.slice(3, 13)}s${row.slice(14)}` : row));
+  const isHair = (ch?: string) => ch === 'h' || ch === 'H' || ch === 'l';
+  const hairOnly = small.map((row, y) => [...row].map((ch, x) => (isHair(ch) || (ch === 'o' && [small[y - 1]?.[x], small[y + 1]?.[x], row[x - 1], row[x + 1]].some(isHair)) ? ch : '.')).join(''));
+  const hats = (!up || ACC_BACK.has(look.acc ?? '')) && ACC_OVERLAY[look.acc ?? ''];
+  const hatOnly = hats ? small.map((_, y) => hats[y] ?? BLANK) : null;
+
+  // The full-detail body: head, a body of the chosen type with the outfit painted on, legs and sneakers.
+  let rows = [...HEAD_HD, ...(up ? BODY_HD_BACK : BODY_HD)[look.body ?? ''] ?? (up ? BODY_HD_BACK : BODY_HD).regular, ...LEGS_HD[step]];
+  const outfit = OUTFIT_OVERLAY[look.outfit ?? ''] ?? {};
+  rows = rows.map((row, y) => (y < 28 || y > 35 ? row : [...row].map((ch, x) => {
+    if (ch !== 't' && ch !== 'T' && ch !== 'c') return ch;
+    const paint = outfit[14 + ((y - 28) >> 1)]?.[x >> 1]; // the outfit's 16px pattern, stretched over the body
+    return paint && !'.osS'.includes(paint) ? paint : ch;
+  }).join('')));
+  const hem = outfit[18] && [...outfit[18]].find((ch) => ch !== '.' && ch !== 'o'); // skirts and dresses: a flared, pleated skirt over the legs
+  if (hem) rows = lay(rows, Object.fromEntries(SKIRT_HD.map((half, k) => [35 + k, (half + [...half].reverse().join('')).replace(/K/g, hem)])));
+  const over = (layer: string[]) => Object.fromEntries(hairShine(thin(scale2x(layer))).map((row, y) => [y, row]));
+  rows = lay(rows, over(hairOnly));
+  if (hatOnly) rows = lay(rows, over(hatOnly));
   if (!up) rows = lay(lay(rows, FACE_ART[look.face ?? ''] ?? FACE_ART.happy), ACC_FACE[look.acc ?? '']);
   return rows;
 }
@@ -322,7 +409,7 @@ function blit(c: Ctx, img: HTMLCanvasElement, sh: number, x: number, y: number) 
 const lookPal = (look: Look): Record<string, string> => {
   const acc = ACC_COL[look.acc ?? ''] ?? '#5a5070';
   return {
-    o: OUT, h: look.hair, H: shade(look.hair, -0.15), l: shade(look.hair, 0.2),
+    o: OUT, h: look.hair, H: shade(look.hair, -0.15), l: shade(look.hair, 0.28), n: '#f4f2ee', N: '#c8c0c8',
     s: look.skin, S: shade(look.skin, -0.1), e: '#2a1e26', w: '#ffffff', b: '#f7a0a8', m: '#b0505a', q: '#7fc4f0', i: '#5a3a5a', I: '#9a6a8a',
     t: look.shirt, T: shade(look.shirt, -0.15), c: '#fff4e6', d: '#7a5040', a: acc, A: shade(acc, -0.15),
     v: '#6a8ad0', V: '#5a78bc', r: '#e06a5a', y: '#ffd34d', k: '#3a3448', g: '#8fd0a8', p: look.outfit === 'overalls' ? '#5a78bc' : '#5a5080',
@@ -342,14 +429,20 @@ const CHAIRS: Record<string, { col: string; back: ChairPart; seat: ChairPart }> 
   chair: {
     col: '#f2b48a',
     back(c, x, y, col) {
-      box(c, x + 3, y - 6, 10, 11, col);
-      r(c, x + 5, y - 4, 6, 1, shade(col, 0.12));
-      heart(c, x + 8, y - 2, '#f48a9a');
+      hdAt(c, x, y, () => {
+        B(c, 3, -6, 10, 11, col);
+        R(c, 4, -5.5, 8, 0.5, shade(col, 0.16));
+        B(c, 4.5, -4.5, 7, 7.5, shade(col, 0.05));
+        heartHD(c, 6.25, -2.5, '#f48a9a');
+      });
     },
     seat(c, x, y, col) {
-      box(c, x + 3, y + 8, 3, 8, '#9a6440');
-      box(c, x + 10, y + 8, 3, 8, '#9a6440');
-      box(c, x + 2, y + 4, 12, 6, shade(col, -0.06));
+      hdAt(c, x, y, () => {
+        for (const lx of [3, 10]) { B(c, lx, 8, 3, 8, '#9a6440'); R(c, lx + 1, 9, 0.5, 6, shade('#9a6440', 0.15)); }
+        B(c, 2, 4, 12, 6, shade(col, -0.06));
+        R(c, 3, 4.5, 10, 0.5, shade(col, 0.1));
+        R(c, 3, 7.5, 10, 0.5, shade(col, -0.14));
+      });
     },
   },
   officeChair: {
@@ -742,7 +835,7 @@ export function drawPainting(c: Ctx, x: number, y: number) {
 export const OVERHANG: Record<string, number> = {
   desk: 6, chair: 6, plant: 8, lamp: 12, rug: 0, bookshelf: 16, bed: 26, sofa: 8, aquarium: 14,
   books: 2, cactus: 8, sunflower: 12, globe: 8, beanbag: 0, roundRug: 0, coffeeTable: 2, armchair: 6, plush: 2,
-  mirror: 14, recordPlayer: 4, guitar: 12, cello: 14, easel: 14, bonsai: 4, wardrobe: 18, piano: 12,
+  mirror: 14, recordPlayer: 4, guitar: 12, cello: 14, sharkPlush: 6, easel: 14, bonsai: 4, wardrobe: 18, piano: 12,
   workTable: 6, pcDesk: 14, gamingDesk: 12, officeChair: 7, gamingChair: 11, miniFridge: 6,
   coffee: 0, energyCan: 0, soda: 0, wine: 1, gymBall: 0, dumbbells: 4, punchingBag: 16, exerciseBike: 9, treadmill: 12,
   petBall: 0, petBed: 0, doghouse: 10, catTower: 14,
@@ -2353,7 +2446,6 @@ const RECIPES: Record<string, [number, string, string]> = {
   easterLilies: [4, '', 'b4,12,8,8,#c8805a|r5,13,6,1,#e8a070|r7,5,1,7,#4f9a6a|r10,6,1,6,#4f9a6a|r4,7,1,5,#4f9a6a|o7,4,2,#fffaf3|o11,5,2,#fffaf3|o4,6,2,#fffaf3|r7,4,1,1,#ffd34d|r11,5,1,1,#ffd34d|r4,6,1,1,#ffd34d'],
   hotCrossBuns: [0, '', 'r1,12,14,2,#e8e3dc|o4,10,3,#d9a06a|o11,10,3,#d9a06a|r2,10,5,1,#fffaf3|r4,8,1,5,#fffaf3|r9,10,5,1,#fffaf3|r11,8,1,5,#fffaf3'],
   lotusLamp: [0, '', 'r4,13,8,1,#8fd0a8|r3,10,10,3,#f4a6c8|r2,9,2,2,#f4a6c8|r12,9,2,2,#f4a6c8|r5,7,2,4,#f7c0c8|r9,7,2,4,#f7c0c8|r7,6,2,5,#fbd8e0|f7,3,2,3,#ffd34d|r7,5,2,1,#c8805a'],
-  sharkPlush: [6, '', 'r1,3,3,2,#6a5a9a|r2,5,3,2,#6a5a9a|r3,7,4,5,#6a5a9a|r2,12,3,2,#6a5a9a|r1,14,3,2,#6a5a9a|r13,0,1,6,#6a5a9a|r14,1,2,2,#86a6d0|r14,3,4,2,#86a6d0|r14,5,6,2,#86a6d0|b5,6,26,12,#86a6d0|r30,9,1,6,#86a6d0|r31,10,1,4,#6a5a9a|r15,13,14,3,#fbf6ec|r23,14,4,1,#c8306a|r25,9,1,2,O|r18,9,1,3,#6a5a9a|r20,9,1,3,#6a5a9a|r10,18,5,3,#86a6d0|r10,20,5,1,#6a5a9a|r22,18,4,3,#86a6d0|r22,20,4,1,#6a5a9a|f28,0,1,3,#e8b43c|f27,1,3,1,#e8b43c'],
   deskCalendar: [0, '', 'b3,4,10,10,#fffaf3|r3,4,10,3,#e06a5a|r5,2,1,3,#3a3448|r10,2,1,3,#3a3448|r5,9,1,1,#a8a0b8|r7,9,1,1,#a8a0b8|r9,9,1,1,#e06a5a|r5,11,1,1,#a8a0b8|r7,11,1,1,#a8a0b8|r9,11,1,1,#a8a0b8'],
 };
 type Shape = { k: string; n: number[]; col: string };
@@ -2386,8 +2478,378 @@ for (const [k, [up]] of Object.entries(RECIPES)) OVERHANG[k] ??= up;
 
 // s = which style of the item (see ITEMS[item].looks); 0 is the original.
 // rot = which way it faces (0 front, 1 and 3 sideways, 2 away); h = its depth; lying = seen from above (rugs, beds).
+// Furniture redrawn at the characters' detail: coordinates are in half-pixels (AV per room pixel), with 0,0 the
+// top-left of the piece's footprint, so the overhang is at negative y. Pieces not here use their room-pixel art.
+type HdDraw = (c: Ctx, t: number, col?: string, bare?: number) => void;
+// Helpers for redrawn pieces: B/R/D take room-pixel coordinates (halves allowed) and draw at full detail, so shapes
+// keep their size while outlines and details shrink to half a room pixel.
+const B = (c: Ctx, x: number, y: number, w: number, h: number, col: string) => box(c, x * AV, y * AV, w * AV, h * AV, col);
+const R = (c: Ctx, x: number, y: number, w: number, h: number, col: string) => r(c, x * AV, y * AV, w * AV, h * AV, col);
+const D = (c: Ctx, x: number, y: number, rad: number, col: string, outline = true) => {
+  if (outline) disc(c, x * AV, y * AV, rad * AV + 1, OUT);
+  disc(c, x * AV, y * AV, rad * AV, col);
+};
+// A little heart at full detail (7x6 half-pixels); x, y = its top-left in room pixels.
+function heartHD(c: Ctx, x: number, y: number, col: string) {
+  ['.xx.xx.', 'xxxxxxx', 'xxxxxxx', '.xxxxx.', '..xxx..', '...x...'].forEach((row, j) => {
+    for (let i = 0; i < 7; i++) if (row[i] === 'x') r(c, x * AV + i, y * AV + j, 1, 1, col);
+  });
+}
+const grain = (c: Ctx, col: string, lines: number[][]) => { for (const [x, y, w] of lines) R(c, x, y, w, 0.5, shade(col, -0.05)); };
+
+// The big shark plush: chubby, round, shiny-eyed and grinning (64x44 half-pixels).
+const SHARK_ROWS = [
+  '................................................................',
+  '.............................ooo................................',
+  '............................obbbo...............................',
+  '............................obbbbo..............................',
+  '...........................obbbbbbo.............................',
+  '...........................obbbbbbo.............................',
+  '..........................obbbbbbbbo............................',
+  '..........................obbbbbbbbo............................',
+  '..o.......................obbbbbbbbbo...........................',
+  '.obo.....................obbbbbbbbbbbo..........................',
+  '..obo....................obbbbbbbbbbbbooo.......................',
+  '..obbo..................obbbbbbbbbbbbbbbboooo...................',
+  '..obbbo...............ooobbbbbbbbbbbbbbbbbbbbooo................',
+  '...obbbo............oobbbbbbbbbbbbbbbbbbbbbbbbbboo..............',
+  '...obbbbo..........obbbbbbbbbbLLLLLLLLLLLLbbbbbbbbo.............',
+  '....obbbbo.......oobbbbbbLLLLLLLLLLLLLLLLLLLLLLbbbboo...........',
+  '....obbbbbo.....obbbbbbLLLLLLLLLLLLLLLLLLLLLLLLLLbbbbo..........',
+  '....obbbbbbo...obbbbbLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLbbbo.........',
+  '.....obbbbbbo.obbbbbLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLbbbo........',
+  '.....obbbbbbbobbbbbLLLLLLLLLLLLLLLLLLLLeeeeLLLLLLLLeeeebo.......',
+  '......obbbbbbbbbbbbLLLLLLLLLLLLLLLLLLLeeeeeeLLLLLLeeeeeeo.......',
+  '......obbbbbbbbbbbbLLLLLLLLLLLLLLLLLLLesseeeLLLLLLesseeebo......',
+  '.......obbbbbbbbbbbLLLLLLLLLLDLLLLLLLLesseeeLLLLLLesseeebo......',
+  '.......obbbbbbbbbbbbLLLLLLLLLDLDLLwwwweeeeiewwwwwweeeeiebbo.....',
+  '.......obbDobbbbbbbbbLLLLLLLLDLDwDwwwwweeeewwwwwwwweeeebbbo.....',
+  '........oDDDbbbbbbbbbbbLLLLLLwwDwDwwwwwwwwwwwwwwwwwwwwwbbbo.....',
+  '........oDDDbbbbbbbbbbbbbLLLwwwwwDwkkkwwwwwwwwwwwwwwwwwkkko.....',
+  '.......oDDDDbbbbbbbbbbbbbbDwwwwwwwwwkkwwwwmsmmmmmmsmwwwkkbo.....',
+  '.......oDDDDbbbbbbbbbDDDDDwwwwwwwwwwwwwwwwmMMMMMMMMmwwwwwwo.....',
+  '......oDDDDDobbbbbDDDDDDDwwwwwwwwwwwwwwwwwwmMMttMMmwwwwwwo......',
+  '......oDDDDoobbbDDDDDDDDDwwwwwwwwwwwWWWWWWWWmmttmmwwwwwwwo......',
+  '.....oDDDDo..obDDDDDDDDDDwwwwwwwWWWWWWWWWWWWWmmmmWWWwwwwo.......',
+  '.....oDDDo...oDDDDDDDDDDDwwwwWWWWWWWWWWWWWWWWWWWWWWWWWWwo.......',
+  '....oDDDo.....oDDDDDDDDDDDwwDDDDDDWWWWWWWWWWWWWWWWWWWWWo........',
+  '....oDDo.......oDDDDDDDDDDDwWDDDDDDDDDDDWWWWWWWWWWWWWWo.........',
+  '...oDDo.........oDDDDDDDDDDDWWDDDDDDDDDWWWWWWWWWWWWWWo..........',
+  '...oDo...........ooDDDDDDDDDDWWDDDDDDDDWWWWWWWWWWWWoo...........',
+  '..oDo..............obDDDDDDDDDDwDDDDDDWWWWWWWWWWWWo.............',
+  '...o................oobbbbDDDDDDDDDDDDWWWWWWWWWWoo..............',
+  '......................ooobbbbbbbbbDDDbbbbbbbbooo................',
+  '.........................oooobbbbbbDDbbbboooo...................',
+  '.............................oooooooooooo.......................',
+  '................................................................',
+  '................................................................',
+];
+const SHARK_PAL: Record<string, string> = { o: '#3a2a4a', b: '#7f90d4', L: '#a3b2ec', D: '#6272b4', w: '#f6f2fc', W: '#e0d8f0', e: '#2a1e3a', s: '#ffffff', i: '#7a8ad0', m: '#c8445e', M: '#8a2a40', t: '#f49aa8', k: '#f4a0b4' };
+const HD: Record<string, HdDraw> = {
+  sharkPlush(c) { pix(c, 0, -12, SHARK_ROWS, SHARK_PAL); },
+  desk(c, t, col = '#d9a06a', bare = 0) {
+    const Y = -6, leg = shade(col, -0.2);
+    for (const lx of [2, 26]) { B(c, lx, Y + 14, 4, 8, leg); R(c, lx + 1, Y + 15, 0.5, 6, shade(leg, 0.12)); }
+    B(c, 0, Y + 6, 32, 12, col);
+    grain(c, col, [[3, Y + 8, 9], [15, Y + 8.5, 11], [6, Y + 10, 7], [21, Y + 10.5, 7]]);
+    R(c, 0.5, Y + 12, 31, 0.5, shade(col, 0.1)); // the front edge catches the light
+    B(c, 1, Y + 12.5, 30, 5, shade(col, -0.1));
+    B(c, 11, Y + 13, 10, 4, shade(col, -0.03)); // drawer
+    R(c, 14.5, Y + 14.5, 3, 1, '#e8b43c');
+    if (!(bare & 1)) {
+      // Laptop seen from the front of the desk: we see the lid, the sitter sees the screen.
+      B(c, 5, Y, 13, 9, '#6a6488');
+      R(c, 6, Y + 1, 11, 6.5, '#8a84a8');
+      R(c, 6, Y + 1, 11, 0.5, '#a49ec0');
+      heartHD(c, 10, Y + 2.5, '#f4b6c8');
+      B(c, 4, Y + 8, 15, 4, '#d8d4e8');
+      for (let k = 0; k < 6; k++) R(c, 5.5 + k * 2, Y + 9.5, 1, 0.5, '#b8b4c8'); // keys
+      R(c, 9.5, Y + 10.5, 4, 0.5, '#b8b4c8');
+    }
+    if (bare & 2) return;
+    B(c, 21, Y + 5, 5, 6, '#fff4e6'); // mug
+    R(c, 22, Y + 6, 3, 1, '#9a6440');
+    R(c, 26, Y + 6.5, 1, 0.5, OUT); R(c, 26.5, Y + 7, 0.5, 2, OUT); R(c, 26, Y + 9, 1, 0.5, OUT);
+    const s = Math.floor(t / 450) % 2;
+    R(c, 22 + s, Y + 2, 0.5, 2, 'rgba(255,255,255,0.75)');
+    R(c, 24 - s, Y + 1, 0.5, 2, 'rgba(255,255,255,0.6)');
+    B(c, 27, Y + 9, 4, 3, '#f48a8a'); // books
+    R(c, 27.5, Y + 10, 3, 0.5, '#fff4e6');
+    B(c, 27.5, Y + 6.5, 3.5, 3, '#8fd0a8');
+    R(c, 28, Y + 7.5, 2.5, 0.5, '#fff4e6');
+  },
+  bed(c, _t, col = '#9cc4f0') {
+    // Wooden headboard with slats, two plump pillows, a quilted duvet folded back, and a footboard.
+    const Y = -6, wood = '#c58b5a';
+    B(c, 0, Y, 32, 13, wood);
+    B(c, 3, Y + 2, 26, 7, shade(wood, 0.06));
+    for (let k = 1; k < 6; k++) R(c, 3 + k * 26 / 6, Y + 2.5, 0.5, 6, shade(wood, -0.06));
+    R(c, 0.5, Y + 0.5, 31, 0.5, shade(wood, 0.16));
+    B(c, 1, Y + 8, 30, 46, shade(wood, -0.1));
+    R(c, 3, Y + 10, 26, 42, '#fff8f0');
+    for (const px of [4, 17]) {
+      B(c, px, Y + 11, 11, 8, '#ffffff');
+      R(c, px + 1, Y + 16.5, 9, 1, '#e8e0f0');
+      R(c, px + 1.5, Y + 12, 3, 0.5, '#f4f0fa');
+      R(c, px + 5.5, Y + 14, 0.5, 2, '#ece6f4'); // crease
+    }
+    B(c, 2, Y + 22, 28, 30, col);
+    // quilting: a diamond grid of stitches
+    for (let qy = 0; qy < 6; qy++) for (let qx = 0; qx < 6; qx++) {
+      const sx = 4 + qx * 4.5 + (qy % 2) * 2.25, sy = Y + 28 + qy * 4;
+      if (sx < 28) R(c, sx, sy, 0.5, 0.5, shade(col, -0.12));
+    }
+    R(c, 16, Y + 27, 0.5, 24, shade(col, -0.07));
+    R(c, 2.5, Y + 50, 27, 1, shade(col, -0.1));
+    B(c, 2, Y + 21, 28, 6, '#fff8f0'); // sheet folded over the duvet
+    R(c, 3, Y + 24, 26, 0.5, '#ece4dc');
+    R(c, 3, Y + 26, 26, 1, shade(col, -0.14));
+    B(c, 1, Y + 50, 30, 4, wood);
+    R(c, 1.5, Y + 50.5, 29, 0.5, shade(wood, 0.16));
+  },
+  sofa(c, _t, col = '#9db4ee') {
+    // Seen from a little above: tufted back, two seat cushions with their tops showing, rounded arms, wooden feet.
+    const Y = -8;
+    for (const fx of [5, 40]) { R(c, fx, Y + 21, 3, 3, '#5a3620'); R(c, fx, Y + 21, 0.5, 3, '#7a4a32'); }
+    B(c, 3, Y, 42, 12, shade(col, -0.08));
+    for (const bx of [6, 25]) {
+      B(c, bx, Y + 1, 17, 9, col);
+      R(c, bx + 1, Y + 1.5, 15, 0.5, shade(col, 0.14));
+      for (const tx of [4, 8.5, 13]) R(c, bx + tx, Y + 5, 0.5, 0.5, shade(col, -0.2)); // tufts
+      R(c, bx + 8.5, Y + 2, 0.5, 2.5, shade(col, -0.06));
+    }
+    B(c, 5, Y + 9, 38, 7, shade(col, 0.07));
+    R(c, 24, Y + 10, 0.5, 5, shade(col, -0.1));
+    R(c, 6, Y + 10, 36, 0.5, shade(col, 0.18));
+    B(c, 4, Y + 14, 40, 8, shade(col, -0.12));
+    for (let k = 0; k < 19; k++) R(c, 5.5 + k * 2, Y + 15.5, 1, 0.5, shade(col, -0.05)); // piping stitches
+    for (const ax of [0, 40]) {
+      B(c, ax, Y + 5, 8, 17, shade(col, -0.04));
+      R(c, ax + 1, Y + 6, 6, 3, shade(col, 0.1));
+      R(c, ax + 1, Y + 9, 6, 0.5, shade(col, -0.08));
+    }
+    B(c, 8, Y + 4, 9, 8, '#e0b04c'); // cushion
+    for (const sy of [6, 8]) R(c, 9, Y + sy, 7, 0.5, shade('#e0b04c', -0.12));
+    R(c, 9, Y + 4.5, 2, 0.5, shade('#e0b04c', 0.2));
+  },
+  armchair(c, _t, col = '#f2b48a') {
+    // Mid-century lounge chair: tall cushioned back, a seat you see the top of, wooden arms and tapered legs.
+    const Y = -6, wood = '#b07a4e';
+    for (const lx of [2, 12]) R(c, lx, Y + 19, 2, 3, '#5a3620');
+    B(c, 2, Y, 12, 11, shade(col, -0.06));
+    R(c, 3, Y + 0.5, 10, 0.5, shade(col, 0.12));
+    R(c, 7.5, Y + 3, 1, 1, shade(col, -0.2));
+    for (const sx of [5, 10.5]) R(c, sx, Y + 2, 0.5, 7, shade(col, -0.1)); // channel stitching
+    B(c, 3, Y + 9, 10, 5, shade(col, 0.08));
+    R(c, 4, Y + 9.5, 8, 0.5, shade(col, 0.2));
+    B(c, 3, Y + 13, 10, 6, shade(col, -0.12));
+    for (const ax of [0, 12]) {
+      B(c, ax, Y + 8, 4, 12, wood);
+      R(c, ax + 1, Y + 9, 2, 0.5, shade(wood, 0.16));
+      R(c, ax + 1.5, Y + 10, 0.5, 9, shade(wood, -0.06));
+    }
+  },
+  bookshelf(c, _t, col = '#b07a4e') {
+    const Y = -16;
+    B(c, 0, Y, 32, 32, col);
+    R(c, 0.5, Y + 0.5, 31, 0.5, shade(col, 0.16));
+    const colors = ['#f48a8a', '#7fb2e8', '#8fd0a8', '#ffd27a', '#b89af0', '#f4b6d0', '#fff4e6'];
+    for (let s = 0; s < 3; s++) {
+      const sy = Y + 3 + s * 9;
+      R(c, 3, sy, 26, 7, shade(col, -0.28));
+      R(c, 3, sy, 26, 1, shade(col, -0.38)); // shadow under the shelf above
+      const end = s === 1 ? 21 : 28;
+      for (let i = 0, bx = 4; ; i++) {
+        const w = 2 + ((i * 3 + s) % 2), h = 4.5 + ((i * 5 + s * 2) % 3) * 0.5 + (i % 2) * 0.5;
+        if (bx + w > end) break;
+        const bc = colors[(i + s * 3) % colors.length];
+        if (i % 5 === 4) { // one book leaning over
+          R(c, bx, sy + 7 - h + 1, w, h - 1, bc);
+          bx += w + 1;
+          continue;
+        }
+        R(c, bx, sy + 7 - h, w, h, bc);
+        R(c, bx, sy + 7 - h, w, 0.5, shade(bc, 0.18));
+        R(c, bx + w - 0.5, sy + 7 - h, 0.5, h, shade(bc, -0.15));
+        R(c, bx, sy + 7 - h + 1.5, w, 0.5, shade(bc, -0.1)); // title band
+        bx += w + (i % 4 === 3 ? 1.5 : 0);
+      }
+      R(c, 3, sy + 7, 26, 0.5, shade(col, 0.1)); // shelf edge
+      if (s === 1) { // a little plant
+        D(c, 25.5, sy + 2.5, 2, '#6cbf7a');
+        R(c, 24.5, sy + 1.5, 1, 0.5, '#a8e6a0');
+        B(c, 23, sy + 4, 5, 3, '#d97a55');
+      }
+    }
+  },
+  plant(c, _t, col = '#d97a55') {
+    const Y = -6;
+    const leaves = [[8, 8, 4], [4, 10, 3], [12, 10, 3], [6, 4, 3], [10, 4, 3]];
+    for (const [a, b, rad] of leaves) disc(c, a * AV, (Y + b) * AV, rad * AV + 1, OUT);
+    for (const [a, b, rad] of leaves) {
+      D(c, a, Y + b, rad, '#4f9a6a', false);
+      D(c, a, Y + b - 0.5, rad - 0.75, '#6cbf7a', false);
+      R(c, a - 1, Y + b - rad + 1, 1.5, 0.5, '#a8e6a0');
+      R(c, a, Y + b - rad + 1.5, 0.5, rad, '#4f9a6a'); // vein
+    }
+    B(c, 4, Y + 15, 8, 7, col);
+    for (let k = 0; k < 3; k++) R(c, 5, Y + 17.5 + k * 1.5, 6, 0.5, shade(col, -0.06));
+    B(c, 3, Y + 13, 10, 4, shade(col, 0.08));
+    R(c, 4, Y + 13.5, 8, 0.5, shade(col, 0.2));
+    heartHD(c, 6.25, Y + 17.5, '#fff4e6');
+  },
+  cactus(c, _t) {
+    const Y = -8, g = '#6cbf7a';
+    B(c, 3, Y + 6, 4, 6, g); B(c, 10, Y + 4, 4, 7, g); B(c, 6, Y + 2, 5, 17, g);
+    B(c, 3, Y + 10, 4, 2, g); B(c, 10, Y + 9, 4, 2, g);
+    for (const [x0, y0, h] of [[8.5, 3, 15], [4.5, 7, 4], [11.5, 5, 5]]) R(c, x0, Y + y0, 0.5, h, '#4f9a6a'); // ribs
+    R(c, 7, Y + 3, 0.5, 14, '#8fd89a');
+    for (const [a, b] of [[7.5, 5], [9.5, 8], [7.5, 11], [9.5, 14], [4, 8], [12.5, 6], [5.5, 10], [11, 8]]) R(c, a, Y + b, 0.5, 0.5, '#fffaf3');
+    heartHD(c, 6.75, Y - 1, '#f4a6c8');
+    B(c, 4, Y + 17, 8, 7, '#e8956e');
+    R(c, 5, Y + 18, 6, 0.5, '#f2b48a');
+    R(c, 5, Y + 20, 6, 0.5, shade('#e8956e', -0.08));
+  },
+  lamp(c, t, col = '#ffd98a') {
+    const Y = -12;
+    const glow = c.createRadialGradient(8 * AV, (Y + 8) * AV, AV, 8 * AV, (Y + 8) * AV, 26 * AV);
+    glow.addColorStop(0, `rgba(255,236,170,${0.32 + 0.05 * Math.sin(t / 600)})`);
+    glow.addColorStop(1, 'rgba(255,236,170,0)');
+    c.fillStyle = glow;
+    c.fillRect(-18 * AV, (Y - 18) * AV, 52 * AV, 52 * AV);
+    B(c, 4, Y + 24, 8, 4, '#a08cc0');
+    R(c, 5, Y + 24.5, 6, 0.5, '#c0b0e0');
+    R(c, 7, Y + 11, 2, 14, OUT);
+    R(c, 7.5, Y + 11, 1, 14, '#d8c8f0');
+    R(c, 7.5, Y + 11, 0.5, 14, '#f0e8ff');
+    // pleated shade, a half-pixel row at a time
+    for (let i = 0; i < 18; i++) {
+      const hw = 4 + i / 4, yy = Y + 1.5 + i / 2;
+      R(c, 8 - hw - 0.5, yy, hw * 2 + 1, 0.5, OUT);
+      R(c, 8 - hw, yy, hw * 2, 0.5, i >= 16 ? shade(col, -0.15) : col);
+      for (let p = -3; p <= 3; p++) R(c, 8 + p * hw / 3.5, yy, 0.5, 0.5, shade(col, -0.06)); // pleats
+    }
+    R(c, 3.5, Y + 1, 9, 0.5, OUT);
+    R(c, 1, Y + 10.5, 14, 0.5, OUT);
+    R(c, 5.5, Y + 3, 0.5, 5, 'rgba(255,255,255,0.6)');
+  },
+  rug(c, _t, col = '#e98a9a') {
+    // Woven: a border band, a field of soft stripes and a row of diamonds, with fringe at the ends.
+    B(c, 3, 2, 42, 28, col);
+    R(c, 5, 4, 38, 24, shade(col, -0.06));
+    R(c, 6, 5, 36, 22, shade(col, 0.16));
+    for (let k = 0; k < 11; k++) R(c, 7, 6.5 + k * 2, 34, 0.5, shade(col, 0.08));
+    for (let i = 0; i < 5; i++) {
+      const dx = 12 + i * 6, dy = 16;
+      for (let k = 0; k < 5; k++) {
+        const hw = (k < 3 ? k : 4 - k) * 0.75 + 0.5;
+        R(c, dx - hw, dy - 2 + k, hw * 2, 1, shade(col, -0.08));
+      }
+      R(c, dx - 0.25, dy - 0.25, 0.5, 0.5, '#fff4e6');
+    }
+    for (let k = 0; k < 26; k++) {
+      R(c, 1, 3.5 + k, 2, 0.5, '#fff4e6');
+      R(c, 45, 3.5 + k, 2, 0.5, '#fff4e6');
+    }
+  },
+  roundRug(c, _t, col = '#b89af0') {
+    D(c, 16, 16, 13.5, col);
+    D(c, 16, 16, 11, shade(col, 0.12), false);
+    D(c, 16, 16, 10.5, shade(col, 0.06), false);
+    D(c, 16, 16, 6.5, col, false);
+    D(c, 16, 16, 3, shade(col, 0.2), false);
+    for (let k = 0; k < 16; k++) { // a ring of little dots
+      const a = (k / 16) * Math.PI * 2;
+      R(c, 16 + Math.cos(a) * 8.5 - 0.25, 16 + Math.sin(a) * 8.5 - 0.25, 0.5, 0.5, shade(col, -0.12));
+    }
+    for (let k = 0; k < 32; k++) { // fringe
+      const a = (k / 32) * Math.PI * 2;
+      R(c, 16 + Math.cos(a) * 14.5 - 0.25, 16 + Math.sin(a) * 14.5 - 0.25, 0.5, 0.5, '#fff4e6');
+    }
+  },
+  wardrobe(c, _t, col = '#f0d2a8') {
+    // A crown on top, two panelled doors with brass knobs, a plinth and little feet.
+    const Y = -18;
+    B(c, 0, Y, 32, 5, shade(col, 0.04));
+    R(c, 1, Y + 0.5, 30, 0.5, shade(col, 0.18));
+    R(c, 1, Y + 3, 30, 0.5, shade(col, -0.08));
+    B(c, 1, Y + 4, 30, 27, col);
+    for (const dx of [3, 17]) {
+      B(c, dx, Y + 6, 12, 23, shade(col, 0.04));
+      B(c, dx + 2, Y + 8, 8, 8, shade(col, -0.04));
+      B(c, dx + 2, Y + 18, 8, 9, shade(col, -0.04));
+      R(c, dx + 2.5, Y + 8.5, 7, 0.5, shade(col, 0.1));
+      R(c, dx + 2.5, Y + 18.5, 7, 0.5, shade(col, 0.1));
+    }
+    R(c, 15.75, Y + 6, 0.5, 23, shade(col, -0.2)); // the gap between the doors
+    for (const kx of [13.5, 17.5]) { R(c, kx, Y + 16, 1, 2, '#e8b43c'); R(c, kx, Y + 16, 0.5, 0.5, '#fff3b0'); }
+    B(c, 1, Y + 29, 30, 4, shade(col, -0.1));
+    for (const fx of [3, 26]) R(c, fx, Y + 32, 3, 2, '#5a3620');
+  },
+  nightstand(c, t, col = '#d9a06a') {
+    const Y = -4;
+    for (const lx of [3, 11]) R(c, lx, Y + 17, 2, 3, '#5a3620');
+    B(c, 1, Y + 3, 14, 4, shade(col, 0.06));
+    R(c, 2, Y + 3.5, 12, 0.5, shade(col, 0.2));
+    B(c, 2, Y + 6, 12, 12, col);
+    for (const dy of [7, 12]) {
+      B(c, 3, Y + dy, 10, 5, shade(col, 0.03));
+      R(c, 7, Y + dy + 2, 2, 1, '#e8b43c');
+      R(c, 7, Y + dy + 2, 0.5, 0.5, '#fff3b0');
+    }
+    // alarm clock
+    B(c, 4, Y, 6, 5, '#f48a8a');
+    D(c, 7, Y + 2.5, 1.75, '#fffaf3', false);
+    R(c, 7, Y + 1, 0.5, 1.5 + (Math.floor(t / 1000) % 2) * 0.5, OUT);
+    R(c, 7, Y + 2.5, 1.25, 0.5, OUT);
+    R(c, 4.5, Y - 0.5, 1, 0.5, '#e8b43c'); R(c, 8.5, Y - 0.5, 1, 0.5, '#e8b43c');
+  },
+  coffeeTable(c, _t, col = '#d9a06a') {
+    // Low table: a wide top with plank lines, a shelf underneath, a mug and a book.
+    const Y = -2, leg = shade(col, -0.2);
+    for (const lx of [3, 26]) B(c, lx, Y + 10, 3, 8, leg);
+    R(c, 5, Y + 14, 22, 2, shade(col, -0.16));
+    R(c, 5, Y + 14, 22, 0.5, shade(col, -0.05));
+    B(c, 1, Y + 1, 30, 9, shade(col, 0.05));
+    for (const py of [3.5, 6]) R(c, 2, Y + py, 28, 0.5, shade(col, -0.04));
+    grain(c, col, [[4, Y + 2.5, 6], [14, Y + 5, 8], [22, Y + 7.5, 5]]);
+    B(c, 2, Y + 8, 28, 4, shade(col, -0.12));
+    R(c, 2.5, Y + 8.5, 27, 0.5, shade(col, 0));
+    B(c, 6, Y - 1, 5, 5, '#fff4e6'); // mug
+    R(c, 7, Y, 3, 1, '#9a6440');
+    B(c, 15, Y + 2, 10, 4, '#7f9cb2'); // book
+    R(c, 16, Y + 3, 8, 0.5, '#fffaf3');
+    R(c, 16, Y + 4, 8, 0.5, '#e8ecf0');
+    R(c, 19.5, Y + 2, 0.5, 4, shade('#7f9cb2', -0.15));
+  },
+  tv(c, t, col = '#b07a4e') {
+    const Y = -14;
+    B(c, 1, Y + 16, 30, 12, col);
+    R(c, 2, Y + 16.5, 28, 0.5, shade(col, 0.16));
+    for (const dx of [3, 16.5]) { B(c, dx, Y + 19, 12.5, 7, shade(col, -0.05)); R(c, dx + 5.5, Y + 22, 1.5, 0.5, '#e8b43c'); }
+    B(c, 3, Y, 26, 17, '#2b2530');
+    const sky = ['#7fb2e8', '#f7b58a', '#b89af0'][Math.floor(t / 3000) % 3];
+    R(c, 4.5, Y + 1.5, 23, 13, sky);
+    R(c, 4.5, Y + 10, 23, 4.5, '#6cbf7a');
+    R(c, 4.5, Y + 10, 23, 0.5, '#8fd89a');
+    D(c, 21, Y + 5.5, 2, '#ffd34d', false);
+    for (const [cx, cy] of [[8, 4], [12, 6]]) { R(c, cx, Y + cy, 3, 0.5, '#ffffff'); R(c, cx + 0.5, Y + cy - 0.5, 2, 0.5, '#ffffff'); }
+    R(c, 5.5, Y + 2.5, 0.5, 4, 'rgba(255,255,255,0.5)');
+    R(c, 14, Y + 15.5, 4, 0.5, '#5a5070');
+    R(c, 26.5, Y + 15.5, 0.5, 0.5, '#8fd0a8'); // power light
+  },
+};
+// Runs f with the context in half-pixels, 0,0 at room point x, y.
+function hdAt(c: Ctx, x: number, y: number, f: () => void) {
+  c.save();
+  c.translate(x, y);
+  c.scale(1 / AV, 1 / AV);
+  f();
+  c.restore();
+}
+const hdDraw = (hd: HdDraw): Draw => (c, x, y, t, col, bare) => hdAt(c, x, y, () => hd(c, t, col, bare));
 export function drawFurniture(c: Ctx, item: string, x: number, y: number, t: number, col?: string, flip = false, w = 1, s = 0, bare = 0, rot = 0, h = 1, lying = false) {
-  const draw = (s && ALT[item]?.[s - 1]) || DRAW[item] || recipeDraw(item);
+  const draw = (s && ALT[item]?.[s - 1]) || (HD[item] && hdDraw(HD[item])) || DRAW[item] || recipeDraw(item);
   if (!draw) return;
   furnishing = true;
   try { paintFurniture(c, draw, item, x, y, t, col, flip, w, h, bare, rot, lying); } finally { furnishing = false; }
@@ -2411,9 +2873,10 @@ let spare: HTMLCanvasElement | undefined;
 function drawTurned(c: Ctx, draw: Draw, item: string, x: number, y: number, t: number, col: string | undefined, flip: boolean, w: number, h: number, bare: number, rot: number, lying: boolean) {
   const W = w * T, up = OVERHANG[item] ?? 0, H = up + h * T;
   spare ??= document.createElement('canvas');
-  spare.width = W; spare.height = H; // also clears it
+  spare.width = W * AV; spare.height = H * AV; // also clears it and resets its transform
   const g = spare.getContext('2d')!;
-  g.globalCompositeOperation = 'source-over'; // the back view's shading switched it
+  g.imageSmoothingEnabled = false;
+  g.setTransform(AV, 0, 0, AV, 0, 0); // at the characters' detail, so redrawn pieces keep it when turned
   draw(g, 0, up, t, col, bare);
   const fw = (rot % 2 ? h : w) * T; // footprint width on screen
   c.save();
@@ -2422,23 +2885,25 @@ function drawTurned(c: Ctx, draw: Draw, item: string, x: number, y: number, t: n
     if (rot === 1) { c.translate(x + H, y); c.rotate(Math.PI / 2); } // the overhang (headboard) ends up on the right
     else if (rot === 2) { c.translate(x + W, y + H); c.rotate(Math.PI); }
     else { c.translate(x - up, y + W); c.rotate(-Math.PI / 2); }
-    c.drawImage(spare, 0, 0);
+    c.drawImage(spare, 0, 0, W, H);
   } else if (rot === 2) {
     g.globalCompositeOperation = 'source-atop';
     g.fillStyle = 'rgba(43,37,48,0.4)';
     g.fillRect(0, 0, W, H);
     c.translate(x * 2 + W, 0);
     c.scale(-1, 1);
-    c.drawImage(spare, x, y - up);
+    c.drawImage(spare, x, y - up, W, H);
   } else {
     // Sideways, upright like everything else in the room: the front squeezed into the narrow end on the front tile,
     // and its top surface running back over the extra depth.
     if (rot === 3) { c.translate(x * 2 + fw, 0); c.scale(-1, 1); }
     const D = (w - h) * T, top = y + w * T - H; // extra depth; where the squeezed picture's top sits
-    const px = g.getImageData(0, 0, W, H).data;
-    const filled = (r: number) => { for (let i = 0; i < W; i++) if (px[(r * W + i) * 4 + 3]) return true; return false; };
-    let row = 0; // the picture's top edge: its first row with anything in it
-    while (row < H - 3 && !filled(row)) row++;
+    const SW = spare.width, SH = spare.height;
+    const px = g.getImageData(0, 0, SW, SH).data;
+    const filled = (r: number) => { for (let i = 0; i < SW; i++) if (px[(r * SW + i) * 4 + 3]) return true; return false; };
+    let srow = 0; // the picture's top edge: its first row with anything in it
+    while (srow < SH - 3 * AV && !filled(srow)) srow++;
+    const row = srow / AV;
     // The top's colour: the piece's most common colour, leaving out outlines (wood for a desk, fabric for a sofa).
     const counts = new Map<number, number>();
     for (let i = 0; i < px.length; i += 4) {
@@ -2451,13 +2916,30 @@ function drawTurned(c: Ctx, draw: Draw, item: string, x: number, y: number, t: n
     const topCol = `#${most.toString(16).padStart(6, '0')}`;
     const back = top + row - D;
     box(c, x, back, fw, D + 2, shade(topCol, 0.08)); // the top, running back
-    c.drawImage(spare, 0, 0, W, H, x, top, fw, H); // the front, squeezed
+    c.drawImage(spare, 0, 0, SW, SH, x, top, fw, H); // the front, squeezed
   }
   c.restore();
 }
 
 // ---------- UI icons ----------
 const UI_ICONS: Record<string, { rows: string[]; pal: Record<string, string> }> = {
+  todo: {
+    rows: [
+      '.oooooooooo.',
+      '.owwwwwwwwo.',
+      '.owwgwwwwwo.',
+      '.oggwwkkkko.',
+      '.owwwwwwwwo.',
+      '.owwgwwwwwo.',
+      '.oggwwkkkko.',
+      '.owwwwwwwwo.',
+      '.owwwwwwwwo.',
+      '.okkwwkkkko.',
+      '.owwwwwwwwo.',
+      '.oooooooooo.',
+    ],
+    pal: { o: OUT, w: '#fff4e6', g: '#6fcf8a', k: '#a8a0b8' },
+  },
   clock: {
     rows: [
       '....oooo....',

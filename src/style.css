@@ -425,6 +425,10 @@ label { display: flex; flex-direction: column; gap: 6px; font-weight: 700; }
   animation: rise 0.18s ease-out;
 }
 body.side-open #side { display: flex; }
+/* Phones: the sheet shows the card its dock button opened. */
+@media (max-width: 899px) {
+  body[data-side="todos"] #side .side-card.chat, body[data-side="chat"] #side .side-card.todos { display: none; }
+}
 .side-card {
   display: flex;
   flex-direction: column;
@@ -511,7 +515,6 @@ li.done .check { background: #6fcf8a; color: #fff; }
 }
 
 @media (min-width: 900px) {
-  #dock [data-panel="social"] { display: none; }
   #side {
     display: flex;
     left: 20px;
@@ -832,7 +835,7 @@ body.signed-out #deck, body.signed-out #game, body.signed-out #zoom { display: n
 .cal .day.today { background: #fff3d1; }
 .cal .day.on { background: var(--theme, #f6d6e0); outline: 2px solid var(--ink); }
 .cal .day i { position: absolute; left: 50%; bottom: 3px; width: 5px; height: 5px; margin-left: -2.5px; border-radius: 50%; background: #e06a5a; }
-@media (max-width: 380px) { /* eight dock buttons on the narrowest phones */
+@media (max-width: 380px) { /* nine dock buttons on the narrowest phones */
   #dock button { width: 36px; height: 36px; }
   #dock img { width: 24px; height: 24px; }
   #dock { gap: 4px; }
