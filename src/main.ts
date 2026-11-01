@@ -1234,13 +1234,22 @@ function icon(item: string, cls = 'icon', style = 0) {
 }
 const petIcon = (kind: string, cls = 'icon', coat = 0, acc?: string) => `<img class="${cls}" src="${petIconURL(kind, coat, acc)}" alt="">`;
 
-function avatarPreview(look: Look) {
+// A character picture where every art pixel lands on whole screen pixels, at any display scaling: drawn at a
+// whole-number number of device pixels per art pixel, then shown at exactly that many device pixels.
+// frame = the img's padding + border on both sides (boxes are border-box), so the picture itself isn't squeezed.
+function crispAvatar(look: Look, scale: number, head: boolean, frame: number) {
+  const dpr = devicePixelRatio || 1, k = Math.max(1, Math.round(scale * dpr)), h = head ? 16 : 22;
   const c = document.createElement('canvas');
-  c.width = 16 * AV; c.height = 22 * AV;
+  c.width = 16 * k; c.height = h * k;
   const g = c.getContext('2d')!;
-  g.scale(AV, AV);
-  drawAvatar(g, look, 0, 5, 0, false);
-  return `<img class="preview" src="${c.toDataURL()}" alt="Your character">`;
+  g.imageSmoothingEnabled = false;
+  g.scale(k, k);
+  drawAvatar(g, look, 0, head ? 4 : 5, 0, false);
+  return { url: c.toDataURL(), style: `width:${(16 * k) / dpr + frame}px;height:${(h * k) / dpr + frame}px` };
+}
+function avatarPreview(look: Look) {
+  const { url, style } = crispAvatar(look, 4, false, 18);
+  return `<img class="preview" src="${url}" style="${style}" alt="Your character">`;
 }
 
 const swatches = (act: string, list: string[], current: string | number | undefined, byIndex = false) =>
@@ -1268,23 +1277,15 @@ function againButton() {
 }
 // Character options as pictures: my character wearing each choice, the whole body or just the head.
 const LOOK_LABEL: Record<string, string> = { halfup: 'half up', twintails: 'twin tails', manbun: 'man bun', sidelong: 'side long', catears: 'cat ears', round: 'round glasses', chubby: 'plus' };
-const lookPics = new Map<string, string>();
+const lookPics = new Map<string, { url: string; style: string }>();
 function lookTiles(act: keyof Look, list: string[], look: Look, head = false) {
   const current = look[act] ?? list[0];
   return `<div class="row tile-picks">${list.map((v) => {
-    const key = `${head}|${Object.values({ ...look, [act]: v }).join()}`;
-    let url = lookPics.get(key);
-    if (!url) {
-      const c = document.createElement('canvas');
-      c.width = 16 * AV; c.height = (head ? 16 : 22) * AV;
-      const g = c.getContext('2d')!;
-      g.scale(AV, AV);
-      drawAvatar(g, { ...look, [act]: v }, 0, head ? 4 : 5, 0, false);
-      url = c.toDataURL();
-      lookPics.set(key, url);
-    }
+    const key = `${head}|${devicePixelRatio}|${Object.values({ ...look, [act]: v }).join()}`;
+    let pic = lookPics.get(key);
+    if (!pic) { pic = crispAvatar({ ...look, [act]: v }, head ? 3 : 2, head, 4); lookPics.set(key, pic); }
     return `<button class="tile-pick ${v === current ? 'on' : 'off'}" data-act="${act}" data-v="${v}" aria-label="${LOOK_LABEL[v] ?? v}" aria-pressed="${v === current}">
-      <img class="${head ? 'head' : 'full'}" src="${url}" alt=""><small>${LOOK_LABEL[v] ?? v}</small></button>`;
+      <img class="${head ? 'head' : 'full'}" src="${pic.url}" style="${pic.style}" alt=""><small>${LOOK_LABEL[v] ?? v}</small></button>`;
   }).join('')}</div>`;
 }
 const randomLook = (): Look => ({
