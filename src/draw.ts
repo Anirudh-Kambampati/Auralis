@@ -100,9 +100,9 @@ const HEAD_FRONT = [
   '.ohhhhhhhhhhhho.',
   '.ohHsHhhhhHsHho.',
   '.ohssssssssssho.',
-  '.ohswesssswesho.',
-  '.ohseesssseesho.',
-  '.ohsbssmmssbsho.',
+  '.ohssssssssssho.',
+  '.ohssssssssssho.',
+  '.ohssssssssssho.',
   '..oSssssssssSo..',
 ];
 const HEAD_BACK = [
@@ -184,28 +184,27 @@ const STYLE_OVERLAY: Record<string, Overlay> = {
 };
 // Short styles keep the hair off the cheeks: no long sideburns down the face.
 const CROPPED = new Set(['short', 'side part', 'spiky', 'messy', 'undercut', 'quiff', 'fauxhawk', 'topknot', 'slick', 'curtains', 'crop', 'mohawk', 'bowl', 'manbun', 'pixie']);
-const FACE_OVERLAY: Record<string, Overlay> = {
-  happy: {},
-  sleepy: { 10: '.oh' + 'ssssssssss' + 'ho.' },
-  wink: { 10: '.oh' + 'swesssssss' + 'ho.' },
-  grin: { 12: '.oh' + 'sbsmmmmsbs' + 'ho.' },
-  // proper shades: a frame across, two lenses with a glint, and a smirk below
-  cool: { 10: '.oheeeeeeeeeeho.', 11: '.oheweesseweeho.', 12: '.ohseesssseesho.', 13: '..oSssssmmssSo..' },
-  surprised: { 9: '.oh' + 'seessssees' + 'ho.', 13: '..oSsssmmsssSo..' },
-  // happy closed eyes (^ ^) and big rosy cheeks
-  blush: { 10: '.ohssessssessho.', 11: '.ohsesessesesho.', 12: '.ohbbssmmssbbho.' },
-  smirk: { 12: '.oh' + 'sbsssmmmbs' + 'ho.' },
-  fierce: { 9: '.oh' + 'seessssees' + 'ho.', 12: '.oh' + 'sbsmmmmsbs' + 'ho.' },
-  // a wink, a wide grin and the tongue poking out
-  silly: { 10: '.ohswesssssssho.', 12: '.ohsbsmmmmsbsho.', 13: '..oSssssbbssSo..' },
-  calm: { 12: '.ohssssmmssssho.' },
-  laugh: { 10: '.ohssessssessho.', 11: '.ohsesessesesho.', 12: '.ohbbsmmmmsbbho.', 13: '..oSssmmmmssSo..' },
-  sad: { 12: '.ohssssssssssho.', 13: '..oSssmssmssSo..' },
-  cry: { 12: '.ohsqssssssqsho.', 13: '..oSqsmssmsqSo..' },
-  angry: { 9: '.ohseeesseeesho.', 12: '.ohssssssssssho.', 13: '..oSssmmmmssSo..' },
-  shy: { 10: '.ohsewssssewsho.', 12: '.ohbbssmsssbbho.' },
-  pout: { 12: '.ohsbssssssbsho.', 13: '..oSssssmsssSo..' },
-  starry: { 10: '.ohsyessssyesho.', 12: '.ohsbsmmmmsbsho.' },
+// Faces at full detail (32 wide, rows of the doubled sprite): big anime eyes (lash, highlight, two-tone iris), brows,
+// mouths, blush and tears. e = lash, i/I = iris, w = shine, m = mouth, b = blush, q = tears.
+const FACE_ART: Record<string, Overlay> = {
+  happy: { 18: '.......eeee..........eeee.......', 19: '......eeeeee........eeeeee......', 20: '......ewwiie........ewwiie......', 21: '......ewiiie........ewiiie......', 22: '......eiiIIe........eiiIIe......', 23: '......eiIIIe........eiIIIe......', 24: '.......eeee..........eeee.......', 25: '...bbb........m..m........bbb...', 26: '...............mm...............' },
+  sleepy: { 18: '................................', 19: '................................', 20: '................................', 21: '................................', 22: '......eeeeee........eeeeee......', 23: '.......eeee..........eeee.......', 25: '...bbb....................bbb...', 26: '...............mm...............' },
+  wink: { 18: '.......eeee.....................', 19: '......eeeeee....................', 20: '......ewwiie....................', 21: '......ewiiie.........eeee.......', 22: '......eiiIIe........e....e......', 23: '......eiIIIe....................', 24: '.......eeee.....................', 25: '...bbb........m..m........bbb...', 26: '...............mm...............' },
+  grin: { 18: '.......eeee..........eeee.......', 19: '......eeeeee........eeeeee......', 20: '......ewwiie........ewwiie......', 21: '......ewiiie........ewiiie......', 22: '......eiiIIe........eiiIIe......', 23: '......eiIIIe........eiIIIe......', 24: '.......eeee..........eeee.......', 25: '...bbb.......mwwwwm.......bbb...', 26: '..............mmmm..............' },
+  cool: { 19: '.....eeeeeeeeeeeeeeeeeeeeee.....', 20: '.....ewweeee........ewweeee.....', 21: '.....eeweeee........eeweeee.....', 22: '......eeeee..........eeeee......', 25: '...............mmm..............', 26: '..................m.............' },
+  surprised: { 15: '.......eeee..........eeee.......', 18: '.......eeee..........eeee.......', 19: '......ewwwwe........ewwwwe......', 20: '......ewiiwe........ewiiwe......', 21: '......ewiiwe........ewiiwe......', 22: '......ewwwwe........ewwwwe......', 23: '.......eeee..........eeee.......', 25: '...............mm...............', 26: '..............mmmm..............', 27: '...............mm...............' },
+  blush: { 18: '................................', 19: '................................', 20: '................................', 21: '.......eeee..........eeee.......', 22: '......e....e........e....e......', 24: '..b.b.b..................b.b.b..', 25: '...b.b.b......m..m........b.b.b.', 26: '...............mm...............' },
+  smirk: { 18: '................................', 19: '................................', 20: '......eeeeee........eeeeee......', 21: '......ewiiie........ewiiie......', 22: '......eiiIIe........eiiIIe......', 23: '......eiIIIe........eiIIIe......', 24: '.......eeee..........eeee.......', 25: '...bbb...........m........bbb...', 26: '..............mmm...............' },
+  fierce: { 15: '......ee...............ee.......', 16: '........ee...........ee.........', 18: '................................', 19: '................................', 20: '......eeeeee........eeeeee......', 21: '......ewiiie........ewiiie......', 22: '......eiiIIe........eiiIIe......', 23: '......eiIIIe........eiIIIe......', 24: '.......eeee..........eeee.......', 25: '.............mwwwwm.............', 26: '..............mmmm..............' },
+  silly: { 18: '.......eeee.....................', 19: '......eeeeee....................', 20: '......ewwiie....................', 21: '......ewiiie.........eeee.......', 22: '......eiiIIe........e....e......', 23: '......eiIIIe....................', 24: '.......eeee.....................', 25: '...bbb........mmmm........bbb...', 26: '...............bb...............', 27: '...............bb...............' },
+  calm: { 18: '................................', 19: '................................', 20: '......eeeeee........eeeeee......', 21: '......ewiiie........ewiiie......', 22: '......eiiIIe........eiiIIe......', 23: '......eiIIIe........eiIIIe......', 24: '.......eeee..........eeee.......', 25: '...bbb....................bbb...', 26: '...............mm...............' },
+  laugh: { 18: '................................', 19: '................................', 20: '......e..................e......', 21: '.......ee..............ee.......', 22: '.........ee..........ee.........', 23: '.......ee..............ee.......', 24: '......e..................e......', 25: '...bbb.......mmmmmm.......bbb...', 26: '..............mbbm..............' },
+  sad: { 15: '.........ee.........ee..........', 16: '.......ee.............ee........', 18: '.......eeee..........eeee.......', 19: '......eeeeee........eeeeee......', 20: '......ewwiie........ewwiie......', 21: '......ewwiie........ewwiie......', 22: '......eiiIIe........eiiIIe......', 23: '......eiIIIe........eiIIIe......', 24: '.......eeee..........eeee.......', 25: '...............mm...............', 26: '..............m..m..............' },
+  cry: { 15: '.........ee.........ee..........', 16: '.......ee.............ee........', 18: '................................', 19: '................................', 20: '................................', 21: '......eeeeee........eeeeee......', 22: '......qeeeeq........qeeeeq......', 23: '......q....q........q....q......', 24: '......q....q........q....q......', 25: '......q....q..mmmm..q....q......', 26: '......q....q..mbbm..q....q......' },
+  angry: { 15: '......ee...............ee.......', 16: '........ee...........ee.........', 18: '................................', 19: '................................', 20: '......eeeeee........eeeeee......', 21: '......ewiiie........ewiiie......', 22: '......eiIIIe........eiIIIe......', 23: '.......eeee..........eeee.......', 25: '..............mmmm..............', 26: '..............m..m..............' },
+  shy: { 18: '................................', 19: '.......eeee..........eeee.......', 20: '......eeeeee........eeeeee......', 21: '......eiiiie........eiiiie......', 22: '......eiiwIe........eiiwIe......', 23: '......eiwIIe........eiwIIe......', 24: '..bbbb.eeee..........eeee.bbbb..', 25: '..bbbb.........mm.........bbbb..', 26: '..............m..m..............' },
+  pout: { 18: '.......eeee..........eeee.......', 19: '......eeeeee........eeeeee......', 20: '......ewwiie........ewwiie......', 21: '......ewiiie........ewiiie......', 22: '......eiiIIe........eiiIIe......', 23: '......eiIIIe........eiIIIe......', 24: '.......eeee..........eeee.......', 25: '...bbb..........m.........bbb...', 26: '...............m................', 27: '................m...............' },
+  starry: { 18: '.......eeee..........eeee.......', 19: '......eeeeee........eeeeee......', 20: '......eiiyie........eiiyie......', 21: '......eiyyye........eiyyye......', 22: '......eIIyIe........eIIyIe......', 23: '......eIIIIe........eIIIIe......', 24: '.......eeee..........eeee.......', 25: '...bbb.......m....m.......bbb...', 26: '..............mbbm..............' },
 };
 const OUTFIT_OVERLAY: Record<string, Overlay> = {
   tee: {},
@@ -235,16 +234,19 @@ const OUTFIT_OVERLAY: Record<string, Overlay> = {
 };
 // Accessories go on top of everything; hats, headphones and ears also show from behind. a = the accessory's colour.
 const ACC_OVERLAY: Record<string, Overlay> = {
-  glasses: { 10: '...kwekkkkwek...', 11: '...keeksskeek...' },
-  round: { 9: '....kk....kk....', 10: '...kwek..kwek...', 11: '...keekkkkeek...' },
-  shades: { 10: '..kkkkkkkkkkkk..', 11: '...kwkk..kwkk...' },
-  bandage: { 11: '..........c.....', 12: '.........cbc....', 13: '..........c.....' },
-  mask: { 11: '..c..........c..', 12: '..cccccccccccc..', 13: '...cccccccccc...' },
   earring: { 13: '.y..............', 14: '.y..............' },
   headphones: { 2: '....oaaaaaao....', 3: '...oa......ao...', 4: '..oa........ao..', 5: '.oa..........ao.', 6: '.oa..........ao.', 7: '.oa..........ao.', 8: '.oa..........ao.', 9: 'oaao........oaao', 10: 'oAbo........obAo', 11: 'oaao........oaao' },
   cap: { 2: '.....oooooo.....', 3: '...ooaaaaaaoo...', 4: '..oaaaaaaaaaao..', 5: '.oaalaaaaaaaaao.', 6: '.oaaaaaaaaaaaao.', 7: '.oAAAAAAAAAAAAo.', 8: 'oAAAAAAAAAAAAAo.' },
   beanie: { 0: '......owwo......', 1: '.....owwwwo.....', 2: '....ooaaaaoo....', 3: '...oaaaaaaaao...', 4: '..oaaaaaaaaaao..', 5: '.oaaaaaaaaaaaao.', 6: '.oaaaaaaaaaaaao.', 7: '.oAaAaAaAaAaAAo.', 8: '.oAAAAAAAAAAAAo.' },
   catears: { 0: '...o........o...', 1: '..oao......oao..', 2: '..oabo....obao..' },
+};
+// Glasses, shades, masks and bandages sit on the face, so they are drawn at full detail like it.
+const ACC_FACE: Record<string, Overlay> = {
+  glasses: { 17: '.....aaaaaaaa......aaaaaaaa.....', 18: '.....a......a......a......a.....', 19: '.....a......aaaaaaaa......a.....', 20: '.....a......a......a......a.....', 21: '.....a......a......a......a.....', 22: '.....a......a......a......a.....', 23: '.....a......a......a......a.....', 24: '.....a......a......a......a.....', 25: '.....aaaaaaaa......aaaaaaaa.....' },
+  round: { 17: '......aaaaaa........aaaaaa......', 18: '.....a......a......a......a.....', 19: '.....a......a......a......a.....', 20: '.....a......aaaaaaaa......a.....', 21: '.....a......a......a......a.....', 22: '.....a......a......a......a.....', 23: '.....a......a......a......a.....', 24: '.....a......a......a......a.....', 25: '......aaaaaa........aaaaaa......' },
+  shades: { 18: '.....aaaaaaaa......aaaaaaaa.....', 19: '.....awwaaaaaaaaaaaaaaawwaa.....', 20: '.....aawaaaaa......aawaaaaa.....', 21: '.....aaaaaaaa......aaaaaaaa.....', 22: '.....aaaaaaaa......aaaaaaaa.....', 23: '......aaaaaa........aaaaaa......' },
+  mask: { 24: '...aa......................aa...', 25: '.....aaaaaaaaaaaaaaaaaaaaaa.....', 26: '.....aaaaaaaaaaaAAaaaaaaaaa.....', 27: '.......aaaaaaaaaaaaaaaaaa.......' },
+  bandage: { 24: '.......................aaaa.....', 25: '......................aabbaa....', 26: '.......................aaaa.....' },
 };
 const ACC_BACK = new Set(['headphones', 'cap', 'beanie', 'catears']);
 const ACC_COL: Record<string, string> = { glasses: '#3a3448', round: '#b07a4e', shades: '#2b2530', headphones: '#e8e3dc', cap: '#e06a5a', beanie: '#5a5070', catears: '#3a3448', bandage: '#f2d8c0', mask: '#fffaf3', earring: '#ffd34d' };
@@ -268,8 +270,27 @@ const BODY_SHAPE: Record<string, Record<number, (row: string) => string>> = {
 };
 
 for (const rows of [HEAD_FRONT, HEAD_BACK, BODY_FRONT, BODY_BACK, ...LEGS,
-  ...[STYLE_OVERLAY, FACE_OVERLAY, OUTFIT_OVERLAY, ACC_OVERLAY].flatMap((o) => Object.values(o).map((m) => Object.values(m)))]) {
+  ...[STYLE_OVERLAY, OUTFIT_OVERLAY, ACC_OVERLAY].flatMap((o) => Object.values(o).map((m) => Object.values(m)))]) {
   console.assert(rows.every((row) => row.length === 16), 'sprite rows must be 16 wide', rows);
+}
+
+const lay = (rows: string[], over?: Overlay) =>
+  over ? rows.map((row, y) => (over[y] ? [...row].map((ch, x) => (over[y][x] !== '.' ? over[y][x] : ch)).join('') : row)) : rows;
+
+// Characters are drawn at twice the room's detail (AV): 32x42 art shown in the same 16x21 space.
+export const AV = 2;
+// After doubling, outer outlines are two pixels thick: thin them back to one by giving the inner half the colour beside it.
+// Outlines between two areas (hair against skin) don't touch the outside, so they stay.
+function thin(rows: string[]) {
+  const at = (x: number, y: number) => rows[y]?.[x] ?? '.';
+  const N = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+  const outside = (x: number, y: number) => N.some(([dx, dy]) => at(x + dx, y + dy) === '.');
+  return rows.map((row, y) => [...row].map((ch, x) => {
+    if (ch !== 'o' || outside(x, y)) return ch;
+    if (!N.some(([dx, dy]) => at(x + dx, y + dy) === 'o' && outside(x + dx, y + dy))) return ch;
+    const fill = N.map(([dx, dy]) => at(x + dx, y + dy)).find((n) => n !== 'o' && n !== '.');
+    return fill ?? ch;
+  }).join(''));
 }
 
 function avatarRows(look: Look, step: number, up: boolean) {
@@ -277,17 +298,24 @@ function avatarRows(look: Look, step: number, up: boolean) {
   const style = STYLE_OVERLAY[look.style ?? ''];
   const shaved = look.style === 'buzz' || look.style === 'mohawk' || look.style === 'undercut';
   const backStyle = style && up && !shaved ? Object.fromEntries(Object.entries(style).filter(([y]) => Number(y) < 8)) : style;
-  const layers = [OUTFIT_OVERLAY[look.outfit ?? ''], backStyle, up ? null : FACE_OVERLAY[look.face ?? '']];
-  for (const over of layers) {
-    if (!over) continue;
-    rows = rows.map((row, y) => (over[y] ? [...row].map((ch, x) => (over[y][x] !== '.' ? over[y][x] : ch)).join('') : row));
-  }
+  rows = lay(lay(rows, OUTFIT_OVERLAY[look.outfit ?? '']), backStyle);
   if (!up && CROPPED.has(look.style ?? 'short')) rows = rows.map((row, y) => (y >= 9 && y <= 12 ? `${row.slice(0, 2)}s${row.slice(3, 13)}s${row.slice(14)}` : row));
-  const acc = ACC_OVERLAY[look.acc ?? ''];
-  if (acc && (!up || ACC_BACK.has(look.acc!))) rows = rows.map((row, y) => (acc[y] ? [...row].map((ch, x) => (acc[y][x] !== '.' ? acc[y][x] : ch)).join('') : row));
+  if (!up || ACC_BACK.has(look.acc ?? '')) rows = lay(rows, ACC_OVERLAY[look.acc ?? '']);
   const shape = BODY_SHAPE[look.body ?? ''];
   if (shape) rows = rows.map((row, y) => shape[y]?.(row) ?? row);
+  // Hair, outfits and hats are 16px art for now, doubled; the face and what sits on it are drawn at full detail.
+  rows = thin(rows.flatMap((row) => { const d = [...row].map((ch) => ch + ch).join(''); return [d, d]; }));
+  if (!up) rows = lay(lay(rows, FACE_ART[look.face ?? ''] ?? FACE_ART.happy), ACC_FACE[look.acc ?? '']);
   return rows;
+}
+
+// Draws character art (made at AV times the detail) into room-sized space. On a canvas too small to show the
+// extra detail (zoomed all the way out), let the browser average the pixels instead of dropping every other one.
+function blit(c: Ctx, img: HTMLCanvasElement, sh: number, x: number, y: number) {
+  const smooth = c.imageSmoothingEnabled, lo = c.getTransform().a < AV;
+  if (lo) { c.imageSmoothingEnabled = true; c.imageSmoothingQuality = 'high'; }
+  c.drawImage(img, 0, 0, img.width, sh, x, y, img.width / AV, sh / AV);
+  c.imageSmoothingEnabled = smooth;
 }
 
 // x, y = top-left of the tile the avatar stands on; the sprite overhangs the tile above.
@@ -295,17 +323,17 @@ const lookPal = (look: Look): Record<string, string> => {
   const acc = ACC_COL[look.acc ?? ''] ?? '#5a5070';
   return {
     o: OUT, h: look.hair, H: shade(look.hair, -0.15), l: shade(look.hair, 0.2),
-    s: look.skin, S: shade(look.skin, -0.1), e: '#2a1e26', w: '#ffffff', b: '#f7a0a8', m: '#c8606a', q: '#7fc4f0',
+    s: look.skin, S: shade(look.skin, -0.1), e: '#2a1e26', w: '#ffffff', b: '#f7a0a8', m: '#b0505a', q: '#7fc4f0', i: '#5a3a5a', I: '#9a6a8a',
     t: look.shirt, T: shade(look.shirt, -0.15), c: '#fff4e6', d: '#7a5040', a: acc, A: shade(acc, -0.15),
     v: '#6a8ad0', V: '#5a78bc', r: '#e06a5a', y: '#ffd34d', k: '#3a3448', g: '#8fd0a8', p: look.outfit === 'overalls' ? '#5a78bc' : '#5a5080',
   };
 };
 export function drawAvatar(c: Ctx, look: Look, x: number, y: number, step: number, up: boolean) {
   const key = `av|${Object.values(look).join()}|${step}${up}`;
-  const sprite = baked(key, 16, AVATAR_H, (g) => paintRows(g, avatarRows(look, step, up), lookPal(look)));
+  const sprite = baked(key, 16 * AV, AVATAR_H * AV, (g) => paintRows(g, avatarRows(look, step, up), lookPal(look)));
   r(c, x + 4, y + 14, 8, 2, 'rgba(58,38,51,0.22)');
   r(c, x + 3, y + 15, 10, 1, 'rgba(58,38,51,0.12)');
-  c.drawImage(sprite, x, y + T - AVATAR_H + (step ? -1 : 0) + 1);
+  blit(c, sprite, sprite.height, x, y + T - AVATAR_H + (step ? -1 : 0) + 1);
 }
 
 // Chairs face us: backrest drawn behind the sitter, seat and legs in front.
@@ -361,15 +389,17 @@ const CHAIRS: Record<string, { col: string; back: ChairPart; seat: ChairPart }> 
 
 // Head and body only, for poses where something hides the legs.
 function seatedSprite(look: Look) {
-  return baked(`sit|${Object.values(look).join()}`, 16, 18, (g) =>
-    paintRows(g, avatarRows(look, 0, false).slice(0, 18), lookPal(look)));
+  return baked(`sit|${Object.values(look).join()}`, 16 * AV, 18 * AV, (g) =>
+    paintRows(g, avatarRows(look, 0, false).slice(0, 18 * AV), lookPal(look)));
 }
+// The seated sprite's top `rows` room pixels (all of it by default) at x, y.
+const drawSitter = (c: Ctx, look: Look, x: number, y: number, rows = 18) => blit(c, seatedSprite(look), rows * AV, x, y);
 
 // Seated in a chair facing us: gentle bob, and sparkles drifting up while studying.
 export function drawSeated(c: Ctx, look: Look, x: number, y: number, t: number, chairCol?: string, kind = 'chair', sparkle = true) {
   const ch = CHAIRS[kind] ?? CHAIRS.chair, col = chairCol ?? ch.col;
   ch.back(c, x, y, col);
-  c.drawImage(seatedSprite(look), x, y - 13 + (Math.floor(t / 650) % 2));
+  drawSitter(c, look, x, y - 13 + (Math.floor(t / 650) % 2));
   ch.seat(c, x, y, col);
   if (!sparkle) return;
   const colors = ['#ffd34d', '#f4a6c8', '#a8dcf5'];
@@ -395,7 +425,7 @@ export function drawActing(c: Ctx, look: Look, act: string, item: string, x: num
   const beat = Math.floor(t / 260) % 2;
   if (act === 'sleep') {
     // Tucked in: head on the pillow, blanket up to the chin, z's drifting up.
-    c.drawImage(seatedSprite(look), 0, 0, 16, 14, x, y - 3, 16, 14);
+    drawSitter(c, look, x, y - 3, 14);
     box(c, x, y + 9, 16, 9, col ?? '#9cc4f0');
     r(c, x + 1, y + 9, 14, 2, '#fffaf3');
     const p = (t / 1600) % 1;
@@ -406,7 +436,7 @@ export function drawActing(c: Ctx, look: Look, act: string, item: string, x: num
     return;
   }
   if (act === 'sit') {
-    c.drawImage(seatedSprite(look), x, y - 11 + (Math.floor(t / 900) % 2));
+    drawSitter(c, look, x, y - 11 + (Math.floor(t / 900) % 2));
     box(c, x + 1, y + 4, 14, 7, shade(col ?? SEAT_COL[item] ?? '#f2b48a', -0.1));
     return;
   }
@@ -414,9 +444,9 @@ export function drawActing(c: Ctx, look: Look, act: string, item: string, x: num
     const b = Math.round(Math.abs(Math.sin(t / 170)) * 4);
     r(c, x + 4, y + 2 - b, 3, 4, PANTS);
     r(c, x + 9, y + 2 - b, 3, 4, PANTS);
-    c.drawImage(seatedSprite(look), x, y - 15 - b);
+    drawSitter(c, look, x, y - 15 - b);
   } else if (act === 'bike') {
-    c.drawImage(seatedSprite(look), x, y - 14 + beat);
+    drawSitter(c, look, x, y - 14 + beat);
     r(c, x + 4, y + 3 + beat * 2, 3, 4, PANTS);
     r(c, x + 9, y + 5 - beat * 2, 3, 4, PANTS);
   } else if (act === 'stretch') {

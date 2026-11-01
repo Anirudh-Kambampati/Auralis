@@ -5,7 +5,7 @@ import {
 } from '../shared/game.js';
 import {
   T, OVERHANG, SURFACE, drawSeated, drawActing, drawSeam, drawFloor, drawWall, drawWallFace, drawWallTop, drawDoor, drawWindow, drawPainting, drawFurniture, drawAvatar, drawDeskLamp, drawGlow, drawUsing, skyNow, NIGHT_TINT,
-  coinURL, uiIconURL, drawPaper, paintBlockText, drawWindow as drawWin, drawDroplet, drawHeart, tileURL, type Look,
+  coinURL, uiIconURL, AV, drawPaper, paintBlockText, drawWindow as drawWin, drawDroplet, drawHeart, tileURL, type Look,
 } from './draw';
 import { drawPet, petPos, petIconURL, seedOf } from './pets';
 import { toggleSound, soundName, chime, ping } from './sounds';
@@ -1191,8 +1191,10 @@ const petIcon = (kind: string, cls = 'icon', coat = 0, acc?: string) => `<img cl
 
 function avatarPreview(look: Look) {
   const c = document.createElement('canvas');
-  c.width = 16; c.height = 22;
-  drawAvatar(c.getContext('2d')!, look, 0, 5, 0, false);
+  c.width = 16 * AV; c.height = 22 * AV;
+  const g = c.getContext('2d')!;
+  g.scale(AV, AV);
+  drawAvatar(g, look, 0, 5, 0, false);
   return `<img class="preview" src="${c.toDataURL()}" alt="Your character">`;
 }
 
@@ -1229,8 +1231,10 @@ function lookTiles(act: keyof Look, list: string[], look: Look, head = false) {
     let url = lookPics.get(key);
     if (!url) {
       const c = document.createElement('canvas');
-      c.width = 16; c.height = head ? 16 : 22;
-      drawAvatar(c.getContext('2d')!, { ...look, [act]: v }, 0, head ? 4 : 5, 0, false);
+      c.width = 16 * AV; c.height = (head ? 16 : 22) * AV;
+      const g = c.getContext('2d')!;
+      g.scale(AV, AV);
+      drawAvatar(g, { ...look, [act]: v }, 0, head ? 4 : 5, 0, false);
       url = c.toDataURL();
       lookPics.set(key, url);
     }
@@ -2091,7 +2095,7 @@ $('#authForm').addEventListener('submit', async (e) => {
 const HW = 20, HH = 8;
 const hero = $<HTMLCanvasElement>('#heroScene');
 const heroCtx = hero.getContext('2d')!;
-hero.width = HW * T; hero.height = HH * T;
+hero.width = HW * T * AV; hero.height = HH * T * AV; // 2x, so the characters' detail shows
 const coinImg = new Image();
 coinImg.src = coinSrc;
 document.querySelectorAll<HTMLImageElement>('#landing .coin-d').forEach((img) => (img.src = coinSrc));
@@ -2116,7 +2120,7 @@ function burst(x: number, y: number, n: number) {
 }
 hero.addEventListener('pointerdown', (e) => {
   const r = hero.getBoundingClientRect();
-  burst(((e.clientX - r.left) / r.width) * hero.width, ((e.clientY - r.top) / r.height) * hero.height, 14);
+  burst(((e.clientX - r.left) / r.width) * HW * T, ((e.clientY - r.top) / r.height) * HH * T, 14);
 });
 
 // Speech bubbles are HTML over the canvas so the text stays crisp; each friend cycles through lines.
@@ -2146,7 +2150,8 @@ function heroFrame(t: number) {
   lastHero = t;
   const c = heroCtx, now = Date.now();
   c.imageSmoothingEnabled = false;
-  c.clearRect(0, 0, hero.width, hero.height);
+  c.setTransform(AV, 0, 0, AV, 0, 0);
+  c.clearRect(0, 0, HW * T, HH * T);
   for (let x = 0; x < HW; x++) {
     drawWallTop(c, x * T, 0, '#fbd0d4', 'hearts');
     drawWallFace(c, x * T, T, '#fbd0d4', 'hearts');
@@ -2205,12 +2210,13 @@ function heroFrame(t: number) {
 
 // ---------- landing: build your buddy ----------
 const buddy = $<HTMLCanvasElement>('#buddyCanvas');
-buddy.width = 16; buddy.height = 22;
+buddy.width = 16 * AV; buddy.height = 22 * AV;
 const pickOne = <V>(list: readonly V[]) => list[Math.floor(Math.random() * list.length)];
 let buddyLook: Look = { ...heroLooks[0] };
 function drawBuddy() {
   const c = buddy.getContext('2d')!;
   c.imageSmoothingEnabled = false;
+  c.setTransform(AV, 0, 0, AV, 0, 0);
   c.clearRect(0, 0, 16, 22);
   drawAvatar(c, buddyLook, 0, 5, 0, false);
   $('#buddyTags').textContent = `${buddyLook.style} · ${buddyLook.outfit} · ${buddyLook.face}`;
