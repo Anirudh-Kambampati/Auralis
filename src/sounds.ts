@@ -447,6 +447,10 @@ function stop(key: string) {
   setTimeout(() => p.ctx.close(), 700);
 }
 
+// Silence everything: furniture sounds belong to the house they were started in, so leaving it (or being asked to
+// leave, or signing out) stops them.
+export function stopAllSounds() { for (const key of [...playing.keys()]) stop(key); }
+
 // Returns whether that sound is now playing. Must be called from a click (browsers only allow sound after one).
 export function toggleSound(item: string): boolean {
   const key = keyOf(item);

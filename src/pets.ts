@@ -6,7 +6,8 @@ import { shade } from './draw';
 // a = coat colour (swapped for the owner's pick), b = a darker/accent tone, i = eye shine, e = eye, p = blush, n = nose.
 // o is the outline: a dark version of the coat, so pets read soft instead of harsh.
 // acc: where hats, bows and glasses go, as a shift from the 12x10 face they were drawn for (side-on heads sit to the right).
-type Sprite = { rows: string[]; pal: Record<string, string>; b?: number; acc?: [number, number] };
+// frames: other poses for parts that move (the elephant's trunk), same size as rows.
+type Sprite = { rows: string[]; pal: Record<string, string>; b?: number; acc?: [number, number]; frames?: Record<string, string[]> };
 const EYES = { i: '#ffffff', e: '#3a2633', p: '#f7a0b0', n: '#e86a8a', m: '#c8606a' };
 const SPRITES: Record<string, Sprite> = {
   hamster: {
@@ -114,6 +115,13 @@ const SPRITES: Record<string, Sprite> = {
       'bbbo.ooaaaaayyyo', 'bbbbaaaaaaaaoo..', 'bbbboaaaaaaaao..', '.ooooaaaaaaao...', '...oy.oy..oy.oy.', '...yy.yy..yy.yy.'],
     pal: { y: '#f2a03a' }, b: -0.2, acc: [4, 2],
   },
+  elephant: { // a baby elephant: soft outline (b), big white ear, trunk curling up, blush under the eye
+    rows: ['...bbbbbbbbb....', '...bwwwbaaaab...', '...bwwwbaaaaab..', '...bwwwbaaaeabb.', '.bbbwwwbaaaeabab', '.baabbbaaappabab',
+      '.baaaaaaaaaaaaab', '.baaaaaaaaabbbb.', '..baaaaaabb.....', '..baabbaab......', '...bb..bb.......', '................'],
+    pal: { w: '#ffffff' }, acc: [3, 0],
+    frames: { down: ['...bbbbbbbbb....', '...bwwwbaaaab...', '...bwwwbaaaaab..', '...bwwwbaaaeab..', '.bbbwwwbaaaeab..', '.baabbbaaappab..',
+        '.baaaaaaaaaaaab.', '.baaaaaaaaabbab.', '..baaaaaabb.bab.', '..baabbaab...b..', '...bb..bb.......', '................'] }, // trunk hanging relaxed
+  },
   trex: {
     rows: ['.........oooooo.', '........oaaaaaao', '........oaieaaao', '........oaeeaaao', '........oapawwwo', '.o.....oaaaaao..',
       'oao..oaaaaaabo..', '.oaooaaaaaaao...', '..oaaaaawwwao...', '...oaaaaaaao....', '....oao.oao.....', '....oo..oo......'],
@@ -132,11 +140,11 @@ const coatOf = (kind: string, coat = 0) => {
 };
 
 const cache = new Map<string, HTMLCanvasElement>();
-export function petCanvas(kind: string, coat = 0) {
-  const key = `${kind}|${coat}`;
+export function petCanvas(kind: string, coat = 0, frame?: string) {
+  const key = `${kind}|${coat}|${frame ?? ''}`;
   let cv = cache.get(key);
   if (!cv) {
-    const sp = SPRITES[kind] ?? SPRITES.cat;
+    const base = SPRITES[kind] ?? SPRITES.cat, sp = { ...base, rows: (frame && base.frames?.[frame]) || base.rows };
     const a = coatOf(kind, coat);
     const pal: Record<string, string> = { ...EYES, a, b: shade(a, sp.b ?? -0.12), o: shade(a, -0.42), ...sp.pal };
     cv = document.createElement('canvas');
@@ -239,11 +247,28 @@ export function drawPet(c: CanvasRenderingContext2D, kind: string, x: number, y:
     c.fillRect(zx, zy, 3, 1); c.fillRect(zx + 1, zy + 1, 1, 1); c.fillRect(zx, zy + 2, 3, 1);
     c.globalAlpha = 1;
   }
-  const pet = petCanvas(kind, coat), [ax, ay] = SPRITES[kind]?.acc ?? [0, 0];
+  // The elephant's trunk: it swings with each step, rests down while idle, sleeping or eating, and every few
+  // seconds lifts with a toot and a little spray of water.
+  let frame: string | undefined, spray = -1;
+  if (kind === 'elephant') {
+    const toot = (now % 6000) / 6000;
+    if (moving) frame = Math.floor(now / 180) % 2 ? 'down' : undefined;
+    else if (sleeping || act === 'eat' || toot > 0.25) frame = 'down';
+    else spray = toot / 0.25; // 0..1 through the toot
+  }
+  const pet = petCanvas(kind, coat, frame), [ax, ay] = SPRITES[kind]?.acc ?? [0, 0];
   const px = x + (16 - pet.width) / 2, py = y + 15 - pet.height + hop; // feet on the tile's bottom edge
   c.save();
   if (left) { c.translate(px * 2 + pet.width, 0); c.scale(-1, 1); }
   c.drawImage(pet, px, py);
+  if (spray > 0.2) { // droplets arcing up and out of the trunk tip
+    c.fillStyle = '#9fd4f4';
+    for (let k = 0; k < 3; k++) {
+      const p = (spray - 0.2) / 0.8 - k * 0.15;
+      if (p <= 0 || p >= 1) continue;
+      c.fillRect(Math.round(px + 15 + p * 3 + k * 0.5), Math.round(py + 3 - Math.sin(p * Math.PI) * 4 + p * 2), 1, 1);
+    }
+  }
   if (acc) drawAcc(c, acc, px + ax, py + ay);
   c.restore();
 }

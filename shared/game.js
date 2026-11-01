@@ -428,6 +428,7 @@ export const PETS = {
   fox: { name: 'Fox', price: 950, coats: ['#f28a3a', '#e8ecf4', '#9a98a8'] },
   axolotl: { name: 'Axolotl', price: 1300, coats: ['#f7b6c8', '#9db4ee', '#ffd27a', '#b89af0'] },
   unicorn: { name: 'Unicorn', price: 1800, coats: ['#fffaf3', '#f2c4d0', '#cfe1f7', '#e8d8f0'] },
+  elephant: { name: 'Baby elephant', price: 1100, coats: ['#d4d4fc', '#b8e0ec', '#d4d4dc', '#f8d0dc'] },
   dragon: { name: 'Baby dragon', price: 2000, coats: ['#8fd0a8', '#b89af0', '#f48a8a', '#7fb2e8'] },
   trex: { name: 'Baby T-rex', price: 1500, coats: ['#8fd07a', '#b0d870', '#9db4ee', '#f4a6b8'] },
   platypus: { name: 'Platypus', price: 1000, coats: ['#4fb0b0', '#6fb8a8', '#5b9fd6'] },

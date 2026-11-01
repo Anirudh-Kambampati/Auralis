@@ -8,7 +8,7 @@ import {
   coinURL, uiIconURL, AV, drawPaper, paintBlockText, drawWindow as drawWin, drawDroplet, drawHeart, tileURL, type Look,
 } from './draw';
 import { drawPet, petPos, petIconURL, seedOf } from './pets';
-import { toggleSound, soundName, chime, ping } from './sounds';
+import { toggleSound, soundName, chime, ping, stopAllSounds } from './sounds';
 import { countUnseen } from './tabBadge';
 import { syncWatch } from './watch';
 import { parseVideo } from '../shared/watch.js';
@@ -118,7 +118,7 @@ function onMessage(m: any) {
     myId = m.me.id;
     // Moved house: start in my own room, drop any walk or seat that pointed at the old house's tiles,
     // and treat its chat history as already seen.
-    if (m.house.code !== houseCode) { lastChatId = -1; avatars.delete(myId); path = []; seat = null; useNext = null; arrive = null; endBreak(); }
+    if (m.house.code !== houseCode) { lastChatId = -1; avatars.delete(myId); path = []; seat = null; useNext = null; arrive = null; endBreak(); stopAllSounds(); }
     const wasFocusing = !!myMember()?.focus;
     const oldGrid = grid, oldSlots = slots.map((x) => `${x.m.id}:${x.ri}`);
     houseCode = m.house.code;
@@ -173,7 +173,7 @@ function onMessage(m: any) {
         const d = footprint(f);
         // Beds: only the pillow row is a place to lie down, so sleepers are on the bed, head on the pillow.
         const rows = it.act === 'sleep' && !f.rot ? 1 : d.h;
-        if (it.act) for (let y = 0; y < rows; y++) for (let x = 0; x < d.w; x++) acts.set(tileKey(o.x + f.x + x, o.y + f.y + y), { item: f.item, act: it.act, col: furnColor(f) });
+        if (it.act) for (let y = 0; y < rows; y++) for (let x = 0; x < d.w; x++) acts.set(tileKey(o.x + f.x + x, o.y + f.y + y), { item: f.item, act: it.act, col: furnColor(f), z: o.y + f.y + d.h - 0.5 });
         if (it.pet) toys.push({ x: o.x + f.x, y: o.y + f.y, act: it.pet });
       }
       return toys;
@@ -260,7 +260,8 @@ const myRoom = () => myMember()?.rooms[editRoom] ?? myMember()?.rooms[0];
 const furnColor = (f: Furniture) => (f.v === undefined ? undefined : colorsFor(f.item)[f.v]);
 
 // Tiles of furniture a character can use (chairs, sofas, gym balls, treadmills...) and what they do there.
-let acts = new Map<number, { item: string; act: string; col?: string }>();
+// Tiles you can use by standing on them; z = where that piece sorts when drawn, so whoever uses it is drawn on top.
+let acts = new Map<number, { item: string; act: string; col?: string; z: number }>();
 let petToys: { x: number; y: number; act: string }[][] = []; // per room: cat towers, beds, balls...
 const tileKey = (x: number, y: number) => y * 10000 + x;
 let seat: { x: number; y: number } | null = null; // furniture to step onto once the walk there ends
@@ -967,7 +968,7 @@ function render(t: number) {
     const stepFrame = walking ? 1 + (Math.floor(a.dist * 4) % 2) : 0;
     const ax = Math.round(a.x * T), ay = Math.round(a.y * T);
     sprites.push({
-      y: a.y + 0.99,
+      y: act ? Math.max(a.y + 0.99, act.z + 0.01) : a.y + 0.99, // on a bed's pillow row: drawn over the bed, not under it
       draw: () => (act ? drawActing(ctx, m.look, act.act, act.item, ax, ay, t, act.col, seated)
         : a.use && !walking ? drawUsing(ctx, m.look, a.use, ax, ay, t)
         : drawAvatar(ctx, m.look, ax, ay, stepFrame, a.up)),
@@ -2091,6 +2092,7 @@ function showLanding(on: boolean) {
 }
 
 function signOut(tellServer: boolean) {
+  stopAllSounds();
   if (tellServer && token) fetch(`${apiBase}/api/logout`, { method: 'POST', body: JSON.stringify({ token }) }).catch(() => {});
   token = null;
   localStorage.removeItem('auralis.token');
