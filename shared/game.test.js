@@ -106,15 +106,18 @@ test('placement rules', () => {
 });
 
 test('recolour palettes and pet prices', () => {
-  assert.equal(colorsFor('sofa').length, 8);
-  assert.equal(colorsFor('desk').length, 6);
+  assert.equal(colorsFor('sofa').length, 16);
+  assert.equal(colorsFor('desk').length, 10);
   assert.deepEqual(colorsFor('aquarium'), []);
   assert.ok(Object.values(PETS).every((p) => p.price >= 300)); // pets must be earned
 });
 
 test('friends bonus', () => {
-  assert.equal(focusReward(25, false), 25);
-  assert.equal(focusReward(25, true), 32);
+  assert.equal(focusReward(25, 0), 25);
+  assert.equal(focusReward(25, 1), 32);
+  assert.equal(focusReward(25, 2), 38); // ×1.5
+  assert.equal(focusReward(25, 4), 50); // ×2
+  assert.equal(focusReward(25, 9), 50); // capped
 });
 
 test('festivals: Easter, windows across New Year', () => {

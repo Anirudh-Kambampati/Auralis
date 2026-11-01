@@ -399,8 +399,10 @@ function windows(now) {
 export const activeEvents = (now = new Date()) => windows(now).filter((e) => e.from <= now);
 export const nextEvent = (now = new Date()) => windows(now).find((e) => e.from > now) ?? null;
 export const USES = [...new Set(Object.values(ITEMS).map((i) => i.use).filter(Boolean))];
-export const PASTELS = ['#f4a6b8', '#9db4ee', '#8fd0a8', '#ffd27a', '#b89af0', '#f2b48a', '#e8e3dc', '#7a6a8a'];
-export const WOODS = ['#d9a06a', '#b07a4e', '#8a5a3c', '#f0d2a8', '#fffaf3', '#9db4ee'];
+// Furniture remembers its colour by position in these lists: only ever add to the end.
+export const PASTELS = ['#f4a6b8', '#9db4ee', '#8fd0a8', '#ffd27a', '#b89af0', '#f2b48a', '#e8e3dc', '#7a6a8a',
+  '#e06a5a', '#f28a3a', '#6cbf7a', '#4fb0b0', '#5b7fd6', '#3a3448', '#fffaf3', '#c8805a'];
+export const WOODS = ['#d9a06a', '#b07a4e', '#8a5a3c', '#f0d2a8', '#fffaf3', '#9db4ee', '#c8966a', '#5e3e2a', '#8fd0a8', '#f4a6b8'];
 export const colorsFor = (item) => ({ pastel: PASTELS, wood: WOODS })[ITEMS[item]?.colors] ?? [];
 
 // Pets cost a lot on purpose: at 1 coin per focused minute they take real study time to earn.
@@ -452,10 +454,12 @@ export const PET_ACCS = {
 };
 export const MAX_PETS = 4;
 
-export const WALLPAPERS = ['#f6dcc0', '#cfe8d8', '#ddd5f5', '#fbd0d4', '#cfe1f7', '#f8edc0', '#fffaf3', '#e8d3c0', '#c9e4ef', '#e6d0ea'];
-export const WALL_PATTERNS = ['plain', 'stripes', 'dots', 'hearts', 'checks', 'stars'];
-export const FLOORS = ['#c8935f', '#b07a58', '#e0b382', '#9fae86', '#b3a2c9', '#d8a0a0', '#e8e3dc', '#8a7a8e', '#a8c4d8', '#d9b48a'];
-export const FLOOR_STYLES = ['planks', 'tiles', 'carpet', 'herringbone'];
+export const WALLPAPERS = ['#f6dcc0', '#cfe8d8', '#ddd5f5', '#fbd0d4', '#cfe1f7', '#f8edc0', '#fffaf3', '#e8d3c0', '#c9e4ef', '#e6d0ea',
+  '#f4c8a0', '#b8e0c8', '#c8c0f0', '#f0b8c0', '#a8c8f0', '#f0e0a0', '#d8d0c8', '#3a4060', '#4a5a48', '#f0f0f0'];
+export const WALL_PATTERNS = ['plain', 'stripes', 'dots', 'hearts', 'checks', 'stars', 'flowers', 'waves', 'diamonds', 'brick', 'grid'];
+export const FLOORS = ['#c8935f', '#b07a58', '#e0b382', '#9fae86', '#b3a2c9', '#d8a0a0', '#e8e3dc', '#8a7a8e', '#a8c4d8', '#d9b48a',
+  '#7a5a40', '#e8d0b0', '#5a5a60', '#c0c8c8', '#e8b8a8', '#a8b8e0', '#88b098', '#f0e8d8', '#6a4a58', '#d8c068'];
+export const FLOOR_STYLES = ['planks', 'tiles', 'carpet', 'herringbone', 'marble', 'parquet', 'stone', 'checker'];
 export const SKINS = ['#ffe0c8', '#f5c9a5', '#d9a07a', '#a8714f', '#6e4630'];
 export const HAIRS = ['#3a2a35', '#7a4a32', '#f2c46a', '#e8735a', '#8a7ad8', '#f4b6c8', '#7ec8c0'];
 export const SHIRTS = ['#f48a8a', '#7fb2e8', '#8fd0a8', '#ffd27a', '#b89af0', '#f4b6d0'];
@@ -463,7 +467,7 @@ export const STYLES = ['short', 'side part', 'buzz', 'spiky', 'curly', 'bob', 'l
 export const FACES = ['happy', 'sleepy', 'wink', 'grin', 'cool', 'surprised', 'blush', 'smirk', 'fierce', 'silly'];
 export const OUTFITS = ['tee', 'tie', 'sweater', 'jacket', 'hoodie', 'overalls', 'dress', 'skirt', 'striped', 'vest', 'tank', 'kimono', 'polo', 'suit', 'cardigan', 'apron', 'raincoat', 'sailor', 'hawaiian', 'puffer'];
 
-export const FOCUS_LENGTHS = [15, 25, 45, 60];
+export const FOCUS_LENGTHS = [15, 25, 45, 60, 90];
 
 // Room upgrades: each level makes the floor bigger. EXPAND_COST[n] is the price to reach level n.
 export const ROOM_SIZES = [{ w: 10, h: 8 }, { w: 12, h: 9 }, { w: 14, h: 10 }, { w: 16, h: 11 }];
@@ -475,6 +479,8 @@ export const isPlant = (item) => ITEMS[item]?.use === 'water';
 // "Everyone" house to-dos: finishing one gives each person coins and money off their next shop buy, a few times a day.
 export const TASK_COINS = 5, TASK_REWARDS_PER_DAY = 3;
 export const discounted = (price, discount) => (discount ? Math.ceil(price * 0.9) : price);
+// Selling something back from storage returns half what it cost (free starter pieces fetch nothing, so can't be sold).
+export const sellPrice = (item) => Math.floor((ITEMS[item]?.price ?? 0) / 2);
 // Gifts between housemates: a fixed amount, a few a day, so coins can't be shovelled between accounts.
 export const GIFT_COINS = 10, GIFTS_PER_DAY = 5;
 // Extra rooms: everyone starts with one; ROOM_COST[n] buys room number n + 1.
@@ -588,6 +594,8 @@ export function placeSwaps(room, item, x, y) {
   return canPlace({ ...room, furniture: room.furniture.filter((_, i) => !out.includes(i)) }, item, x, y) ? out : null;
 }
 
-export function focusReward(minutes, withFriends) {
-  return minutes + (withFriends ? Math.ceil(minutes * 0.25) : 0);
+// Studying together: +25% for each housemate focusing at the same time, up to double with four or more.
+export const buddyMultiplier = (buddies) => 1 + 0.25 * Math.min(Number(buddies) || 0, 4);
+export function focusReward(minutes, buddies) {
+  return minutes + Math.ceil(minutes * (buddyMultiplier(buddies) - 1));
 }

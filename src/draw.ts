@@ -383,6 +383,29 @@ export function drawFloor(c: Ctx, x: number, y: number, color: string, tx: numbe
       r(g, 15, 0, 1, T, line);
     } else if (style === 'carpet') {
       for (let i = 0; i < 8; i++) r(g, (i * 5 + v * 3) % 16, (i * 7) % 16, 1, 1, shade(color, i % 2 ? 0.04 : -0.04));
+    } else if (style === 'marble') {
+      // Polished slabs with a soft vein running across.
+      r(g, 0, 0, T, T, shade(color, 0.12));
+      for (let i = 0; i < T; i++) r(g, i, (3 + v * 6 + Math.floor(i / 2)) % T, 1, 1, shade(color, -0.06));
+      r(g, 0, 15, T, 1, shade(color, -0.04));
+      r(g, 15, 0, 1, T, shade(color, -0.04));
+    } else if (style === 'parquet') {
+      // Basket weave: four squares of three slats, alternating direction.
+      for (let q = 0; q < 4; q++) {
+        const qx = (q % 2) * 8, qy = Math.floor(q / 2) * 8, across = (q === 0 || q === 3);
+        r(g, qx, qy, 8, 8, shade(color, q % 3 ? 0.04 : -0.02));
+        for (const k of [2, 5, 7]) across ? r(g, qx, qy + k, 8, 1, line) : r(g, qx + k, qy, 1, 8, line);
+      }
+    } else if (style === 'stone') {
+      // Flagstones of two sizes, with a few speckles.
+      r(g, 0, 7, T, 1, line);
+      r(g, 0, 15, T, 1, line);
+      r(g, v ? 5 : 10, 0, 1, 7, line);
+      r(g, v ? 12 : 3, 8, 1, 7, line);
+      for (const [a, b] of [[2, 2], [8, 4], [13, 10], [6, 12]]) r(g, (a + v * 4) % 16, b, 1, 1, shade(color, (a + b) % 2 ? 0.08 : -0.08));
+    } else if (style === 'checker') {
+      // Bold two-colour squares, a tile each.
+      if ((tx + ty) % 2) r(g, 0, 0, T, T, shade(color, -0.22));
     } else if (style === 'herringbone') {
       // Short planks that alternate direction every half tile.
       const flipped = (tx + ty) % 2 === 1;
@@ -413,8 +436,53 @@ function paintPattern(g: Ctx, paper: string, pattern: string, h: number) {
   else if (pattern === 'hearts') { heart(g, 4, 2, ink); if (h > 12) heart(g, 12, 10, ink); else heart(g, 12, 7, ink); }
   else if (pattern === 'checks') { for (let yy = 0; yy < h; yy += 8) { r(g, 0, yy, 4, Math.min(4, h - yy), light); r(g, 8, yy, 4, Math.min(4, h - yy), light); r(g, 4, yy + 4, 4, Math.min(4, h - yy - 4), light); r(g, 12, yy + 4, 4, Math.min(4, h - yy - 4), light); } }
   else if (pattern === 'stars') {
-    for (const [a, b] of [[4, 4], [12, 10]]) if (b + 1 < h) { r(g, a - 1, b, 3, 1, light); r(g, a, b - 1, 1, 3, light); r(g, a, b, 1, 1, ink); }
+    // Little five-point stars, darker than the paper so they read, with a twinkle between.
+    const star = shade(paper, -0.18);
+    for (const [a, b] of [[4, 5], [11, 9]]) if (b + 2 < h) {
+      r(g, a, b - 2, 1, 1, star); r(g, a - 1, b - 1, 3, 1, star); r(g, a - 2, b, 5, 1, star);
+      r(g, a - 1, b + 1, 3, 1, star); r(g, a - 1, b + 2, 1, 1, star); r(g, a + 1, b + 2, 1, 1, star);
+      r(g, a, b, 1, 1, '#fffaf3');
+    }
+    if (14 < h) r(g, 13, 14, 1, 1, star);
+    r(g, 1, 9, 1, 1, light);
   }
+  else if (pattern === 'flowers') {
+    for (const [a, b] of [[4, 4], [12, 10]]) if (b + 1 < h) {
+      for (const [dx, dy] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) r(g, a + dx, b + dy, 1, 1, shade(paper, -0.16));
+      r(g, a, b, 1, 1, '#fffaf3');
+    }
+  }
+  else if (pattern === 'waves') { for (const yy of [3, 11]) for (let x = 0; x < T; x++) { const b = yy + [0, 1, 2, 1][x % 4]; if (b < h) r(g, x, b, 1, 1, ink); } }
+  else if (pattern === 'diamonds') { for (let yy = 0; yy < h; yy++) for (let x = 0; x < T; x++) if ((x + yy) % 8 === 0 || (x - yy + 16) % 8 === 0) r(g, x, yy, 1, 1, light); }
+  else if (pattern === 'brick') {
+    for (let k = 0; k * 4 < h; k++) {
+      r(g, 0, k * 4 + 3, T, 1, ink);
+      for (const bx of [0, 8]) r(g, (k % 2) * 4 + bx, k * 4, 1, Math.min(3, h - k * 4), ink);
+    }
+  }
+  else if (pattern === 'grid') { for (let yy = 7; yy < h; yy += 8) r(g, 0, yy, T, 1, ink); r(g, 7, 0, 1, h, ink); r(g, 15, 0, 1, h, ink); }
+}
+
+// A 2x2 preview of a floor style or wall pattern in some colour, for Decorate's pickers.
+const tileURLs = new Map<string, string>();
+export function tileURL(kind: 'floor' | 'wall', color: string, style: string) {
+  const key = `${kind}|${color}|${style}`;
+  let url = tileURLs.get(key);
+  if (!url) {
+    const cv = document.createElement('canvas');
+    cv.width = cv.height = 2 * T;
+    const g = cv.getContext('2d')!;
+    for (let y = 0; y < 2; y++) for (let x = 0; x < 2; x++) {
+      if (kind === 'floor') { drawFloor(g, x * T, y * T, color, x, y, style); continue; }
+      g.save();
+      g.translate(x * T, y * T);
+      paintPattern(g, color, style, T);
+      g.restore();
+    }
+    url = cv.toDataURL();
+    tileURLs.set(key, url);
+  }
+  return url;
 }
 
 export function drawWallFace(c: Ctx, x: number, y: number, paper: string, pattern = 'plain') {
@@ -2167,6 +2235,23 @@ const UI_ICONS: Record<string, { rows: string[]; pal: Record<string, string> }> 
       '.oo......oo.',
     ],
     pal: { o: OUT, x: '#e06a5a' },
+  },
+  calendar: {
+    rows: [
+      '..o......o..',
+      'oooooooooooo',
+      'orrrrrrrrrro',
+      'orrrrrrrrrro',
+      'oooooooooooo',
+      'owwwwwwwwwwo',
+      'owkwwkwwkwwo',
+      'owwwwwwwwwwo',
+      'owkwwkwwpwwo',
+      'owwwwwwwwwwo',
+      'oooooooooooo',
+      '............',
+    ],
+    pal: { o: OUT, r: '#e06a5a', w: '#fffaf3', k: '#9db4ee', p: '#f4a6b8' },
   },
   chart: {
     rows: [

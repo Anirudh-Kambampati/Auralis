@@ -217,8 +217,8 @@ button.danger.armed { background: #c43f3f; animation: shake 0.3s; }
 .center { text-align: center; }
 
 .row { display: flex; gap: 8px; flex-wrap: wrap; margin: 8px 0; }
-.row input { flex: 1; min-width: 0; }
-input {
+.row input, .row textarea { flex: 1; min-width: 0; }
+input, textarea {
   font: inherit;
   font-size: 17px;
   color: var(--ink);
@@ -229,7 +229,7 @@ input {
   -webkit-user-select: text;
   user-select: text;
 }
-input:focus { outline: 3px solid var(--gold); outline-offset: 1px; }
+input:focus, textarea:focus { outline: 3px solid var(--gold); outline-offset: 1px; }
 label { display: flex; flex-direction: column; gap: 6px; font-weight: 700; }
 
 .tiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
@@ -432,12 +432,13 @@ body.side-open #side { display: flex; }
   box-shadow: 0 5px 0 var(--ink);
   overflow: hidden;
 }
-.side-card.todos { flex: 1 1 34%; }
-.side-card.mine { flex: 1 1 34%; }
-.side-card.chat { flex: 1 1 32%; }
+.side-card.todos { flex: 1 1 55%; }
+.side-card.chat { flex: 1 1 45%; }
 .side-head { display: flex; align-items: center; gap: 8px; padding: 8px 10px 8px 12px; border-bottom: 3px solid var(--ink); background: #ddd3ef; }
 .side-card.todos .side-head { background: #cfdcf5; }
-.side-card.mine .side-head { background: #d8ebcf; }
+.side-card.todos.personal .side-head { background: #d8ebcf; } /* green while showing my own list */
+#todoScope { flex: none; }
+#todoScope button { padding: 4px 10px; font-size: 14px; }
 .side-head img { width: 24px; height: 24px; }
 .side-head h2 { margin: 0; font-size: 18px; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #chatPeer { flex: 0 1 auto; min-width: 0; max-width: 44%; height: 32px; padding: 0 4px; font: inherit; font-size: 14px; font-weight: 600; color: var(--ink); background: var(--paper); border: 2px solid var(--ink); border-radius: 8px; }
@@ -456,16 +457,18 @@ body.side-open #side { display: flex; }
 }
 /* A folded card keeps its header visible and lets the other card take the space. */
 .side-card.folded { flex: 0 0 auto; }
-/* Needs an id to outrank the #todoList / #myTodoList / #chatLog display rules. */
+/* Needs an id to outrank the #todoList / #chatLog display rules. */
 #side .side-card.folded > :not(.side-head) { display: none; }
 .side-card.folded .side-head { border-bottom: none; cursor: var(--point); }
 .side-card.folded .side-head h2 { color: var(--muted); }
-.side-card form { margin: 0; padding: 8px 10px 10px; border-top: 3px dashed var(--soft); }
+.side-card form { margin: 0; padding: 8px 10px 10px; border-top: 3px dashed var(--soft); align-items: flex-end; }
+/* To-do and chat boxes grow with their text (see fitBox), then scroll. */
+.side-card textarea { resize: none; overflow-y: auto; max-height: 132px; line-height: 1.3; }
 .side-card form button { padding: 8px 12px; }
-#todoList, #myTodoList { list-style: none; margin: 0; padding: 8px 10px; overflow-y: auto; display: grid; gap: 6px; align-content: start; flex: 1; }
-#todoList li, #myTodoList li { display: flex; align-items: center; gap: 8px; padding: 6px 8px; background: #fff; border: 2px solid var(--ink); border-radius: 10px; }
-#todoList li.done .todo-text, #myTodoList li.done .todo-text { text-decoration: line-through; color: var(--muted); }
-#todoList li.empty, #myTodoList li.empty, #chatLog .empty { border: none; background: none; color: var(--muted); font-size: 14px; }
+#todoList { list-style: none; margin: 0; padding: 8px 10px; overflow-y: auto; display: grid; gap: 6px; align-content: start; flex: 1; }
+#todoList li { display: flex; align-items: center; gap: 8px; padding: 6px 8px; background: #fff; border: 2px solid var(--ink); border-radius: 10px; }
+#todoList li.done .todo-text { text-decoration: line-through; color: var(--muted); }
+#todoList li.empty, #chatLog .empty { border: none; background: none; color: var(--muted); font-size: 14px; }
 .todo-text { flex: 1; min-width: 0; overflow-wrap: anywhere; font-weight: 500; }
 .todo-text small { display: block; font-size: 11px; color: var(--muted); }
 .check { width: 26px; height: 26px; padding: 0; flex: none; background: var(--paper); color: var(--ink); box-shadow: 0 2px 0 var(--ink); font-size: 15px; }
@@ -817,3 +820,29 @@ body.signed-out #deck, body.signed-out #game, body.signed-out #zoom { display: n
 #tour p { margin: 0 0 10px; }
 #tour .row { align-items: center; justify-content: flex-end; gap: 8px; }
 #tour small { margin-right: auto; color: var(--muted); }
+
+/* Calendar panel: a month grid, Monday first. */
+.cal-head { display: flex; align-items: center; justify-content: space-between; margin: 10px 0 6px; }
+.cal { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; text-align: center; }
+.cal span { font-size: 12px; color: var(--muted); font-weight: 600; }
+.cal .day { position: relative; padding: 6px 0; min-width: 0; font-size: 14px; background: #fff; color: var(--ink); box-shadow: 0 2px 0 var(--ink); }
+.cal .day.today { background: #fff3d1; }
+.cal .day.on { background: var(--theme, #f6d6e0); outline: 2px solid var(--ink); }
+.cal .day i { position: absolute; left: 50%; bottom: 3px; width: 5px; height: 5px; margin-left: -2.5px; border-radius: 50%; background: #e06a5a; }
+@media (max-width: 380px) { /* eight dock buttons on the narrowest phones */
+  #dock button { width: 36px; height: 36px; }
+  #dock img { width: 24px; height: 24px; }
+  #dock { gap: 4px; }
+}
+
+/* Decorate: wall pattern and floor style buttons with a picture of each. */
+.tile-picks { gap: 6px; }
+.tile-pick { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 4px 4px 2px; min-width: 58px; }
+.tile-pick img { width: 44px; height: 44px; image-rendering: pixelated; border: 2px solid var(--ink); border-radius: 6px; }
+.tile-pick small { font-size: 11px; text-transform: capitalize; }
+.tile-pick.on { outline: 3px solid var(--gold); outline-offset: 1px; }
+
+/* Pomodoro: the break counting down in the HUD, and today's tomatoes. */
+.chip.break { gap: 8px; background: #8fd0a8; color: var(--ink); }
+.chip.break .small { padding: 2px 10px; font-size: 14px; }
+.tomatoes { font-size: 20px; margin: 4px 0 10px; }

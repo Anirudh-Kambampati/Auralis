@@ -1,11 +1,11 @@
 import {
   SHELVES, buildGrid, walkable, canPlace, placeSwaps,roomSize, MAX_ROOMS, ROOM_COST, colorsFor, ITEMS, PETS, PET_ACCS, MAX_PETS, EXPAND_COST, ROOM_SIZES,
   WALLPAPERS, WALL_PATTERNS, FLOORS, FLOOR_STYLES, SKINS, HAIRS, SHIRTS, STYLES, FACES, OUTFITS, FOCUS_LENGTHS,
-  WALL_H, WALL, FLOOR, DOOR, BLOCKED, VOID, footprint, lying, THIRSTY_MS, isPlant, discounted, GIFT_COINS, activeEvents, nextEvent,
+  WALL_H, WALL, FLOOR, DOOR, BLOCKED, VOID, buddyMultiplier, sellPrice, footprint, lying, THIRSTY_MS, isPlant, discounted, GIFT_COINS, activeEvents, nextEvent,
 } from '../shared/game.js';
 import {
   T, OVERHANG, SURFACE, drawSeated, drawActing, drawSeam, drawFloor, drawWall, drawWallFace, drawWallTop, drawDoor, drawWindow, drawPainting, drawFurniture, drawAvatar, drawDeskLamp, drawGlow, drawUsing, skyNow, NIGHT_TINT,
-  coinURL, uiIconURL, drawPaper, paintBlockText, drawWindow as drawWin, drawDroplet, drawHeart, type Look,
+  coinURL, uiIconURL, drawPaper, paintBlockText, drawWindow as drawWin, drawDroplet, drawHeart, tileURL, type Look,
 } from './draw';
 import { drawPet, petPos, petIconURL, seedOf } from './pets';
 import { toggleSound, soundName, chime, ping } from './sounds';
@@ -24,8 +24,9 @@ type Member = {
 };
 type Todo = { id: number; text: string; done: boolean; by: string; all?: boolean; ticks?: string[] }; // all: everyone has to tick it
 type Chat = { id: number; from: string; by: string; text: string; at: number };
+type CalEvent = { id: number; date: string; time?: string; text: string; by?: string }; // date YYYY-MM-DD, time HH:MM
 type Session = { at: number; minutes: number; tag: string };
-type Me = { id: string; home?: string; visited?: { code: string; ownerName: string | null; online: number }[]; banned?: { id: string; name: string }[]; coins: number; discount?: boolean; notes?: { from: string; text: string; at: number }[]; inventory: Record<string, number>; sessions: Session[]; subjects: string[]; hiddenSubjects: string[]; todos: Todo[]; dm: Record<string, Chat[]>; petAccs?: string[] };
+type Me = { id: string; home?: string; visited?: { code: string; ownerName: string | null; online: number }[]; banned?: { id: string; name: string }[]; coins: number; discount?: boolean; notes?: { from: string; text: string; at: number }[]; events?: CalEvent[]; inventory: Record<string, number>; sessions: Session[]; subjects: string[]; hiddenSubjects: string[]; todos: Todo[]; dm: Record<string, Chat[]>; petAccs?: string[] };
 type Board = { scope: string; period: string; rows: { name: string; me: boolean; minutes: number }[] };
 type Avatar = { x: number; y: number; tx: number; ty: number; up: boolean; dist: number; use?: string };
 type ItemKey = keyof typeof ITEMS;
@@ -44,6 +45,7 @@ const apiBase = import.meta.env.VITE_API ?? '';
 
 let members: Member[] = [];
 let todos: Todo[] = [];
+let houseEvents: CalEvent[] = [];
 let chat: Chat[] = [];
 let dmPeer: string | null = null; // null = talking to the whole house
 let houseCode = '';
@@ -121,6 +123,7 @@ function onMessage(m: any) {
     houseOwnerName = m.house.ownerName ?? '';
     members = m.house.members;
     todos = m.house.todos;
+    houseEvents = m.house.events ?? [];
     me = m.me;
     group = m.house.group ?? null;
     if (group && group.by !== myId && group.endsAt !== groupSeen && !myMember()?.focus) {
@@ -193,7 +196,11 @@ function onMessage(m: any) {
       if (missed) toast(`💬 ${missed} new message${missed > 1 ? 's' : ''} while you were focusing.`);
       missed = 0;
       // Pomodoro: a finished session rolls straight into a short break, then nudges you to go again.
-      if (finishedSession) startBreak(5 * 60_000, '☕ Nice work! Take a 5-minute break.');
+      if (finishedSession) { // every fourth session of the day earns a long break
+        const today = me.sessions.filter((s) => isoDay(new Date(s.at)) === isoDay(new Date())).length;
+        if (today % 4 === 0) startBreak(15 * 60_000, `🍅 That's ${today} today! Take a proper 15-minute break.`);
+        else startBreak(5 * 60_000, `☕ Nice work! Take a 5-minute break. (${4 - (today % 4)} more until a long one)`);
+      }
       finishedSession = false;
     }
     renderHud();
@@ -211,7 +218,7 @@ function onMessage(m: any) {
     notify(chime);
     if (!m.text) finishedSession = true; // a focus session paid out
     if (m.text) toast(esc(m.text), 'reward');
-    else toast(`Session complete! +${m.coins} ${coin()}${m.withFriends ? ' (study buddy bonus!)' : ''}`, 'reward');
+    else toast(`Session complete! +${m.coins} ${coin()}${m.buddies ? ` (×${buddyMultiplier(m.buddies)} for studying together!)` : ''}`, 'reward');
   } else if (m.t === 'error') {
     toast(esc(m.text));
   }
@@ -267,11 +274,12 @@ const pingOrHold = () => { if (myMember()?.focus) missed++; else notify(ping); }
 
 // Breaks: lying down in a bed you clicked (5 minutes) or a snack at the fridge (2), ending with a chime.
 const NAP_MS = 5 * 60_000, SNACK_MS = 2 * 60_000;
-let breakTimer = 0;
+let breakTimer = 0, breakEnds = 0; // breakEnds: shown counting down in the HUD
 function endBreak() { clearTimeout(breakTimer); breakTimer = 0; }
 function startBreak(ms: number, text: string) {
   endBreak();
   toast(text);
+  breakEnds = Date.now() + ms;
   breakTimer = window.setTimeout(() => {
     breakTimer = 0;
     chime(); // an alarm you set yourself, so it rings even with notification sounds off
@@ -586,7 +594,7 @@ canvas.addEventListener('pointerdown', (e) => {
     const what = soundName(clicked.item);
     toast(toggleSound(clicked.item) ? `🔊 ${what} on. Click the ${ITEMS[clicked.item as ItemKey].name.toLowerCase()} again to stop.` : `${what} off.`);
   }
-  if (clicked?.item === 'deskCalendar') { if (hit.m.id === myId) setPanel('focus'); else toast(esc(examLabel(hit.m))); return; }
+  if (clicked?.item === 'deskCalendar') { if (hit.m.id === myId) setPanel('calendar'); else toast(esc(examLabel(hit.m))); return; }
   // A housemate's desk: leave them a note. A lamp in my own room: switch it on or off.
   if (clicked && hit.m.id !== myId && (ITEMS[clicked.item as ItemKey] as { table?: boolean }).table) { writeNote(hit.m.id); return; }
   if (clicked && hit.m.id === myId && LIGHTS.has(clicked.item)) {
@@ -655,6 +663,20 @@ canvas.addEventListener('pointerup', () => {
   drag = null;
 });
 
+// Decorate shortcuts for the selected piece: arrows nudge it a tile, R rotates, F flips, Delete puts it away, Esc is done.
+addEventListener('keydown', (e) => {
+  if (openPanel !== 'decorate' || moving === null || (e.target as HTMLElement).closest('input, textarea, select')) return;
+  const f = myRoom()?.furniture[moving];
+  if (!f) return;
+  const step = ({ ArrowUp: [0, -1], ArrowDown: [0, 1], ArrowLeft: [-1, 0], ArrowRight: [1, 0] } as Record<string, number[]>)[e.key];
+  const act = { r: 'rotate', f: 'flip', Delete: 'putaway', Backspace: 'putaway', Escape: 'deselect' }[e.key.length === 1 ? e.key.toLowerCase() : e.key];
+  if (step) {
+    if (canPlace(without(myRoom()!, moving), f.item, f.x + step[0], f.y + step[1], f.rot)) send({ t: 'move', r: editRoom, index: moving, x: f.x + step[0], y: f.y + step[1] });
+  } else if (act) panel.querySelector<HTMLButtonElement>(`button[data-act="${act}"]`)?.click(); // same as pressing the button
+  else return;
+  e.preventDefault();
+  e.stopImmediatePropagation(); // the arrows move the piece, not the avatar
+});
 addEventListener('keydown', (e) => {
   const a = avatars.get(myId);
   const d = ({ ArrowUp: [0, -1], ArrowDown: [0, 1], ArrowLeft: [-1, 0], ArrowRight: [1, 0], w: [0, -1], s: [0, 1], a: [-1, 0], d: [1, 0] } as Record<string, number[]>)[e.key];
@@ -1034,6 +1056,7 @@ const fmt = (ms: number) => {
 // ---------- UI ----------
 const THEMES: Record<string, { title: string; icon: string; color: string }> = {
   focus: { title: 'Focus', icon: 'clock', color: '#cfdcf5' },
+  calendar: { title: 'Calendar', icon: 'calendar', color: '#f6d6e0' },
   decorate: { title: 'Decorate', icon: 'chair', color: '#d3e8d6' },
   shop: { title: 'Shop', icon: 'bag', color: '#f6e3b4' },
   avatar: { title: 'You', icon: 'face', color: '#f3d3dc' },
@@ -1068,6 +1091,8 @@ function renderHud() {
 // While focusing, the focus deck replaces the dock until the player switches to room view.
 let deckHidden = false;
 function tickTimers() {
+  $('#breakChip').hidden = !breakTimer;
+  if (breakTimer) $('#breakTime').textContent = `☕ Break ${fmt(breakEnds - Date.now())}`;
   const f = myMember()?.focus;
   const showDeck = !!f && !deckHidden;
   $('#focusChip').hidden = !f || showDeck;
@@ -1083,7 +1108,9 @@ function tickTimers() {
   $('#deckFill').style.width = `calc(${progress(f)}% - 6px)`;
   $('#deckMarker').style.left = `${progress(f)}%`;
   const buddies = members.filter((m) => m.id !== myId && m.focus).length;
-  $('#deckNote').innerHTML = `Earning ${f.minutes} ${coin()}${buddies ? ` · ✨ ${buddies} studying with you` : ''}`;
+  $('#deckNote').innerHTML = buddies
+    ? `Earning ${Math.ceil(f.minutes * buddyMultiplier(buddies))} ${coin()} · ✨ ×${buddyMultiplier(buddies)} with ${buddies} studying`
+    : `Earning ${f.minutes} ${coin()}`;
   const pt = panel.querySelector('#ptimer'), pb = panel.querySelector<HTMLElement>('#pbar');
   if (pt) pt.textContent = left;
   if (pb) pb.style.width = `${progress(f)}%`;
@@ -1101,6 +1128,7 @@ function armGiveUp(b: HTMLButtonElement, label: string) {
 $<HTMLButtonElement>('#giveUp').addEventListener('click', (e) => armGiveUp(e.currentTarget as HTMLButtonElement, 'Give up'));
 $('#hideDeck').addEventListener('click', () => { deckHidden = true; tickTimers(); });
 $('#focusChip').addEventListener('click', () => { deckHidden = false; tickTimers(); });
+$('#skipBreak').addEventListener('click', () => { endBreak(); tickTimers(); setPanel('focus'); });
 $<HTMLImageElement>('#deckMarker').src = coinSrc;
 
 let toastTimer = 0;
@@ -1147,6 +1175,20 @@ function avatarPreview(look: Look) {
 const swatches = (act: string, list: string[], current: string | number | undefined, byIndex = false) =>
   `<div class="swatches">${list.map((c, i) => `<button class="swatch${(byIndex ? i : c) === current ? ' on' : ''}" style="background:${c}" data-act="${act}" data-v="${byIndex ? i : c}" aria-label="${c}"></button>`).join('')}</div>`;
 
+// Wall pattern and floor style buttons show what they look like, in the room's own colour.
+const tilePicker = (act: string, list: string[], current: string, kind: 'floor' | 'wall', color: string) =>
+  `<div class="row tile-picks">${list.map((v) => `<button class="tile-pick ${v === current ? 'on' : 'off'}" data-act="${act}" data-v="${v}" aria-label="${v}" aria-pressed="${v === current}">
+    <img src="${tileURL(kind, color, v)}" alt=""><small>${v}</small></button>`).join('')}</div>`;
+let storeShelf = 'all'; // Decorate's storage, filtered to one shop shelf
+// Focus panel extras: today's finished sessions as tomatoes, and one tap to go again with the last length and subject.
+function tomatoes() {
+  const n = me.sessions.filter((s) => isoDay(new Date(s.at)) === isoDay(new Date())).length;
+  return n ? `<p class="center tomatoes" title="Sessions finished today">${'🍅'.repeat(Math.min(n, 12))}${n > 12 ? ` ×${n}` : ''} <small class="hint">${n} today · long break every 4</small></p>` : '';
+}
+function againButton() {
+  const len = Number(localStorage.getItem('auralis.length'));
+  return FOCUS_LENGTHS.includes(len) ? `<div class="center"><button data-act="focus" data-v="${len}">▶ Again: ${len} min${lastTag ? ` of ${esc(lastTag)}` : ''}</button></div>` : '';
+}
 const choices = (act: string, list: string[], current?: string) =>
   `<div class="row">${list.map((v) => `<button class="${v === current ? 'on' : 'off'}" data-act="${act}" data-v="${v}">${v}</button>`).join('')}</div>`;
 
@@ -1230,13 +1272,19 @@ function decorateBody(mine: Member) {
         `<button class="${(sel.s ?? 0) === k ? 'on' : 'off'}" data-act="shape" data-v="${k}">${icon(sel.item, 'chip-icon', k)}${name}</button>`).join('')}</div>` : ''}
       ${palette.length ? `<h3>Colour</h3>${swatches('recolor', palette, sel.v ?? -1, true)}` : ''}` : '';
   const hint = placing ? `Tap a spot in your room to place the <b>${ITEMS[placing].name}</b>.`
-    : sel ? 'Drag it, or tap a new spot to move it there.' : 'Drag any furniture to move it, or tap it for more options.';
+    : sel ? 'Drag it, or tap a new spot to move it there. Keys: arrows move · R rotate · F flip · Delete put away · Esc done.'
+    : 'Drag any furniture to move it, or tap it for more options.';
+  const shelves = SHELVES.filter((sh) => inv.some(([k]) => (ITEMS[k as ItemKey] as { shelf?: string }).shelf === sh.id));
+  if (!shelves.some((sh) => sh.id === storeShelf)) storeShelf = 'all';
+  const shown = storeShelf === 'all' ? inv : inv.filter(([k]) => (ITEMS[k as ItemKey] as { shelf?: string }).shelf === storeShelf);
+  const filter = shelves.length > 1 ? `<div class="row chips">${[{ id: 'all', label: `All (${inv.length})` }, ...shelves].map((sh) =>
+    `<button class="small-chip ${storeShelf === sh.id ? 'on' : 'off'}" data-act="storeShelf" data-v="${sh.id}">${sh.label}</button>`).join('')}</div>` : '';
   return `${roomPicker(mine)}${selBar}<p class="hint">${hint}</p>
-    ${inv.length ? `<h3>Storage</h3><div class="grid">${inv.map(([k, n]) => `<div class="card${placing === k ? ' on' : ''}"><b>${ITEMS[k as ItemKey].name} ×${n}</b>${icon(k)}<button data-act="place" data-v="${k}">Place</button></div>`).join('')}</div>` : '<p class="hint">Storage is empty. Visit the Shop!</p>'}
+    ${inv.length ? `<h3>Storage</h3>${filter}<div class="grid">${shown.map(([k, n]) => `<div class="card${placing === k ? ' on' : ''}"><b>${ITEMS[k as ItemKey].name} ×${n}</b>${icon(k)}<button data-act="place" data-v="${k}">Place</button>${sellPrice(k) ? `<button class="off small" data-act="sell" data-v="${k}">Sell ${coin()} ${sellPrice(k)}</button>` : ''}</div>`).join('')}</div>` : '<p class="hint">Storage is empty. Visit the Shop!</p>'}
     <h3>Wallpaper</h3>${swatches('wallpaper', WALLPAPERS, myRoom()!.wallpaper)}
-    <h3>Pattern</h3>${choices('pattern', WALL_PATTERNS, myRoom()!.pattern ?? 'plain')}
+    <h3>Pattern</h3>${tilePicker('pattern', WALL_PATTERNS, myRoom()!.pattern ?? 'plain', 'wall', myRoom()!.wallpaper)}
     <h3>Floor</h3>${swatches('floor', FLOORS, myRoom()!.floor)}
-    <h3>Floor style</h3>${choices('floorStyle', FLOOR_STYLES, myRoom()!.floorStyle ?? 'planks')}
+    <h3>Floor style</h3>${tilePicker('floorStyle', FLOOR_STYLES, myRoom()!.floorStyle ?? 'planks', 'floor', myRoom()!.floor)}
     <p class="hint">Want more space? Get a bigger room in the Shop.</p>
     <h3>Snapshots</h3>
     <button class="off" data-act="snapshot">📸 Save a picture of my room</button>
@@ -1294,17 +1342,18 @@ function subjectChips() {
 
 function panelBody(mine: Member) {
   if (openPanel === 'stats') return statsBody();
+  if (openPanel === 'calendar') return calendarBody();
   if (openPanel === 'focus') {
     const f = mine.focus;
     const others = members.filter((m) => m.id !== myId && m.focus);
-    const together = others.length ? `<p class="center">Studying with you: <b>${others.map((m) => esc(m.name)).join(', ')}</b> ✨ +25%</p>` : '';
+    const together = others.length ? `<p class="center">Studying with you: <b>${others.map((m) => esc(m.name)).join(', ')}</b> ✨ ×${buddyMultiplier(others.length)} coins</p>` : '';
     return (f
       ? `<p class="hint center">Studying at your desk…</p>
          <p class="big" id="ptimer">${fmt(f.endsAt - Date.now())}</p>
          <div class="bar panel-bar"><i id="pbar" style="width:${progress(f)}%"></i></div>
          <p class="center">Finish to earn <b>${f.minutes}</b> ${coin()}</p>${together}
          <div class="center"><button class="danger" data-act="cancel">Give up</button></div>`
-      : `${group && group.by !== myId ? `<div class="invite">📚 <b>${esc(group.byName)}</b> is studying <b>${esc(group.tag)}</b>, ${fmt(group.endsAt - Date.now())} left.
+      : `${tomatoes()}${againButton()}${group && group.by !== myId ? `<div class="invite">📚 <b>${esc(group.byName)}</b> is studying <b>${esc(group.tag)}</b>, ${fmt(group.endsAt - Date.now())} left.
            <button data-act="joingroup">Join them</button></div>` : ''}
          <h3>What are you studying?</h3>
          <div class="row"><input id="tag" maxlength="24" placeholder="Study" value="${esc(lastTag)}" aria-label="Subject">
@@ -1313,7 +1362,7 @@ function panelBody(mine: Member) {
          <h3>How long?</h3>
          <div class="tiles">${FOCUS_LENGTHS.map((n) => `<button class="tile" data-act="focus" data-v="${n}"><b>${n}</b><small>min</small><span class="reward">+${n} ${coin()}</span></button>`).join('')}</div>
          ${members.length > 1 ? '<label class="center invite-check"><input type="checkbox" id="groupInvite"> Invite housemates to join this session</label>' : ''}
-         <p class="hint center">You'll walk to your desk and study until the timer ends. Study at the same time as a housemate for +25% coins.</p>${together}`) + examsHTML(mine);
+         <p class="hint center">You'll walk to your desk and study until the timer ends. Study at the same time as housemates for +25% coins each, up to ×2.</p>${together}`) + examsHTML(mine);
   }
   if (openPanel === 'shop') return shopBody(mine);
   if (openPanel === 'decorate') return decorateBody(mine);
@@ -1387,6 +1436,8 @@ panel.addEventListener('click', (e) => {
     case 'focus': {
       lastTag = panel.querySelector<HTMLInputElement>('#tag')?.value.trim() ?? '';
       localStorage.setItem('auralis.tag', lastTag);
+      localStorage.setItem('auralis.length', v);
+      endBreak();
       send({ t: 'focus_start', minutes: Number(v), tag: lastTag || 'Study', group: !!panel.querySelector<HTMLInputElement>('#groupInvite')?.checked });
       setPanel(null);
       break;
@@ -1429,6 +1480,17 @@ panel.addEventListener('click', (e) => {
     case 'deselect': moving = null; renderPanel(); break;
     case 'flip': if (moving !== null) send({ t: 'flip', r: editRoom, index: moving }); break;
     case 'rotate': if (moving !== null) send({ t: 'turn', r: editRoom, index: moving }); break;
+    case 'storeShelf': storeShelf = v; renderPanel(); break;
+    case 'sell': // two taps, so nothing gets sold by a stray click
+      if (!b.classList.contains('armed')) {
+        b.classList.add('armed');
+        b.textContent = `Tap to sell for ${sellPrice(v)}`;
+        setTimeout(() => { if (b.isConnected) renderPanel(); }, 3000);
+      } else {
+        send({ t: 'sell', item: v });
+        toast(`Sold the <b>${ITEMS[v as ItemKey].name}</b> for ${sellPrice(v)} ${coin()}.`);
+      }
+      break;
     case 'recolor': if (moving !== null) send({ t: 'restyle', r: editRoom, index: moving, v: Number(v) }); break;
     case 'shape': if (moving !== null) send({ t: 'shape', r: editRoom, index: moving, s: Number(v) }); break;
     case 'wallpaper': case 'floor': case 'pattern': case 'floorStyle':
@@ -1473,6 +1535,15 @@ panel.addEventListener('click', (e) => {
       break;
     }
     case 'examdel': send({ t: 'exam_del', index: Number(v) }); break;
+    case 'calScope': calScope = v; renderPanel(); break;
+    case 'calMonth': calMonth = new Date(calMonth.getFullYear(), calMonth.getMonth() + Number(v), 1); renderPanel(); break;
+    case 'calDay': calDay = v; renderPanel(); break;
+    case 'caladd': {
+      const text = panel.querySelector<HTMLInputElement>('#calText')!.value.trim(), time = panel.querySelector<HTMLInputElement>('#calTime')!.value;
+      if (text) send({ t: 'event_add', scope: calScope, date: calDay, time, text });
+      break;
+    }
+    case 'caldel': send({ t: 'event_del', scope: calScope, id: Number(v) }); break;
     case 'snapshot': saveSnapshot(); break;
   }
 });
@@ -1560,13 +1631,44 @@ function examsHTML(mine: Member) {
     <p class="hint">A desk calendar (Shop → Decor) shows your next exam to housemates.</p>`;
 }
 
+// ---------- calendar: the house's shared one, or my own (with my exams in it) ----------
+const isoDay = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+let calScope = 'house';
+let calMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+let calDay = isoDay(new Date());
+function calendarBody() {
+  const list: CalEvent[] = calScope === 'house' ? houseEvents
+    : [...(me.events ?? []), ...(myMember()?.exams ?? []).map((x, i) => ({ id: -1 - i, date: x.date, text: `📝 ${x.subject} exam` }))];
+  const y = calMonth.getFullYear(), mo = calMonth.getMonth(), today = isoDay(new Date());
+  const blanks = (new Date(y, mo, 1).getDay() + 6) % 7; // weeks start on Monday
+  const busy = new Set(list.map((e) => e.date));
+  const cells = Array.from({ length: new Date(y, mo + 1, 0).getDate() }, (_, k) => {
+    const d = isoDay(new Date(y, mo, k + 1));
+    return `<button class="day${d === calDay ? ' on' : ''}${d === today ? ' today' : ''}" data-act="calDay" data-v="${d}" aria-label="${d}${busy.has(d) ? ', has plans' : ''}">${k + 1}${busy.has(d) ? '<i></i>' : ''}</button>`;
+  });
+  const day = list.filter((e) => e.date === calDay).sort((a, b) => (a.time ?? '').localeCompare(b.time ?? ''));
+  const label = new Date(`${calDay}T00:00:00`).toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' });
+  return `<div class="seg small">${[['house', '🏠 House'], ['me', '👤 Mine']].map(([k, l]) =>
+      `<button class="${calScope === k ? 'on' : 'off'}" data-act="calScope" data-v="${k}">${l}</button>`).join('')}</div>
+    <p class="hint">${calScope === 'house' ? 'Everyone in the house sees and can add to this calendar.' : 'Only you can see this one. Your exams show up here too.'}</p>
+    <div class="cal-head"><button class="off small" data-act="calMonth" data-v="-1" aria-label="Previous month">‹</button>
+      <b>${calMonth.toLocaleDateString(undefined, { month: 'long', year: 'numeric' })}</b>
+      <button class="off small" data-act="calMonth" data-v="1" aria-label="Next month">›</button></div>
+    <div class="cal">${['M', 'T', 'W', 'T', 'F', 'S', 'S'].map((d) => `<span>${d}</span>`).join('')}${'<span></span>'.repeat(blanks)}${cells.join('')}</div>
+    <h3>${label}</h3>
+    ${day.length ? `<ul class="members">${day.map((e) => `<li><span class="who">${e.time ? `<b>${e.time}</b> ` : ''}${esc(e.text)}${calScope === 'house' && e.by ? ` <small class="hint">${esc(e.by)}</small>` : ''}</span>
+      ${e.id >= 0 ? `<button class="off small" data-act="caldel" data-v="${e.id}" aria-label="Delete ${esc(e.text)}">✕</button>` : ''}</li>`).join('')}</ul>` : '<p class="hint">Nothing planned.</p>'}
+    <div class="row"><input id="calText" maxlength="60" placeholder="${calScope === 'house' ? 'Group study at the library' : 'Dentist'}" aria-label="What's happening">
+      <input id="calTime" type="time" aria-label="Time (optional)"><button data-act="caladd">Add</button></div>`;
+}
+
 // ---------- first visit: a short tour ----------
 const TOUR = [
   '👋 Welcome to Auralis! This is your room. Your little buddy wanders around and uses things on their own.',
   '🖱️ Click furniture to use it: sit, nap, work out, water plants, play music… Hover (or tap) to see what a click does.',
   '⏰ Open <b>Focus</b> in the dock to study. Your buddy sits at the desk and you earn a coin a minute.',
   '🛍️ Spend coins in the <b>Shop</b>, then arrange your room in <b>Decorate</b>.',
-  "🏠 Share your house code (top right) so friends' rooms join yours. Study at the same time for +25% coins!",
+  "🏠 Share your house code (top right) so friends' rooms join yours. Study at the same time for up to ×2 coins!",
 ];
 function welcome() {
   if (localStorage.getItem('auralis.tour')) return;
@@ -1671,7 +1773,7 @@ function syncChatPeer() {
   const sig = others.map((m) => `${m.id}:${m.name}:${dmUnread[m.id] ?? 0}:${dmPeer === m.id ? 1 : 0}`).join('|');
   if (sel.dataset.sig !== sig) {
     sel.dataset.sig = sig;
-    sel.innerHTML = ['<option value="">Everyone in the house</option>']
+    sel.innerHTML = ['<option value="">Everyone</option>']
       .concat(others.map((m) => `<option value="${m.id}"${dmPeer === m.id ? ' selected' : ''}>${esc(m.name)}${dmUnread[m.id] ? ` (${dmUnread[m.id]})` : ''}</option>`))
       .join('');
   }
@@ -1679,8 +1781,8 @@ function syncChatPeer() {
 }
 
 function renderSide() {
-  $('#todoList').innerHTML = todoHTML(todos, 'Nothing yet. Add something to study!');
-  $('#myTodoList').innerHTML = todoHTML(me.todos ?? [], 'Just for you — nobody else can see this.');
+  $('#todoList').innerHTML = todoScope === 'house' ? todoHTML(todos, 'Nothing yet. Add something to study!')
+    : todoHTML(me.todos ?? [], 'Just for you — nobody else can see this.');
   syncChatPeer();
   const log = $('#chatLog');
   const msgs = dmPeer ? me.dm?.[dmPeer] ?? [] : chat;
@@ -1691,38 +1793,53 @@ function renderSide() {
     : dmPeer
       ? `<p class="empty">Just you and ${esc(peerName)} — nobody else can see this.</p>`
       : '<p class="empty">Say hi to your housemates 👋</p>';
-  $<HTMLInputElement>('#chatInput').placeholder = dmPeer ? `Message ${peerName}…` : 'Say something…';
+  $<HTMLTextAreaElement>('#chatInput').placeholder = dmPeer ? `Message ${peerName}…` : 'Say something…';
   if (dmPeer) dmUnread[dmPeer] = 0;
   if (atBottom) scrollChat();
 }
 const scrollChat = () => { const log = $('#chatLog'); log.scrollTop = log.scrollHeight; };
 
-function wireTodos(list: string, form: string, input: string, kinds: { add: string; toggle: string; del: string }, extra = () => ({})) {
-  $(list).addEventListener('click', (e) => {
-    const b = (e.target as HTMLElement).closest<HTMLButtonElement>('button[data-todo]');
-    if (b) send({ t: b.dataset.todo === 'toggle' ? kinds.toggle : kinds.del, id: Number(b.dataset.id) });
+// One to-do card, switched between the house's list and my private one.
+let todoScope = localStorage.getItem('auralis.todoScope') === 'me' ? 'me' : 'house';
+const todoKinds = () => (todoScope === 'house' ? { add: 'todo_add', toggle: 'todo_toggle', del: 'todo_del' } : { add: 'ptodo_add', toggle: 'ptodo_toggle', del: 'ptodo_del' });
+function setTodoScope(scope: string) {
+  todoScope = scope;
+  localStorage.setItem('auralis.todoScope', scope);
+  $('#todoScope').querySelectorAll<HTMLButtonElement>('button').forEach((b) => {
+    b.className = b.dataset.scope === scope ? 'on' : 'off';
+    b.setAttribute('aria-pressed', String(b.dataset.scope === scope));
   });
-  $(form).addEventListener('submit', (e) => {
-    e.preventDefault();
-    const el = $<HTMLInputElement>(input);
-    if (el.value.trim()) send({ t: kinds.add, text: el.value, ...extra() });
-    el.value = '';
-  });
+  sideCard.todos.classList.toggle('personal', scope === 'me');
+  todoAll.hidden = scope === 'me'; // "everyone ticks it" only makes sense for the house
+  $<HTMLTextAreaElement>('#todoInput').placeholder = scope === 'me' ? 'Add a private to-do…' : todoAll.getAttribute('aria-pressed') === 'true' ? 'Everyone ticks this…' : 'Add a to-do…';
+  renderSide();
 }
+$('#todoScope').addEventListener('click', (e) => {
+  const b = (e.target as HTMLElement).closest<HTMLButtonElement>('button[data-scope]');
+  if (b) setTodoScope(b.dataset.scope!);
+});
+$('#todoList').addEventListener('click', (e) => {
+  const b = (e.target as HTMLElement).closest<HTMLButtonElement>('button[data-todo]');
+  if (b) send({ t: b.dataset.todo === 'toggle' ? todoKinds().toggle : todoKinds().del, id: Number(b.dataset.id) });
+});
+$('#todoForm').addEventListener('submit', (e) => {
+  e.preventDefault();
+  const el = $<HTMLTextAreaElement>('#todoInput');
+  if (el.value.trim()) send({ t: todoKinds().add, text: el.value, ...(todoScope === 'house' ? { all: todoAll.getAttribute('aria-pressed') === 'true' } : {}) });
+  el.value = '';
+});
 // The 👥 button makes the next house to-do one that everyone has to tick.
 const todoAll = $<HTMLButtonElement>('#todoAll');
 todoAll.addEventListener('click', () => {
   const on = todoAll.getAttribute('aria-pressed') !== 'true';
   todoAll.setAttribute('aria-pressed', String(on));
   todoAll.className = on ? 'on' : 'off';
-  $<HTMLInputElement>('#todoInput').placeholder = on ? 'Everyone ticks this…' : 'Add a to-do…';
+  $<HTMLTextAreaElement>('#todoInput').placeholder = on ? 'Everyone ticks this…' : 'Add a to-do…';
 });
-wireTodos('#todoList', '#todoForm', '#todoInput', { add: 'todo_add', toggle: 'todo_toggle', del: 'todo_del' },
-  () => ({ all: todoAll.getAttribute('aria-pressed') === 'true' }));
-wireTodos('#myTodoList', '#myTodoForm', '#myTodoInput', { add: 'ptodo_add', toggle: 'ptodo_toggle', del: 'ptodo_del' });
+
 $('#chatForm').addEventListener('submit', (e) => {
   e.preventDefault();
-  const input = $<HTMLInputElement>('#chatInput');
+  const input = $<HTMLTextAreaElement>('#chatInput');
   const watch = /^\/watch\b\s*(.*)$/i.exec(input.value.trim());
   if (watch) { // easter egg: /watch <link> starts a watch party for the house, /watch stop ends it
     const url = watch[1];
@@ -1734,6 +1851,15 @@ $('#chatForm').addEventListener('submit', (e) => {
   if (input.value.trim()) send(dmPeer ? { t: 'dm', to: dmPeer, text: input.value } : { t: 'chat', text: input.value });
   input.value = '';
 });
+// The to-do and chat boxes grow with what's typed (CSS caps them at a few lines). Enter still sends: messages are one line.
+for (const box of [$<HTMLTextAreaElement>('#todoInput'), $<HTMLTextAreaElement>('#chatInput')]) {
+  const fit = () => { box.style.height = 'auto'; box.style.height = `${box.scrollHeight + 6}px`; }; // + its borders
+  box.addEventListener('input', fit);
+  box.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); box.form!.requestSubmit(); }
+  });
+  box.form!.addEventListener('submit', () => requestAnimationFrame(fit)); // shrink back once it's been cleared
+}
 $('#chatPeer').addEventListener('change', () => {
   dmPeer = $<HTMLSelectElement>('#chatPeer').value || null;
   if (dmPeer) dmUnread[dmPeer] = 0;
@@ -1745,17 +1871,17 @@ $('#closeSide').addEventListener('click', () => setPanel(null));
 $<HTMLImageElement>('#todoIcon').src = uiIconURL('clock');
 
 // Each side card folds down to its header, and remembers that between visits.
-type SideCard = 'todos' | 'personal' | 'chat';
+type SideCard = 'todos' | 'chat';
 const folds = (() => {
   try { return JSON.parse(localStorage.getItem('auralis.folds') ?? '{}') as Record<SideCard, boolean>; }
   catch { return {} as Record<SideCard, boolean>; }
 })();
 const sideCard: Record<SideCard, HTMLElement> = {
   todos: document.querySelector('.side-card.todos')!,
-  personal: document.querySelector('.side-card.mine')!,
+
   chat: document.querySelector('.side-card.chat')!,
 };
-const sideLabel: Record<SideCard, string> = { todos: 'house to-dos', personal: 'my to-dos', chat: 'chat' };
+const sideLabel: Record<SideCard, string> = { todos: 'to-dos', chat: 'chat' };
 
 function applyFold(card: SideCard) {
   const folded = !!folds[card];
@@ -1781,7 +1907,7 @@ function openSide(card: SideCard, input: string, text = '') {
 }
 // Group chat you can't see right now: worth a ping.
 const chatHidden = () => document.hidden || !!folds.chat || (innerWidth < 900 && !document.body.classList.contains('side-open'));
-for (const card of ['todos', 'personal', 'chat'] as SideCard[]) {
+for (const card of ['todos', 'chat'] as SideCard[]) {
   applyFold(card);
   $(`#fold-${card}`).addEventListener('click', () => toggleFold(card));
   // A folded card also opens when you tap anywhere on its header.
@@ -1789,6 +1915,7 @@ for (const card of ['todos', 'personal', 'chat'] as SideCard[]) {
     if (folds[card] && !(e.target as HTMLElement).closest('button')) toggleFold(card);
   });
 }
+setTodoScope(todoScope); // the list picked last time
 // Landing on a new chat message should not stay hidden behind a folded card.
 function noteUnreadChat() {
   if (folds.chat) $('#fold-chat').classList.add('dot');

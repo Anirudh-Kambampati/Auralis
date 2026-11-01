@@ -10,7 +10,7 @@ import { files, isPng } from './files.js';
 import {
   ITEMS, WALLPAPERS, FLOORS, SKINS, HAIRS, SHIRTS, STYLES, FACES, OUTFITS, FOCUS_LENGTHS, canPlace, placeSwaps, focusReward,
   WALL_PATTERNS, FLOOR_STYLES, PETS, MAX_PETS, EXPAND_COST, colorsFor, USES, PET_ACCS, MAX_ROOMS, ROOM_COST,
-  isPlant, TASK_COINS, TASK_REWARDS_PER_DAY, discounted, GIFT_COINS, GIFTS_PER_DAY, nextRot,
+  isPlant, TASK_COINS, TASK_REWARDS_PER_DAY, discounted, GIFT_COINS, GIFTS_PER_DAY, nextRot, sellPrice,
 } from '../shared/game.js';
 import { parseVideo } from '../shared/watch.js';
 
@@ -48,6 +48,7 @@ const lastChat = new Map(); // playerId -> ms, simple flood guard
 const watches = new Map();
 const lastDm = new Map(); // playerId -> ms, same guard for private messages
 const lastCheer = new Map(); // playerId -> ms, so cheers can't be spammed
+const MAX_EVENTS = 100; // per calendar; the earliest dates drop off first
 let nextId = Date.now();
 
 const newCode = () => {
@@ -158,12 +159,13 @@ function broadcastHouse(code) {
   const house = {
     code, owner: h.owner ?? null, ownerName: db.players[h.owner]?.name ?? null,
     members: h.members.map((id) => publicPlayer(db.players[id])), todos: h.todos ?? [], chat: h.chat ?? [],
-    group: h.group?.endsAt > Date.now() ? h.group : null, // a group focus session housemates can still join watch: w ? { ...w, now: Date.now() } : null,
+    group: h.group?.endsAt > Date.now() ? h.group : null, // a group focus session housemates can still join
+    events: h.events ?? [], watch: w ? { ...w, now: Date.now() } : null,
   };
   for (const id of h.members) {
     const p = db.players[id];
     // Personal to-dos ride along in `me`, which only this player receives.
-    send(sockets.get(id), { t: 'state', house, me: { id: p.id, home: p.home, ...houseLists(p), coins: p.coins, discount: !!p.discount, notes: p.notes ?? [], inventory: p.inventory, petAccs: p.petAccs ?? [], sessions: p.sessions ?? [], subjects: p.subjects ?? [], hiddenSubjects: p.hiddenSubjects ?? [], todos: p.todos ?? [], dm: p.dm ?? {} } });
+    send(sockets.get(id), { t: 'state', house, me: { id: p.id, home: p.home, ...houseLists(p), coins: p.coins, discount: !!p.discount, notes: p.notes ?? [], events: p.events ?? [], inventory: p.inventory, petAccs: p.petAccs ?? [], sessions: p.sessions ?? [], subjects: p.subjects ?? [], hiddenSubjects: p.hiddenSubjects ?? [], todos: p.todos ?? [], dm: p.dm ?? {} } });
   }
 }
 
@@ -286,11 +288,12 @@ function handle(p, m) {
     case 'focus_done': {
       if (!p.focus || Date.now() < p.focus.endsAt - 2000) return;
       const now = Date.now();
-      const withFriends = db.houses[p.house].members.some((id) => {
+      // Housemates studying now, or who finished in the last two minutes (so whoever ends first isn't counted out).
+      const buddies = db.houses[p.house].members.filter((id) => {
         const o = db.players[id];
         return id !== p.id && (o.focus || now - (o.lastDoneAt ?? 0) < 120_000);
-      });
-      const reward = focusReward(p.focus.minutes, withFriends);
+      }).length;
+      const reward = focusReward(p.focus.minutes, buddies);
       p.coins += reward;
       p.totalMinutes += p.focus.minutes;
       p.lastDoneAt = now;
@@ -298,7 +301,7 @@ function handle(p, m) {
       p.sessions.push({ at: now, minutes: p.focus.minutes, tag: p.focus.tag ?? 'Study' });
       if (p.sessions.length > 3000) p.sessions.splice(0, p.sessions.length - 3000);
       p.focus = null;
-      send(sockets.get(p.id), { t: 'reward', coins: reward, withFriends });
+      send(sockets.get(p.id), { t: 'reward', coins: reward, buddies });
       break;
     }
     case 'buy': {
@@ -309,6 +312,13 @@ function handle(p, m) {
       p.coins -= price;
       p.discount = false;
       p.inventory[m.item] = (p.inventory[m.item] ?? 0) + 1;
+      break;
+    }
+    case 'sell': { // from storage only: placed pieces have to be put away first
+      const gain = sellPrice(m.item);
+      if (!(p.inventory[m.item] > 0) || gain < 1) return;
+      p.inventory[m.item]--;
+      p.coins += gain;
       break;
     }
     case 'place': {
@@ -380,6 +390,22 @@ function handle(p, m) {
     case 'exam_del':
       p.exams = (p.exams ?? []).filter((_, i) => i !== m.index);
       break;
+    // Calendars: one shared by the house, and a private one each. scope 'house' or anything else for your own.
+    case 'event_add': {
+      const h = db.houses[p.house], text = cleanText(m.text, 60);
+      if (!text || !/^\d{4}-\d{2}-\d{2}$/.test(m.date ?? '') || (m.time && !/^\d{2}:\d{2}$/.test(m.time))) return;
+      const ev = { id: nextId++, date: m.date, time: m.time || undefined, text, by: p.name };
+      const add = (list) => [...(list ?? []), ev].sort((a, b) => `${a.date}${a.time ?? ''}`.localeCompare(`${b.date}${b.time ?? ''}`)).slice(-MAX_EVENTS);
+      if (m.scope === 'house') h.events = add(h.events);
+      else p.events = add(p.events);
+      break;
+    }
+    case 'event_del': {
+      const h = db.houses[p.house];
+      if (m.scope === 'house') h.events = (h.events ?? []).filter((e) => e.id !== m.id);
+      else p.events = (p.events ?? []).filter((e) => e.id !== m.id);
+      break;
+    }
     case 'notes_read':
       p.notes = [];
       break;
