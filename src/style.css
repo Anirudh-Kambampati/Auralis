@@ -379,9 +379,9 @@ label { display: flex; flex-direction: column; gap: 6px; font-weight: 700; }
   }
 }
 
-.selected { display: flex; align-items: center; gap: 10px; padding: 8px 10px; margin-bottom: 8px; background: #fff3d1; border: 3px solid var(--ink); border-radius: 12px; }
+.selected { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; padding: 8px 10px; margin-bottom: 8px; background: #fff3d1; border: 3px solid var(--ink); border-radius: 12px; }
 .selected .icon { height: 40px; }
-.selected b { flex: 1; }
+.selected b { flex: 1 1 120px; min-width: 0; } /* the name takes the first line; buttons wrap below when the panel is narrow */
 
 /* ---------- shop: category tabs + shelf ---------- */
 .shop { display: flex; flex-direction: column; gap: 12px; }

@@ -2056,13 +2056,27 @@ function drawTurned(c: Ctx, draw: Draw, item: string, x: number, y: number, t: n
     c.scale(-1, 1);
     c.drawImage(spare, x, y - up);
   } else {
+    // Sideways, upright like everything else in the room: the front squeezed into the narrow end on the front tile,
+    // and its top surface running back over the extra depth.
     if (rot === 3) { c.translate(x * 2 + fw, 0); c.scale(-1, 1); }
-    const D = (w - h) * T; // how far the far end sits back
-    const sw = Math.max(fw, Math.ceil(W / 2)); // long sofas get a wider face than their one tile, or they'd be a sliver
-    for (let dx = 0; dx < sw; dx++) {
-      const u = Math.floor(((dx + 0.5) * W) / sw);
-      c.drawImage(spare, u, 0, 1, H, x + dx, y + D - Math.round((dx * D) / sw) - up, 1, H);
+    const D = (w - h) * T, top = y + w * T - H; // extra depth; where the squeezed picture's top sits
+    const px = g.getImageData(0, 0, W, H).data;
+    const filled = (r: number) => { for (let i = 0; i < W; i++) if (px[(r * W + i) * 4 + 3]) return true; return false; };
+    let row = 0; // the picture's top edge: its first row with anything in it
+    while (row < H - 3 && !filled(row)) row++;
+    // The top's colour: the piece's most common colour, leaving out outlines (wood for a desk, fabric for a sofa).
+    const counts = new Map<number, number>();
+    for (let i = 0; i < px.length; i += 4) {
+      if (px[i + 3] > 200 && px[i] + px[i + 1] + px[i + 2] > 240) {
+        const k = (px[i] << 16) | (px[i + 1] << 8) | px[i + 2];
+        counts.set(k, (counts.get(k) ?? 0) + 1);
+      }
     }
+    const most = [...counts].sort((a, b) => b[1] - a[1])[0]?.[0] ?? 0xd9a06a;
+    const topCol = `#${most.toString(16).padStart(6, '0')}`;
+    const back = top + row - D;
+    box(c, x, back, fw, D + 2, shade(topCol, 0.08)); // the top, running back
+    c.drawImage(spare, 0, 0, W, H, x, top, fw, H); // the front, squeezed
   }
   c.restore();
 }
