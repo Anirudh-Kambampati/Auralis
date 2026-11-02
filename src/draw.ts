@@ -3102,9 +3102,11 @@ export const uiIconURL = (name: string) =>
 // Flat warm paper with a faint dot grid; px is the size of one art pixel in screen pixels.
 // Matches --bg / --dot in style.css, light and dark.
 const darkScheme = matchMedia('(prefers-color-scheme: dark)');
+// A theme picked in the You panel wins over the system setting.
+export const isDark = () => (document.documentElement.dataset.theme ?? (darkScheme.matches ? 'dark' : 'light')) === 'dark';
 export function drawPaper(c: Ctx, w: number, h: number, px: number) {
   // One dot tile, repeated: a single fill instead of hundreds of rects a frame.
-  const step = Math.round(px * 12), half = Math.round(step / 2), dark = darkScheme.matches;
+  const step = Math.round(px * 12), half = Math.round(step / 2), dark = isDark();
   const [bg, dot] = dark ? ['#3b3442', '#4d4555'] : ['#efe6da', '#e3d7c8'];
   const tile = baked(`paper|${step}|${px}|${dark}`, step, step, (g) => { r(g, 0, 0, step, step, bg); r(g, half, half, px, px, dot); });
   c.fillStyle = (paperFill?.step === step && paperFill.dark === dark ? paperFill : (paperFill = { step, dark, p: c.createPattern(tile, 'repeat')! })).p;

@@ -127,6 +127,8 @@ button:focus-visible, select:focus-visible, a:focus-visible { outline: 3px dashe
   box-shadow: 0 4px 0 var(--ink);
 }
 .chip.house { font-size: 16px; letter-spacing: 2px; }
+.hud-right { display: flex; gap: 8px; }
+.chip.theme { padding: 5px 9px; cursor: var(--point); }
 .chip.focus { flex-direction: column; gap: 4px; background: var(--blue); color: #fff; cursor: var(--point); }
 .coin { width: 22px; height: 22px; }
 .bar { width: 120px; height: 10px; background: rgba(43, 37, 48, 0.35); border-radius: 4px; overflow: hidden; }
@@ -872,8 +874,11 @@ body.signed-out #deck, body.signed-out #game, body.signed-out #zoom { display: n
 .chip.break .small { padding: 2px 10px; font-size: 14px; }
 .tomatoes { font-size: 20px; margin: 4px 0 10px; }
 
-/* Dark mode: only the paper backdrop goes dark; cards, outlines and the pixel art keep their colours. */
+/* Dark mode: only the paper backdrop goes dark; cards, outlines and the pixel art keep their colours.
+   Follows the system unless a theme was picked in the You panel (data-theme on <html>). */
 @media (prefers-color-scheme: dark) {
-  :root { --bg: #3b3442; --dot: #4d4555; --on-bg: #f3ebe0; }
-  .tagline mark { background: linear-gradient(transparent 55%, rgba(242, 193, 78, 0.45) 55%); }
+  :root:not([data-theme="light"]) { --bg: #3b3442; --dot: #4d4555; --on-bg: #f3ebe0; }
+  :root:not([data-theme="light"]) .tagline mark { background: linear-gradient(transparent 55%, rgba(242, 193, 78, 0.45) 55%); }
 }
+:root[data-theme="dark"] { --bg: #3b3442; --dot: #4d4555; --on-bg: #f3ebe0; }
+:root[data-theme="dark"] .tagline mark { background: linear-gradient(transparent 55%, rgba(242, 193, 78, 0.45) 55%); }

@@ -5,7 +5,7 @@ import {
 } from '../shared/game.js';
 import {
   T, OVERHANG, SURFACE, drawSeated, drawActing, drawSeam, drawFloor, drawWall, drawWallFace, drawWallTop, drawDoor, drawWindow, drawPainting, drawFurniture, drawAvatar, drawDeskLamp, drawGlow, drawUsing, skyNow, weatherNow, NIGHT_TINT,
-  coinURL, uiIconURL, AV, drawPaper, paintBlockText, drawWindow as drawWin, drawDroplet, drawHeart, tileURL, type Look,
+  coinURL, uiIconURL, AV, drawPaper, isDark, paintBlockText, drawWindow as drawWin, drawDroplet, drawHeart, tileURL, type Look,
 } from './draw';
 import { drawPet, petPos, petIconURL, seedOf } from './pets';
 import { toggleSound, soundName, chime, ping, stopAllSounds } from './sounds';
@@ -304,6 +304,26 @@ if ('serviceWorker' in navigator && import.meta.env.PROD) navigator.serviceWorke
 // Notification sounds (rewards, new messages), on unless turned off in the You panel.
 let chimes = localStorage.getItem('auralis.chimes') !== 'off';
 const notify = (sound: () => void) => { if (chimes) sound(); };
+// Light or dark backdrop, picked with the button by the house code; index.html applies the saved one before first paint.
+const themeBtn = $<HTMLButtonElement>('#theme');
+function setTheme(theme: string) {
+  document.documentElement.dataset.theme = theme;
+  // Pin the browser bar colour too, instead of letting it follow the system.
+  document.querySelectorAll<HTMLMetaElement>('meta[name="theme-color"]').forEach((m) => (m.content = theme === 'dark' ? '#3b3442' : '#efe6da'));
+}
+if (document.documentElement.dataset.theme) setTheme(document.documentElement.dataset.theme);
+function labelTheme() {
+  const next = isDark() ? 'light' : 'dark';
+  themeBtn.textContent = isDark() ? '☀️' : '🌙';
+  themeBtn.title = themeBtn.ariaLabel = `Switch to ${next} mode`;
+}
+labelTheme();
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change', labelTheme); // following the system until picked
+themeBtn.addEventListener('click', () => {
+  setTheme(isDark() ? 'light' : 'dark');
+  try { localStorage.setItem('auralis.theme', document.documentElement.dataset.theme!); } catch {}
+  labelTheme();
+});
 // Do not disturb: messages during a focus session are counted, not pinged, and summed up afterwards.
 const pingOrHold = () => { if (myMember()?.focus) missed++; else notify(ping); };
 
