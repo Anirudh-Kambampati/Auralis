@@ -122,6 +122,8 @@
       <button class="chip house" id="code" title="Copy house code"></button>
     </header>
     <div id="toast" hidden></div>
+    <!-- What the toast just said, for screen readers: the toast itself is hidden and shown again to animate. -->
+    <p id="announce" class="sr-only" role="status" aria-live="polite"></p>
     <section id="panel" hidden></section>
     <aside id="side">
       <section class="side-card todos">
@@ -133,7 +135,7 @@
       <section class="side-card chat">
         <header class="side-head"><img data-icon="chat" alt="" /><h2>Chat</h2><select id="chatPeer" aria-label="Who to chat with"></select><button class="fold" id="fold-chat" aria-expanded="true" aria-controls="chatLog" aria-label="Collapse chat">▾</button></header>
         <div id="chatLog" aria-live="polite"></div>
-        <form id="chatForm" class="row"><textarea id="chatInput" rows="1" maxlength="200" placeholder="Say something…" aria-label="Chat message"></textarea><button>Send</button></form>
+        <form id="chatForm" class="row"><button type="button" class="off" id="chatPic" title="Send a picture" aria-label="Send a picture">📷</button><input type="file" id="chatFile" accept="image/*" hidden><textarea id="chatInput" rows="1" maxlength="200" placeholder="Say something…" aria-label="Chat message"></textarea><button>Send</button></form>
       </section>
     </aside>
     <section id="deck" hidden>

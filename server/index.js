@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { WebSocketServer } from 'ws';
 import { openStore, checkPassword } from './store.js';
 import { openPgStore } from './store-pg.js';
-import { files, isPng } from './files.js';
+import { files, isPng, isJpeg } from './files.js';
 import {
   ITEMS, WALLPAPERS, FLOORS, SKINS, HAIRS, SHIRTS, STYLES, FACES, OUTFITS, BODIES, ACCESSORIES, FOCUS_LENGTHS, canPlace, placeSwaps, focusReward, quitReward, quitMinutes, focusEnd, streakDays, streakBonus,
   WALL_PATTERNS, FLOOR_STYLES, PETS, MAX_PETS, EXPAND_COST, colorsFor, USES, PET_ACCS, MAX_ROOMS, ROOM_COST,
@@ -126,6 +126,9 @@ function settleTodos(h) {
 }
 
 const pick = (list, v, fallback) => (list.includes(v) ? v : fallback);
+// Keys that come from a client must name something we actually ship. `ITEMS['__proto__']` (or 'constructor')
+// is truthy, so an unchecked lookup slips past `if (!it)` and leaves the player's coins NaN.
+const has = (table, key) => typeof key === 'string' && Object.hasOwn(table, key);
 const cleanText = (s, max) => String(s ?? '').replace(/[\u0000-\u001f]/g, '').trim().slice(0, max);
 const cleanName = (s) => String(s ?? '').replace(/[^\p{L}\p{N} _.-]/gu, '').trim().slice(0, 16) || 'Studier';
 
@@ -170,7 +173,7 @@ function broadcastHouse(code) {
 
 // The room a message is about: m.r picks one of the player's rooms (the first when missing).
 const setTz = (p, tz) => { if (Number.isFinite(tz)) p.tz = Math.max(-840, Math.min(840, Math.round(tz))); };
-const roomOf = (p, m) => p.rooms[m.r ?? 0] ?? null;
+const roomOf = (p, m) => (Number.isInteger(m.r ?? 0) ? p.rooms[m.r ?? 0] ?? null : null);
 // Housemates studying now (not paused), or who finished in the last two minutes (so whoever ends first isn't counted out).
 const buddiesOf = (p, now) => db.houses[p.house].members.filter((id) => {
   const o = db.players[id];
@@ -181,6 +184,10 @@ function newRoom() { return { wallpaper: WALLPAPERS[0], floor: FLOORS[0], furnit
 function handle(p, m) {
   const room = roomOf(p, m);
   if (['place', 'move', 'pickup', 'room', 'flip', 'restyle', 'shape', 'expand', 'curtains', 'light', 'turn'].includes(m.t) && !room) return;
+  // Furniture is addressed by position. Anything but a real integer fetches a built-in
+  // (`furniture['toString']`) or nothing, so those messages only run for real indices.
+  if (['move', 'pickup', 'turn', 'flip', 'restyle', 'shape', 'light', 'water'].includes(m.t) && !Number.isInteger(m.index)) return;
+  if (m.t === 'water' && !Number.isInteger(m.r)) return;
   switch (m.t) {
     case 'look':
       p.name = cleanName(m.name);
@@ -336,9 +343,10 @@ function handle(p, m) {
       break;
     }
     case 'buy': {
+      if (!has(ITEMS, m.item)) return;
       const it = ITEMS[m.item];
-      const price = it && discounted(it.price, p.discount);
-      if (!it || p.coins < price) return;
+      const price = discounted(it.price, p.discount);
+      if (p.coins < price) return;
 
       p.coins -= price;
       p.discount = false;
@@ -346,6 +354,7 @@ function handle(p, m) {
       break;
     }
     case 'sell': { // from storage only: placed pieces have to be put away first
+      if (!has(ITEMS, m.item)) return;
       const gain = sellPrice(m.item);
       if (!(p.inventory[m.item] > 0) || gain < 1) return;
       p.inventory[m.item]--;
@@ -353,7 +362,8 @@ function handle(p, m) {
       break;
     }
     case 'place': {
-      const out = p.inventory[m.item] > 0 ? placeSwaps(room, m.item, m.x, m.y) : null;
+      if (!has(ITEMS, m.item) || !(p.inventory[m.item] > 0)) return;
+      const out = placeSwaps(room, m.item, m.x, m.y);
       if (!out) return;
       p.inventory[m.item]--;
       for (const f of room.furniture.filter((_, i) => out.includes(i))) p.inventory[f.item] = (p.inventory[f.item] ?? 0) + 1;
@@ -484,7 +494,7 @@ function handle(p, m) {
     }
     case 'shape': {
       const f = room.furniture[m.index];
-      if (!f || !Number.isInteger(m.s) || m.s < 0 || m.s >= (ITEMS[f.item].looks?.length ?? 1)) return;
+      if (!f || !has(ITEMS, f.item) || !Number.isInteger(m.s) || m.s < 0 || m.s >= (ITEMS[f.item].looks?.length ?? 1)) return;
       f.s = m.s;
       break;
     }
@@ -503,17 +513,19 @@ function handle(p, m) {
       break;
     }
     case 'adopt': {
+      if (!has(PETS, m.kind)) return;
       const pet = PETS[m.kind];
       p.pets ??= [];
-      if (!pet || p.coins < pet.price || p.pets.length >= MAX_PETS) return;
+      if (p.coins < pet.price || p.pets.length >= MAX_PETS) return;
       p.coins -= pet.price;
       p.pets.push({ kind: m.kind });
       break;
     }
     case 'buy_acc': {
+      if (!has(PET_ACCS, m.acc)) return;
       const acc = PET_ACCS[m.acc];
       p.petAccs ??= [];
-      if (!acc || p.petAccs.includes(m.acc) || p.coins < acc.price) return;
+      if (p.petAccs.includes(m.acc) || p.coins < acc.price) return;
       p.coins -= acc.price;
       p.petAccs.push(m.acc);
       break;
@@ -522,13 +534,13 @@ function handle(p, m) {
     case 'pet_release': {
       if (!Number.isInteger(m.slot) || !p.pets?.[m.slot]) return;
       const [gone] = p.pets.splice(m.slot, 1);
-      send(sockets.get(p.id), { t: 'error', text: `Waved goodbye to ${gone.name ?? `your ${PETS[gone.kind]?.name.toLowerCase() ?? 'pet'}`}. 💛` });
+      send(sockets.get(p.id), { t: 'info', text: `Waved goodbye to ${gone.name ?? `your ${PETS[gone.kind]?.name.toLowerCase() ?? 'pet'}`}. 💛` });
       break;
     }
     // Dress up a pet: a free coat colour, and an accessory you own (or '' for none).
     case 'pet_style': {
       const pet = p.pets?.[m.slot];
-      if (!pet) return;
+      if (!pet || !has(PETS, pet.kind)) return;
       if (Number.isInteger(m.coat) && m.coat >= 0 && m.coat < PETS[pet.kind].coats.length) pet.coat = m.coat;
       if (m.acc === '' || (p.petAccs ?? []).includes(m.acc)) pet.acc = m.acc || undefined;
       if (typeof m.name === 'string') pet.name = cleanText(m.name, 16) || undefined;
@@ -581,11 +593,12 @@ function handle(p, m) {
     case 'dm': {
       const to = db.players[m.to];
       const text = cleanText(m.text, 200);
-      if (!to || !text || to.id === p.id || !db.houses[p.house]?.members.includes(to.id)) return;
+      const img = chatImg(p, m.img);
+      if (!to || !(text || img) || to.id === p.id || !db.houses[p.house]?.members.includes(to.id)) return;
       const now = Date.now();
       if (now - (lastDm.get(p.id) ?? 0) < 600) return send(sockets.get(p.id), { t: 'error', text: 'Slow down a little — that message was not sent.' });
       lastDm.set(p.id, now);
-      const msg = { id: nextId++, from: p.id, by: p.name, text, at: now };
+      const msg = { id: nextId++, from: p.id, by: p.name, text, at: now, ...(img && { img }) };
       p.dm ??= {};
       to.dm ??= {};
       p.dm[to.id] = [...(p.dm[to.id] ?? []), msg].slice(-50);
@@ -596,13 +609,13 @@ function handle(p, m) {
     }
     case 'chat': {
       const h = db.houses[p.house];
-      const text = cleanText(m.text, 200);
+      const text = cleanText(m.text, 200), img = chatImg(p, m.img);
       const now = Date.now();
-      if (!text) return;
+      if (!text && !img) return;
       if (now - (lastChat.get(p.id) ?? 0) < 600) return send(sockets.get(p.id), { t: 'error', text: 'Slow down a little — that message was not sent.' });
       lastChat.set(p.id, now);
       h.chat ??= [];
-      h.chat.push({ id: nextId++, from: p.id, by: p.name, text, at: now });
+      h.chat.push({ id: nextId++, from: p.id, by: p.name, text, at: now, ...(img && { img }) });
       h.chat = h.chat.slice(-50);
       break;
     }
@@ -655,21 +668,33 @@ function tooMany(ip, limit) {
   return ++a.n > limit;
 }
 
+// Always settles, always with an object: a truncated or oversized request, a client that hangs up
+// mid-body, or a JSON payload that isn't an object must not leave the caller waiting or crashing.
 function readJson(req) {
   return new Promise((resolve) => {
-    let body = '';
-    req.on('data', (chunk) => { body += chunk; if (body.length > 10_000) req.destroy(); });
-    req.on('end', () => { try { resolve(JSON.parse(body)); } catch { resolve({}); } });
+    let body = '', settled = false;
+    const done = (v) => { if (!settled) { settled = true; resolve(v); } };
+    const fail = () => { done({}); req.destroy(); };
+    req.on('data', (chunk) => { body += chunk; if (body.length > 10_000) fail(); });
+    req.on('end', () => {
+      let v;
+      try { v = JSON.parse(body); } catch { return done({}); }
+      done(v && typeof v === 'object' && !Array.isArray(v) ? v : {});
+    });
+    req.on('error', () => done({}));
+    req.on('close', () => done({}));
   });
 }
 
 function readBytes(req, max) {
   return new Promise((resolve, reject) => {
     const parts = [];
-    let size = 0;
-    req.on('data', (c) => { size += c.length; if (size > max) { reject(new Error('too big')); req.destroy(); } else parts.push(c); });
-    req.on('end', () => resolve(Buffer.concat(parts)));
-    req.on('error', reject);
+    let size = 0, settled = false;
+    const fail = (err) => { if (!settled) { settled = true; reject(err); req.destroy(); } };
+    req.on('data', (c) => { size += c.length; if (size > max) fail(new Error('too big')); else parts.push(c); });
+    req.on('end', () => { if (!settled) { settled = true; resolve(Buffer.concat(parts)); } });
+    req.on('error', fail);
+    req.on('close', () => fail(new Error('aborted')));
   });
 }
 
@@ -696,9 +721,57 @@ async function snapshots(req, res) {
   return reply(200, { snapshots: await links() });
 }
 
+// Pictures in chat. The client shrinks and re-encodes them as JPEG first (which also drops camera metadata such as
+// location), uploads here, then sends the returned key with a chat message or DM. A link to a picture is only handed
+// to someone who can see a message carrying it, and it expires within the hour.
+const CHAT_IMG = /^chat\/[\w-]+\/\d+-[a-f0-9]+\.jpg$/;
+const chatImg = (p, key) => (typeof key === 'string' && (p.chatImgs ?? []).some((x) => x.key === key) ? key : undefined); // only your own uploads
+async function chatImage(req, res) {
+  const reply = (status, data) => res.writeHead(status, { 'content-type': 'application/json' }).end(JSON.stringify(data));
+  if (!files) return reply(503, { error: 'Pictures need file storage, which is not set up on this server.' });
+  const id = await store.playerForToken(String(req.headers.authorization ?? '').replace(/^Bearer /, ''));
+  const p = id && db.players[id];
+  if (!p) return reply(401, { error: 'Please log in again.' });
+  if (req.method === 'GET') {
+    const key = new URL(req.url, 'http://x').searchParams.get('key') ?? '';
+    const visible = (db.houses[p.house]?.chat ?? []).some((c) => c.img === key) || Object.values(p.dm ?? {}).some((t) => t.some((c) => c.img === key));
+    if (!CHAT_IMG.test(key) || !visible) return reply(404, { error: 'Picture not found.' });
+    return reply(200, { url: await files.url(key, { expiresIn: 3600 }) });
+  }
+  if (req.method !== 'POST') return reply(405, { error: 'GET or POST' });
+  const now = Date.now();
+  p.chatImgs ??= [];
+  if (p.chatImgs.filter((x) => now - x.at < 3_600_000).length >= 30) return reply(429, { error: "That's a lot of pictures. Try again in a little while." });
+  let body;
+  try { body = await readBytes(req, 1_500_000); } catch { return reply(413, { error: 'That picture is too big.' }); }
+  if (!isJpeg(body)) return reply(400, { error: 'Expected a JPEG picture.' });
+  const key = `chat/${p.id}/${now}-${crypto.randomBytes(4).toString('hex')}.jpg`;
+  await files.upload(key, body, { contentType: 'image/jpeg' });
+  p.chatImgs.push({ key, at: now });
+  save();
+  return reply(200, { key });
+}
+// Pictures nobody can scroll back to any more (the message fell out of the last 50, or was never sent) are deleted.
+setInterval(() => {
+  if (!files) return;
+  const live = new Set(), now = Date.now();
+  for (const h of Object.values(db.houses)) for (const c of h.chat ?? []) if (c.img) live.add(c.img);
+  for (const p of Object.values(db.players)) for (const t of Object.values(p.dm ?? {})) for (const c of t) if (c.img) live.add(c.img);
+  let changed = false;
+  for (const p of Object.values(db.players)) {
+    const gone = (p.chatImgs ?? []).filter((x) => !live.has(x.key) && now - x.at > 600_000);
+    if (!gone.length) continue;
+    p.chatImgs = p.chatImgs.filter((x) => !gone.includes(x));
+    for (const x of gone) files.delete(x.key).catch(() => {});
+    changed = true;
+  }
+  if (changed) save();
+}, 600_000).unref();
+
 async function api(req, res, route) {
   const reply = (status, data) => res.writeHead(status, { 'content-type': 'application/json' }).end(JSON.stringify(data));
   if (route === 'snapshots') return snapshots(req, res);
+  if (route === 'chatimg') return chatImage(req, res);
   if (req.method !== 'POST') return reply(405, { error: 'POST only' });
   const body = await readJson(req);
   const ip = req.socket.remoteAddress ?? '?';
@@ -735,11 +808,13 @@ async function api(req, res, route) {
 }
 
 function serveStatic(req, res) {
-  const url = decodeURIComponent(new URL(req.url, 'http://x').pathname);
+  let url;
+  // A bad escape ("%") or an address that isn't a URL ("//") throws; answer 400 rather than take the server down.
+  try { url = decodeURIComponent(new URL(req.url, 'http://x').pathname); } catch { return res.writeHead(400, { 'content-type': 'text/plain' }).end('Bad request'); }
   let file = path.join(DIST, url);
   let status = 200;
   // The game lives at '/'; any other address that isn't a real file gets the 404 page.
-  if (!file.startsWith(DIST) || !fs.existsSync(file) || fs.statSync(file).isDirectory()) {
+  if (!file.startsWith(DIST + path.sep) || !fs.existsSync(file) || fs.statSync(file).isDirectory()) {
     const home = url === '/' || url === '/index.html';
     file = path.join(DIST, home ? 'index.html' : '404.html');
     if (!home) status = 404;
@@ -757,7 +832,10 @@ const ALLOWED = (process.env.ALLOWED_ORIGINS ?? '').split(',').map((s) => s.trim
 const originOk = (origin) => !origin || !ALLOWED.length || ALLOWED.includes(origin);
 
 const server = http.createServer((req, res) => {
-  const path = new URL(req.url, 'http://x').pathname;
+  // "//" is not a URL against a base, and a bad escape is not decodable: answer 400 instead of throwing
+  // out of the request listener, which would end the process for everyone.
+  let path;
+  try { path = new URL(req.url, 'http://x').pathname; } catch { return res.writeHead(400, { 'content-type': 'text/plain' }).end('Bad request'); }
   const origin = req.headers.origin;
   if (origin && ALLOWED.includes(origin)) {
     res.setHeader('access-control-allow-origin', origin);
@@ -767,7 +845,7 @@ const server = http.createServer((req, res) => {
   }
   if (req.method === 'OPTIONS') return res.writeHead(originOk(origin) ? 204 : 403).end();
   if (path === '/api/health') return res.writeHead(200, { 'content-type': 'application/json' }).end('{"ok":true}');
-  const route = path.match(/^\/api\/(signup|login|logout|snapshots)$/)?.[1];
+  const route = path.match(/^\/api\/(signup|login|logout|snapshots|chatimg)$/)?.[1];
   if (route) api(req, res, route).catch((err) => { console.error(err); if (!res.headersSent) res.writeHead(500).end(); });
   else serveStatic(req, res);
 });
@@ -777,9 +855,21 @@ const wss = new WebSocketServer({ server, path: '/ws', verifyClient: ({ origin }
 wss.on('connection', (ws) => {
   let p = null;
   let checking = false;
+  // A socket error (a broken frame, a client that vanished) is that connection's problem alone.
+  ws.on('error', () => ws.close());
+  // Nothing a client sends may take the process down: every message is parsed and handled inside
+  // a guard, because a throw here would be an unhandled rejection and end the server for everyone.
   ws.on('message', async (raw) => {
     let m;
     try { m = JSON.parse(raw); } catch { return; }
+    if (!m || typeof m !== 'object' || Array.isArray(m)) return;
+    try {
+      await onMessage(ws, m);
+    } catch (err) {
+      console.error('message failed', err);
+    }
+  });
+  const onMessage = async (ws, m) => {
     if (!p) {
       if (m.t !== 'hello' || checking) return;
       // The secret login token, not the public player id, says who you are.
@@ -790,11 +880,11 @@ wss.on('connection', (ws) => {
       p = db.players[id];
       // Old saves: drop furniture types that no longer exist; the old cat decoration becomes a real pet.
       const hadCat = p.rooms.some((r) => r.furniture.some((f) => f.item === 'cat')) || p.inventory.cat > 0;
-      for (const r of p.rooms) r.furniture = r.furniture.filter((f) => ITEMS[f.item]);
-      for (const k of Object.keys(p.inventory)) if (!ITEMS[k]) delete p.inventory[k];
+      for (const r of p.rooms) r.furniture = r.furniture.filter((f) => has(ITEMS, f.item));
+      for (const k of Object.keys(p.inventory)) if (!has(ITEMS, k)) delete p.inventory[k];
       if (!STYLES.includes(p.look.style)) p.look.style = STYLES[0]; // retired hairstyles fall back to the default
       p.pets ??= hadCat ? [{ kind: 'cat' }] : [];
-      p.pets = p.pets.filter((pet) => PETS[pet.kind]); // pet kinds that were retired
+      p.pets = p.pets.filter((pet) => has(PETS, pet.kind)); // pet kinds that were retired
       ensureHome(p);
       if (!db.houses[p.house]?.members.includes(p.id)) goHome(p); // new player, or their house is gone
       sockets.get(p.id)?.close();
@@ -804,13 +894,23 @@ wss.on('connection', (ws) => {
       return;
     }
     handle(p, m);
-  });
+  };
   ws.on('close', () => {
-    if (p && sockets.get(p.id) === ws) {
-      sockets.delete(p.id);
-      broadcastHouse(p.house);
+    try {
+      if (p && sockets.get(p.id) === ws) {
+        sockets.delete(p.id);
+        broadcastHouse(p.house);
+      }
+    } catch (err) {
+      console.error('disconnect failed', err);
     }
   });
+});
+
+// Malformed HTTP (bad headers, a half-sent request line) ends that one connection, never the process.
+server.on('clientError', (err, socket) => {
+  if (socket.writable && !socket.destroyed) socket.end('HTTP/1.1 400 Bad Request\r\n\r\n');
+  else socket.destroy();
 });
 
 server.listen(PORT, () => console.log(`Auralis server on http://localhost:${PORT}`));

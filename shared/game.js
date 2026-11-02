@@ -497,11 +497,13 @@ export const roomSize = (room) => ROOM_SIZES[room?.level ?? 0] ?? ROOM_SIZES[0];
 
 // Cell kinds
 export const VOID = 0, FLOOR = 1, WALL = 2, BLOCKED = 3, DOOR = 4;
+const CORNER = 2; // tiles of wall kept at each end of an opening between rows
 
 // rooms: [{ level?, furniture: [{ item, x, y }] }] in house order, filling each row of the square grid first.
 // Rooms pack side by side by their real size, colsFor(n) per row, sharing one wall column. Along the floor it opens all the way
 // so neighbours read as one big space, split only where the floors change; the back wall above it stays.
-// Rows link with a 2-tile doorway, so back walls (windows, wallpaper) stay whole.
+// Between rows, the wall band (the bottom wall above, the back wall below) opens wherever the floors overlap, except
+// CORNER tiles of wall at each end, so a lower room still shows its wallpaper.
 export function buildGrid(rooms) {
   const sizes = rooms.map(roomSize);
   const origins = [];
@@ -541,15 +543,11 @@ export function buildGrid(rooms) {
       for (let y = o.y; y < o.y + rows; y++) set(X, y, DOOR);
     }
     if (i + COLS < rooms.length) {
-      // Doorway down to the room below, through wherever their floors overlap.
       const b = origins[i + COLS], bs = sizes[i + COLS];
-      const lo = Math.max(o.x, b.x), hi = Math.min(o.x + s.w, b.x + bs.w);
-      if (hi - lo >= 4) {
-        const dx = lo + (hi - lo >= 8 ? 4 : 1);
-        for (let y = o.y + s.h; y < b.y; y++) {
-          set(dx, y, DOOR); set(dx + 1, y, DOOR);
-          wallIfVoid(dx - 1, y); wallIfVoid(dx + 2, y);
-        }
+      const lo = Math.max(o.x, b.x) + CORNER, hi = Math.min(o.x + s.w, b.x + bs.w) - CORNER;
+      for (let y = o.y + s.h; y < b.y; y++) {
+        for (let x = lo; x < hi; x++) set(x, y, DOOR);
+        if (hi > lo) { wallIfVoid(lo - 1, y); wallIfVoid(hi, y); } // a shorter room above: wall in the way down
       }
     }
   });

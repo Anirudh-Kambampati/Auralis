@@ -8,3 +8,4 @@ export const files = process.env.AWS_ENDPOINT_URL_S3 ? new Files({ adapter: neon
 
 const PNG = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
 export const isPng = (buf) => buf.length > 8 && PNG.every((b, i) => buf[i] === b);
+export const isJpeg = (buf) => buf.length > 3 && buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff;

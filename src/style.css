@@ -15,6 +15,8 @@
 
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }
+/* Read by screen readers, kept out of sight (the toast, which animates, mirrors what it says here). */
+.sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
 
 /* Pixel cursors to match the art: a cream arrow, and the arrow with a star over things you can click. */
 :root {
@@ -92,6 +94,8 @@ button.off { background: var(--soft); color: var(--ink); }
 button.on { background: var(--gold); color: var(--ink); }
 button.danger { background: var(--coral); }
 button.danger.armed { background: #c43f3f; animation: shake 0.3s; }
+/* Keyboard focus stays visible on every control, not just the text boxes: a dashed ring reads on gold, paper and blue alike. */
+button:focus-visible, select:focus-visible, a:focus-visible { outline: 3px dashed var(--ink); outline-offset: 3px; }
 
 /* ---------- top HUD ---------- */
 #hud {
@@ -295,6 +299,23 @@ label { display: flex; flex-direction: column; gap: 6px; font-weight: 700; }
 }
 #toast.reward { background: var(--gold); }
 #toast .icon { height: 28px; }
+/* A refusal looks different from a success: coral tint, a badge, and a small nudge instead of the plain drop-in. */
+#toast.error { background: #fde4df; animation: drop 0.2s ease-out, nudge 0.3s 0.08s; }
+#toast.error::before {
+  content: '!';
+  flex: 0 0 22px;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  font-size: 15px;
+  line-height: 1;
+  color: #fff;
+  background: var(--coral);
+  border: 2px solid var(--ink);
+  border-radius: 50%;
+}
+@keyframes nudge { 25% { transform: translateX(calc(-50% - 3px)); } 75% { transform: translateX(calc(-50% + 3px)); } }
 
 /* ---------- focus deck ---------- */
 #deck {
@@ -486,6 +507,7 @@ li.done .check { background: #6fcf8a; color: #fff; }
 #chatLog p { margin: 0; padding: 6px 10px; background: #fff; border: 2px solid var(--ink); border-radius: 12px 12px 12px 4px; align-self: flex-start; max-width: 90%; overflow-wrap: anywhere; }
 #chatLog p.mine { align-self: flex-end; background: #e3ebfb; border-radius: 12px 12px 4px 12px; }
 #chatLog b { display: block; font-size: 12px; color: var(--muted); }
+#chatLog .chat-img { display: block; max-width: 100%; max-height: 200px; margin-top: 4px; border: 2px solid var(--ink); border-radius: 8px; cursor: zoom-in; }
 #dock button.unread::after {
   content: '';
   position: absolute;
@@ -749,6 +771,8 @@ body.signed-out #deck, body.signed-out #game, body.signed-out #zoom { display: n
 .auth input { width: 100%; }
 .auth button[type='submit'] { padding: 12px; font-size: 18px; }
 .auth-error { margin: 0; padding: 8px 12px; background: #fde4df; border: 2px solid var(--coral); border-radius: 10px; font-weight: 600; }
+/* A notice rather than an error ("your session ended"): same shape, warm cream instead of coral. */
+.auth-note { margin: 0; padding: 8px 12px; background: #fff3d1; border: 2px solid var(--ink); border-radius: 10px; font-weight: 600; }
 
 .features { list-style: none; padding: 0; margin: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; }
 .features li {
@@ -784,6 +808,9 @@ body.signed-out #deck, body.signed-out #game, body.signed-out #zoom { display: n
 }
 @media (prefers-reduced-motion: reduce) {
   .drift, .bouncy span, .brand img { animation: none !important; }
+  /* The game's own panels and chips slide and shake too: drop those, keep the state changes. */
+  #panel, #side, #toast, #deck, button.danger.armed { animation: none !important; }
+  #dock, .bar i, .track i, .marker, button, .features li { transition: none !important; }
 }
 
 .snaps { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 8px; margin-top: 10px; }

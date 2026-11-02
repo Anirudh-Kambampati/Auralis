@@ -4,7 +4,7 @@ import {
   WALL_H, WALL, FLOOR, DOOR, BLOCKED, VOID, buddyMultiplier, focusEnd, streakDays, streakBonus, sellPrice, footprint, lying, THIRSTY_MS, isPlant, discounted, GIFT_COINS, activeEvents, nextEvent,
 } from '../shared/game.js';
 import {
-  T, OVERHANG, SURFACE, drawSeated, drawActing, drawSeam, drawFloor, drawWall, drawWallFace, drawWallTop, drawDoor, drawWindow, drawPainting, drawFurniture, drawAvatar, drawDeskLamp, drawGlow, drawUsing, skyNow, NIGHT_TINT,
+  T, OVERHANG, SURFACE, drawSeated, drawActing, drawSeam, drawFloor, drawWall, drawWallFace, drawWallTop, drawDoor, drawWindow, drawPainting, drawFurniture, drawAvatar, drawDeskLamp, drawGlow, drawUsing, skyNow, weatherNow, NIGHT_TINT,
   coinURL, uiIconURL, AV, drawPaper, paintBlockText, drawWindow as drawWin, drawDroplet, drawHeart, tileURL, type Look,
 } from './draw';
 import { drawPet, petPos, petIconURL, seedOf } from './pets';
@@ -23,7 +23,7 @@ type Member = {
   exams?: { subject: string; date: string }[]; // YYYY-MM-DD, soonest first
 };
 type Todo = { id: number; text: string; done: boolean; by: string; all?: boolean; ticks?: string[] }; // all: everyone has to tick it
-type Chat = { id: number; from: string; by: string; text: string; at: number };
+type Chat = { id: number; from: string; by: string; text: string; at: number; img?: string }; // img: key of a picture
 type CalEvent = { id: number; date: string; time?: string; text: string; by?: string }; // date YYYY-MM-DD, time HH:MM
 type Focus = { minutes: number; endsAt: number; tag?: string; pausedAt?: number | null };
 type Session = { at: number; minutes: number; tag: string; early?: boolean };
@@ -241,6 +241,8 @@ function onMessage(m: any) {
     if (m.text) toast(esc(m.text), 'reward');
     else toast(`Session complete! +${m.coins} ${coin()}${m.buddies ? ` (×${buddyMultiplier(m.buddies)} for studying together!)` : ''}${streakBonus(m.streak) ? ` 🔥 ${m.streak}-day streak +${streakBonus(m.streak) * 100}%` : ''}`, 'reward');
   } else if (m.t === 'error') {
+    toast(esc(m.text), 'error');
+  } else if (m.t === 'info') { // news that isn't a refusal: a plain toast
     toast(esc(m.text));
   }
 }
@@ -251,7 +253,7 @@ function receiveChat(list: Chat[]) {
   for (const c of list) {
     if (c.id <= lastChatId) continue;
     if (!first) {
-      bubbles.set(c.from, { text: c.text, until: Date.now() + 6000 });
+      bubbles.set(c.from, { text: c.img ? `📷 ${c.text}`.trim() : c.text, until: Date.now() + 6000 });
       if (c.from !== myId) {
         if (chatHidden()) pingOrHold();
         countUnseen();
@@ -451,10 +453,10 @@ function interact(si: number, fi: number) {
       const x = o.x + f.x + dx, y = o.y + f.y + dy;
       if (acts.has(tileKey(x, y)) && !taken.has(tileKey(x, y))) tiles.push({ x, y });
     }
-    if (!tiles.length) { toast('Someone is already using that.'); return true; }
+    if (!tiles.length) { toast('Someone is already using that.', 'error'); return true; }
     const p = bfs(start, (cx, cy) => pass(cx, cy) && tiles.some((u) => Math.abs(cx - u.x) + Math.abs(cy - u.y) === 1), pass)
       ?? bfs(start, beside, pass); // then climb on from wherever there's room
-    if (!p) { toast("You can't reach that from here."); return true; }
+    if (!p) { toast("You can't reach that from here.", 'error'); return true; }
     const end = p[p.length - 1];
     path = p.slice(1);
     seat = tiles.find((u) => Math.abs(end.x - u.x) + Math.abs(end.y - u.y) === 1) ?? tiles[0];
@@ -467,7 +469,7 @@ function interact(si: number, fi: number) {
     .filter((u) => (pass(u.x, u.y) || (u.x === start.x && u.y === start.y)) && !taken.has(tileKey(u.x, u.y)));
   const p = bfs(start, (cx, cy) => fronts.some((u) => u.x === cx && u.y === cy), pass)
     ?? bfs(start, beside, pass);
-  if (!p) { toast("You can't reach that from here."); return true; }
+  if (!p) { toast("You can't reach that from here.", 'error'); return true; }
   arrive = afterUse(f, m, ri, fi);
   if (p.length > 1) { path = p.slice(1); useNext = it.use!; return true; }
   // Already standing in front of it.
@@ -647,7 +649,7 @@ function tapAt(e: PointerEvent) {
     const i = furnitureAt(myRoom()!, lx, ly);
     if (placing) {
       if (placeSwaps(myRoom()!, placing, lx, ly)) { send({ t: 'place', r: editRoom, item: placing, x: lx, y: ly }); placing = null; }
-      else toast('That spot is taken or outside your room.');
+      else toast('That spot is taken or outside your room.', 'error');
     } else if (i >= 0) {
       // Grab it: drag to move, or just tap to select it.
       const f = myRoom()!.furniture[i];
@@ -657,7 +659,7 @@ function tapAt(e: PointerEvent) {
     } else if (moving !== null) {
       const f = myRoom()!.furniture[moving];
       if (f && canPlace(without(myRoom()!, moving), f.item, lx, ly, f.rot)) send({ t: 'move', r: editRoom, index: moving, x: lx, y: ly });
-      else toast("It doesn't fit there.");
+      else toast("It doesn't fit there.", 'error');
     }
     renderPanel();
     return;
@@ -742,7 +744,7 @@ canvas.addEventListener('pointerup', () => {
   const f = myRoom()!.furniture[drag.index];
   if (drag.moved && f) {
     if (canPlace(without(myRoom()!, drag.index), f.item, drag.lx, drag.ly, f.rot)) send({ t: 'move', r: editRoom, index: drag.index, x: drag.lx, y: drag.ly });
-    else toast("It doesn't fit there.");
+    else toast("It doesn't fit there.", 'error');
   }
   drag = null;
 });
@@ -825,6 +827,20 @@ function step(dt: number) {
   }
 }
 
+// Framing needs the size of the chrome around the room, but reading offsetHeight/offsetWidth forces layout.
+// Measure only when that chrome can have changed (a sheet opened, the chat grew, a card folded), not every frame.
+const deckEl = $<HTMLElement>('#deck'), dockEl = $<HTMLElement>('#dock'), sideEl = $<HTMLElement>('#side');
+let chromeRev = 0;
+const chromeDirty = () => { chromeRev++; };
+let chrome = { key: '', below: 0, right: 0 };
+function measureChrome(dpr: number) {
+  const wide = innerWidth >= 900;
+  const sheet = !wide ? (!panel.hidden ? panel : document.body.classList.contains('side-open') ? sideEl : null) : null;
+  const below = !deckEl.hidden ? deckEl.offsetHeight + (wide ? 24 : 0)
+    : sheet ? sheet.offsetHeight + dockEl.offsetHeight + 40 : dockEl.offsetHeight + 24;
+  return { below, right: wide && !panel.hidden ? (panel.offsetWidth + 20) * dpr : 0 };
+}
+
 function render(t: number, dt: number) {
   const dpr = devicePixelRatio || 1;
   const cw = Math.round(innerWidth * dpr), ch = Math.round(innerHeight * dpr);
@@ -837,12 +853,9 @@ function render(t: number, dt: number) {
   const me_ = avatars.get(myId) ?? { x: 0, y: 0 };
   const now = Date.now();
   // Fit and centre my room in the part of the screen not covered by the HUD, dock, deck, side bar or panel.
-  const deck = $('#deck'), dock = $('#dock'), side = $('#side');
-  const wide = innerWidth >= 900;
-  const sheet = !wide ? (!panel.hidden ? panel : document.body.classList.contains('side-open') ? side : null) : null;
-  const below = !deck.hidden ? deck.offsetHeight + (wide ? 24 : 0) : sheet ? sheet.offsetHeight + dock.offsetHeight + 40 : dock.offsetHeight + 24;
-  const coverTop = 70 * dpr, coverBottom = below * dpr;
-  const coverRight = wide && !panel.hidden ? (panel.offsetWidth + 20) * dpr : 0;
+  const chromeKey = `${innerWidth}x${innerHeight}@${dpr}|${chromeRev}`;
+  if (chrome.key !== chromeKey) chrome = { key: chromeKey, ...measureChrome(dpr) };
+  const coverTop = 70 * dpr, coverBottom = chrome.below * dpr, coverRight = chrome.right;
   const coverLeft = 0;
   const aw = cw - coverRight - coverLeft, ah = Math.max(ch * 0.3, ch - coverTop - coverBottom);
   // Frame the room I'm standing in (keep the last one while I'm in an opening or doorway).
@@ -890,9 +903,16 @@ function render(t: number, dt: number) {
         const r = room(0);
         drawFloor(ctx, px, py, r?.floor ?? FLOORS[0], x, y, r?.floorStyle);
       } else if (k === DOOR) {
-        // An opening between side-by-side rooms shows both floors; a doorway between rows is plain wood.
-        const l = room(0) ?? slots[grid.owner[y * grid.w + x - 1]]?.room, rr = slots[grid.owner[y * grid.w + x + 1]]?.room;
-        if (l && rr) drawSeam(ctx, px, py, x, y, l, rr);
+        // An opening shows the floors on either side meeting in the middle. Between rows it's a few tiles deep:
+        // each tile takes the nearer room's floor, and the middle one is split.
+        const at = (dx: number, dy: number) => slots[grid.owner[(y + dy) * grid.w + x + dx]]?.room;
+        const l = at(-1, 0), rr = at(1, 0);
+        let du = 1, dd = 1;
+        while (grid.at(x, y - du) === DOOR) du++;
+        while (grid.at(x, y + dd) === DOOR) dd++;
+        const u = at(0, -du), d = at(0, dd);
+        if (l && rr) drawSeam(ctx, px, py, x, y, [l, rr, l, rr]);
+        else if (u && d) drawSeam(ctx, px, py, x, y, du < dd ? [u, u, u, u] : dd < du ? [d, d, d, d] : [u, u, d, d]);
         else drawDoor(ctx, px, py, x, y);
       }
       else if (k === WALL) {
@@ -940,15 +960,15 @@ function render(t: number, dt: number) {
   }
 
   // Windows, the night tint and lamps follow the viewer's local clock.
-  const sky = skyNow();
+  const sky = skyNow(), weather = weatherNow();
   const dark = sky !== 'day';
-  // Top-row rooms get windows to the outside (more as the room grows); inner rooms get a painting.
+  // Top-row rooms get windows to the outside (more as the room grows); lower rooms a painting on the corner wall left by the opening above.
   slots.forEach(({ room }, i) => {
     const o = grid.origins[i], s = grid.sizes[i];
     const wy = (o.y - WALL_H) * T;
     if (!onScreen(o.x, o.y - WALL_H, s.w, WALL_H)) return;
-    if (i < grid.cols) for (let lx = 1; lx + 2 <= s.w - 1; lx += 6) drawWindow(ctx, (o.x + lx) * T, wy, sky, !!room.curtains);
-    else drawPainting(ctx, (o.x + 1) * T, wy + 8);
+    if (i < grid.cols) for (let lx = 1; lx + 2 <= s.w - 1; lx += 6) drawWindow(ctx, (o.x + lx) * T, wy, sky, !!room.curtains, weather, t);
+    else if (grid.at(o.x, o.y - 1) === WALL && grid.at(o.x + 1, o.y - 1) === WALL) drawPainting(ctx, o.x * T + 6, wy + 8);
   });
 
   // Rugs under everything, then furniture, pets and avatars sorted by their bottom edge.
@@ -1037,7 +1057,12 @@ function render(t: number, dt: number) {
       }
     });
     const flicker = 0.03 * Math.sin(t / 700);
-    for (const l of lights) if (onScreen(l.x / T - 3, l.y / T - 3, 6, 6)) drawGlow(ctx, l.x, l.y, l.rad, (sky === 'night' ? l.alpha : l.alpha * 0.5) + flicker);
+    ctx.save(); // light stays inside the house, not on the paper around it
+    ctx.beginPath();
+    ctx.rect(0, 0, grid.w * T, grid.h * T);
+    ctx.clip();
+    for (const l of lights) if (onScreen(l.x / T - 6, l.y / T - 6, 12, 12)) drawGlow(ctx, l.x, l.y, l.rad, (sky === 'night' ? l.alpha : l.alpha * 0.5) + flicker);
+    ctx.restore();
   }
 
   const mine = myMember();
@@ -1208,6 +1233,7 @@ function renderHud() {
 // While focusing, the focus deck replaces the dock until the player switches to room view.
 let deckHidden = false;
 function tickTimers() {
+  chromeDirty(); // the deck and break chip can appear or go, which changes how much room the house gets
   $('#breakChip').hidden = !breakTimer;
   if (breakTimer) $('#breakTime').textContent = `☕ Break ${fmt(breakEnds - Date.now())}`;
   const f = myMember()?.focus;
@@ -1257,6 +1283,7 @@ function toast(html: string, kind = '') {
   const el = $('#toast');
   el.innerHTML = `<span>${html}</span>`; // one inline run so bold words don't become separate flex items
   el.className = kind;
+  $('#announce').textContent = el.textContent ?? ''; // read out by screen readers, since the toast just animates
   el.hidden = true;
   void el.offsetWidth; // restart the drop-in animation
   el.hidden = false;
@@ -1574,6 +1601,7 @@ function panelBody(mine: Member) {
 }
 
 function renderPanel() {
+  chromeDirty();
   const mine = myMember();
   if (!openPanel || isSide(openPanel) || !mine) { panel.hidden = true; return; }
   const th = THEMES[openPanel];
@@ -1874,6 +1902,7 @@ const requestBoard = () => send({ t: 'leaderboard', scope: boardScope, period: b
 // To-dos and chat open from the dock as a card above it, one at a time.
 const isSide = (name: string | null): name is SideCard => name === 'todos' || name === 'chat';
 function setPanel(name: string | null) {
+  chromeDirty();
   if (name === 'stats' && statsTab === 'board') requestBoard();
   if (name === 'decorate' && token) snapshotsApi().catch(() => {});
   if (name === 'decorate') {
@@ -1926,6 +1955,9 @@ function noteNewDms() {
     if (!last) continue;
     // A brand new thread after the first load is genuinely new, so count it.
     const seen = dmSeen[peer] ?? (dmReady ? 0 : last.id);
+    // Remember where every thread stands, even when there is nothing new in it: otherwise the next
+    // state would read a thread we already know as unseen and ping once more for old messages.
+    dmSeen[peer] = last.id;
     if (last.id <= seen) continue;
     const fresh = list.filter((c) => c.id > seen && c.from !== myId).length;
     // Unread unless that thread is open on screen right now.
@@ -1937,7 +1969,6 @@ function noteNewDms() {
       unread = true;
       noteUnreadChat();
     }
-    dmSeen[peer] = last.id;
   }
   dmReady = true;
 }
@@ -1961,24 +1992,94 @@ function syncChatPeer() {
   sel.hidden = others.length === 0;
 }
 
+// The to-dos and the chat log are only rebuilt when what they show really changed: a house state arrives on
+// every action in the house, and rewriting fifty chat lines each time is wasted work (and loses the scroll).
+let todoSig = '', chatSig = '';
 function renderSide() {
-  $('#todoList').innerHTML = todoScope === 'house' ? todoHTML(todos, 'Nothing yet. Add something to study!')
-    : todoHTML(me.todos ?? [], 'Just for you — nobody else can see this.');
+  chromeDirty();
+  const list = todoScope === 'house' ? todos : me.todos ?? [];
+  const tSig = `${todoScope}|${myId}|${members.map((m) => `${m.id}${m.name}`).join()}|`
+    + list.map((t) => `${t.id}:${t.done ? 1 : 0}:${t.all ? 1 : 0}:${t.by ?? ''}:${(t.ticks ?? []).join('.')}:${t.text}`).join('|');
+  if (tSig !== todoSig) {
+    todoSig = tSig;
+    $('#todoList').innerHTML = todoHTML(list, todoScope === 'house' ? 'Nothing yet. Add something to study!' : 'Just for you — nobody else can see this.');
+  }
   syncChatPeer();
   const log = $('#chatLog');
   const msgs = dmPeer ? me.dm?.[dmPeer] ?? [] : chat;
   const peerName = members.find((m) => m.id === dmPeer)?.name ?? 'them';
-  const atBottom = log.scrollHeight - log.scrollTop - log.clientHeight < 40;
-  log.innerHTML = msgs.length
-    ? msgs.map((c) => `<p class="${c.from === myId ? 'mine' : ''}"><b>${esc(c.by)}</b>${esc(c.text)}</p>`).join('')
-    : dmPeer
-      ? `<p class="empty">Just you and ${esc(peerName)} — nobody else can see this.</p>`
-      : '<p class="empty">Say hi to your housemates 👋</p>';
-  $<HTMLTextAreaElement>('#chatInput').placeholder = dmPeer ? `Message ${peerName}…` : 'Say something…';
+  const cSig = `${dmPeer}|${peerName}|${msgs.length}|${msgs[0]?.id ?? 0}|${msgs[msgs.length - 1]?.id ?? 0}`;
+  if (cSig !== chatSig) {
+    chatSig = cSig;
+    const atBottom = log.scrollHeight - log.scrollTop - log.clientHeight < 40;
+    log.innerHTML = msgs.length
+      ? msgs.map((c) => `<p class="${c.from === myId ? 'mine' : ''}"><b>${esc(c.by)}</b>${esc(c.text)}${c.img ? `<img class="chat-img" data-key="${esc(c.img)}" alt="Picture from ${esc(c.by)}">` : ''}</p>`).join('')
+      : dmPeer
+        ? `<p class="empty">Just you and ${esc(peerName)} — nobody else can see this.</p>`
+        : '<p class="empty">Say hi to your housemates 👋</p>';
+    if (atBottom) scrollChat();
+    loadChatImages(log, atBottom);
+  }
+  const box = $<HTMLTextAreaElement>('#chatInput'), ph = dmPeer ? `Message ${peerName}…` : 'Say something…';
+  if (box.placeholder !== ph) box.placeholder = ph;
   if (dmPeer) dmUnread[dmPeer] = 0;
-  if (atBottom) scrollChat();
 }
 const scrollChat = () => { const log = $('#chatLog'); log.scrollTop = log.scrollHeight; };
+// Picture links are short-lived, so each is asked for when shown and reused for 50 minutes.
+const imgLinks = new Map<string, { url: string; at: number }>();
+function loadChatImages(root: HTMLElement, stickToBottom: boolean) {
+  root.querySelectorAll<HTMLImageElement>('img.chat-img').forEach(async (img) => {
+    const key = img.dataset.key!;
+    let link = imgLinks.get(key);
+    if (!link || Date.now() - link.at > 50 * 60_000) {
+      const res = await fetch(`${apiBase}/api/chatimg?key=${encodeURIComponent(key)}`, { headers: { authorization: `Bearer ${token}` } }).catch(() => null);
+      const data = res?.ok ? await res.json() : null;
+      if (!data?.url) { img.alt = 'Picture no longer available'; return; }
+      imgLinks.set(key, (link = { url: data.url, at: Date.now() }));
+    }
+    if (stickToBottom) img.onload = scrollChat; // its height arrives after the log was scrolled
+    img.src = link.url;
+  });
+}
+$('#chatLog').addEventListener('click', (e) => {
+  const img = (e.target as HTMLElement).closest<HTMLImageElement>('img.chat-img');
+  if (img?.src) open(img.src, '_blank', 'noopener');
+});
+// A picture is shrunk to 1024px and re-encoded as JPEG here: much smaller, and it drops camera metadata like location.
+// Whatever is typed in the box goes along as its caption.
+$('#chatPic').addEventListener('click', () => $<HTMLInputElement>('#chatFile').click());
+$('#chatFile').addEventListener('change', () => {
+  const picker = $<HTMLInputElement>('#chatFile'), file = picker.files?.[0];
+  picker.value = '';
+  if (file) sendPicture(file);
+});
+// Pasting a picture into the chat box sends it too (text pastes as usual).
+$('#chatInput').addEventListener('paste', (e) => {
+  const file = Array.from(e.clipboardData?.files ?? []).find((f) => f.type.startsWith('image/'));
+  if (!file) return;
+  e.preventDefault();
+  sendPicture(file);
+});
+async function sendPicture(file: File) {
+  if (!token) return;
+  try {
+    const bmp = await createImageBitmap(file).catch(() => { throw new Error("That file isn't a picture we can read."); });
+    const k = Math.min(1, 1024 / Math.max(bmp.width, bmp.height));
+    const cv = document.createElement('canvas');
+    cv.width = Math.round(bmp.width * k); cv.height = Math.round(bmp.height * k);
+    cv.getContext('2d')!.drawImage(bmp, 0, 0, cv.width, cv.height);
+    const blob = await new Promise<Blob | null>((r) => cv.toBlob(r, 'image/jpeg', 0.85));
+    if (!blob) throw new Error("Couldn't prepare that picture.");
+    const res = await fetch(`${apiBase}/api/chatimg`, { method: 'POST', headers: { authorization: `Bearer ${token}` }, body: blob });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error ?? "Couldn't send that picture.");
+    const box = $<HTMLTextAreaElement>('#chatInput');
+    send(dmPeer ? { t: 'dm', to: dmPeer, text: box.value, img: data.key } : { t: 'chat', text: box.value, img: data.key });
+    box.value = '';
+  } catch (err) {
+    toast(esc((err as Error).message), 'error');
+  }
+}
 
 // One to-do card, switched between the house's list and my private one.
 let todoScope = localStorage.getItem('auralis.todoScope') === 'me' ? 'me' : 'house';
@@ -2025,7 +2126,7 @@ $('#chatForm').addEventListener('submit', (e) => {
   if (watch) { // easter egg: /watch <link> starts a watch party for the house, /watch stop ends it
     const url = watch[1];
     if (!url) toast('Type <b>/watch</b> and a YouTube, Vimeo, Twitch, Dailymotion or .mp4 link.');
-    else if (url.toLowerCase() !== 'stop' && !parseVideo(url)) toast("Can't play that link. Try YouTube, Vimeo, Twitch, Dailymotion or a direct .mp4/.webm link.");
+    else if (url.toLowerCase() !== 'stop' && !parseVideo(url)) toast("Can't play that link. Try YouTube, Vimeo, Twitch, Dailymotion or a direct .mp4/.webm link.", 'error');
     else { send({ t: 'watch', url }); input.value = ''; }
     return;
   }
@@ -2065,6 +2166,7 @@ const sideCard: Record<SideCard, HTMLElement> = {
 const sideLabel: Record<SideCard, string> = { todos: 'to-dos', chat: 'chat' };
 
 function applyFold(card: SideCard) {
+  chromeDirty();
   const folded = !!folds[card];
   const btn = $(`#fold-${card}`);
   sideCard[card].classList.toggle('folded', folded);
@@ -2153,6 +2255,8 @@ function signOut(tellServer: boolean) {
   if (tellServer && token) fetch(`${apiBase}/api/logout`, { method: 'POST', body: JSON.stringify({ token }) }).catch(() => {});
   token = null;
   localStorage.removeItem('auralis.token');
+  // The server rejected our token: remember it, so the landing page says why instead of just appearing.
+  if (!tellServer) sessionStorage.setItem('auralis.sessionEnded', '1');
   location.reload(); // simplest way to drop all in-memory game state
 }
 
@@ -2169,6 +2273,7 @@ document.querySelectorAll<HTMLButtonElement>('#authForm [data-mode]').forEach((b
     $('#authConfirmLabel').hidden = authMode !== 'signup';
     $<HTMLInputElement>('#authConfirm').required = authMode === 'signup';
     $('#authUserText').textContent = authMode === 'signup' ? 'Username' : 'Username or email';
+    $('#authHint').className = 'hint'; // back to plain helper text if the sign-in notice was showing
     $('#authHint').textContent = authMode === 'signup' ? 'Already studying with us? Switch to Log in.' : 'New here? Switch to Sign up.';
     $('#authError').hidden = true;
   }));
@@ -2354,4 +2459,12 @@ drawBuddy();
 
 if (token) connect();
 else showLanding(true);
+// Sent back here because the server no longer accepts our session: start on Log in and say why.
+if (sessionStorage.getItem('auralis.sessionEnded')) {
+  sessionStorage.removeItem('auralis.sessionEnded');
+  document.querySelector<HTMLButtonElement>('#authForm [data-mode="login"]')?.click();
+  const notice = $('#authHint');
+  notice.className = 'auth-note'; // a callout, not the usual grey helper line: it explains why you're here
+  notice.textContent = 'Your session ended. Log back in to pick up where you left off.';
+}
 requestAnimationFrame(frame);

@@ -28,13 +28,20 @@ test('side-by-side rooms share one wall that opens all the way along the floor',
   assert.equal(g.owner[next.y * g.w + next.x], 1);
 });
 
-test('rooms on the next row connect through a doorway down', () => {
+test('rooms on the next row open into each other, keeping a stretch of wall at each end', () => {
   const g = buildGrid(Array.from({ length: 3 }, () => empty()));
   assert.equal(g.cols, 2); // three rooms make a 2x2 grid: two on top, one below
   const o = g.origins[0], below = g.origins[2];
-  for (let y = o.y + 8; y < below.y; y++) assert.equal(g.at(o.x + 4, y), DOOR);
+  for (let y = o.y + 8; y < below.y; y++) for (let x = o.x + 2; x < o.x + ROOM_W - 2; x++) assert.equal(g.at(x, y), DOOR);
+  for (const x of [o.x, o.x + 1, o.x + ROOM_W - 2, o.x + ROOM_W - 1]) assert.equal(g.at(x, below.y - 1), WALL); // corners keep the wallpaper
   assert.equal(g.at(o.x + 4, below.y), FLOOR);
-  assert.equal(g.at(o.x + 2, below.y - 1), WALL); // the rest of the back wall stays
+});
+
+test('a shorter room above opens down past the taller neighbour', () => {
+  const g = buildGrid([empty(0), empty(3), empty(0)]);
+  const o = g.origins[0], below = g.origins[2];
+  for (let y = o.y + 8; y < below.y; y++) assert.equal(g.at(o.x + 4, y), DOOR);
+  assert.equal(g.at(o.x + 1, o.y + 9), WALL); // walled in beside the way down
 });
 
 test('the house grows as a square grid and every room opens to its neighbours', () => {
@@ -55,7 +62,7 @@ test('the house grows as a square grid and every room opens to its neighbours', 
     }
   }
   assert.equal(reach.size, 9);
-  // Direct links: an opening to the side, a doorway up.
+  // Direct links: an opening to the side, an opening up.
   assert.equal(g.at(g.origins[3].x + ROOM_W, o.y + 2), DOOR);
   assert.equal(g.at(g.origins[1].x + 4, g.origins[1].y + 8), DOOR);
 });

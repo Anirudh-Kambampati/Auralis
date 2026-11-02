@@ -645,16 +645,18 @@ export function drawWall(c: Ctx, x: number, y: number) {
   }), x, y);
 }
 
-// The opening between two side-by-side rooms: each half keeps its own room's floor, meeting in the middle.
-export function drawSeam(c: Ctx, x: number, y: number, tx: number, ty: number, left: { floor: string; floorStyle?: string }, right: { floor: string; floorStyle?: string }) {
-  for (const [side, room] of [[0, left], [1, right]] as const) {
+// An opening between rooms: each quarter of the tile (top-left, top-right, bottom-left, bottom-right) keeps the floor
+// of the room on that side, so floors meet in the middle, side by side, one above the other, or four at a corner.
+type Floored = { floor: string; floorStyle?: string };
+export function drawSeam(c: Ctx, x: number, y: number, tx: number, ty: number, quarters: Floored[]) {
+  quarters.forEach((room, q) => {
     c.save();
     c.beginPath();
-    c.rect(x + side * 8, y, 8, T);
+    c.rect(x + (q % 2) * 8, y + (q >> 1) * 8, 8, 8);
     c.clip();
     drawFloor(c, x, y, room.floor, tx, ty, room.floorStyle);
     c.restore();
-  }
+  });
 }
 
 export function drawDoor(c: Ctx, x: number, y: number, tx: number, ty: number) {
@@ -667,19 +669,58 @@ export function skyNow(): Sky {
   return h >= 8 && h < 17 ? 'day' : (h >= 17 && h < 20) || (h >= 6 && h < 8) ? 'dusk' : 'night';
 }
 
+// Made-up weather, the same for everyone at the same moment: a new spell every 3 hours, and snow instead of rain in
+// winter (December to February).
+export type Weather = 'clear' | 'clouds' | 'rain' | 'snow';
+export function weatherNow(d = new Date()): Weather {
+  const n = Math.sin(Math.floor(d.getTime() / 10_800_000) * 91.7) * 43758.5453, roll = n - Math.floor(n);
+  if (roll < 0.45) return 'clear';
+  if (roll < 0.7) return 'clouds';
+  return [11, 0, 1].includes(d.getMonth()) ? 'snow' : 'rain';
+}
+
+const SKIES: Record<Weather, Record<Sky, string>> = {
+  clear: { day: '#a8dcf5', dusk: '#f7b58a', night: '#3a4280' },
+  clouds: { day: '#b9cad8', dusk: '#cfa092', night: '#2f3558' },
+  rain: { day: '#92a6b8', dusk: '#9a8086', night: '#262b48' },
+  snow: { day: '#cdd8e4', dusk: '#c2aeb6', night: '#363c62' },
+};
+
 // A 2x2-tile window with curtains (drawn shut when closed), filling the tall back wall above the panel strip.
-export function drawWindow(c: Ctx, x: number, y: number, sky: Sky, closed = false) {
-  c.drawImage(baked(`win|${sky}|${closed}`, 32, 32, (g) => {
+// Painted in three layers: the sky behind the glass, rain or snow falling on it (live), then the frame and curtains.
+export function drawWindow(c: Ctx, x: number, y: number, sky: Sky, closed = false, weather: Weather = 'clear', t = 0) {
+  c.drawImage(baked(`win|${sky}|${weather}`, 32, 32, (g) => {
     r(g, 5, 5, 22, 19, OUT);
     r(g, 6, 6, 20, 17, '#fffaf3');
-    r(g, 7, 7, 18, 14, { day: '#a8dcf5', dusk: '#f7b58a', night: '#3a4280' }[sky]);
-    if (sky === 'day') {
+    r(g, 7, 7, 18, 14, SKIES[weather][sky]);
+    if (weather !== 'clear') {
+      // Clouds: grey puffs across the top.
+      const puff = sky === 'night' ? '#4a5078' : weather === 'clouds' ? '#eef2f6' : '#c4ccd6';
+      r(g, 8, 8, 6, 2, puff); r(g, 9, 7, 3, 1, puff); r(g, 17, 9, 7, 2, puff); r(g, 19, 8, 3, 1, puff);
+      if (weather === 'clouds') { r(g, 11, 15, 5, 2, puff); r(g, 12, 14, 2, 1, puff); }
+    } else if (sky === 'day') {
       r(g, 10, 9, 4, 1, '#ffffff'); r(g, 9, 10, 6, 1, '#ffffff'); r(g, 18, 16, 4, 1, '#ffffff'); r(g, 17, 17, 6, 1, '#ffffff');
     } else if (sky === 'dusk') {
       r(g, 18, 14, 3, 3, '#ffe08a'); r(g, 7, 18, 18, 3, '#f49a8a');
     } else {
       r(g, 10, 9, 2, 2, '#fff3b0'); r(g, 19, 9, 1, 1, '#ffffff'); r(g, 22, 15, 1, 1, '#ffffff'); r(g, 13, 17, 1, 1, '#fff3b0');
     }
+    if (weather === 'snow') r(g, 7, 19, 18, 2, '#ffffff'); // settled on the sill outside
+  }), x, y);
+  if (!closed && (weather === 'rain' || weather === 'snow')) {
+    c.save();
+    c.beginPath();
+    c.rect(x + 7, y + 7, 18, 14);
+    c.clip();
+    // Spread over the glass between the open curtains (columns 9-22), each drop in its own column.
+    for (let k = 0; k < 12; k++) {
+      const col = x + 9 + ((k * 5) % 14);
+      if (weather === 'rain') r(c, col, y + 4 + Math.floor((k * 7 + t / 22) % 17), 1, 3, 'rgba(232,244,255,0.9)');
+      else r(c, col + Math.round(Math.sin(t / 700 + k)), y + 7 + Math.floor((k * k * 7 + k * 3 + t / 140) % 14), 1, 1, '#ffffff');
+    }
+    c.restore();
+  }
+  c.drawImage(baked(`winfront|${closed}`, 32, 32, (g) => {
     r(g, 15, 7, 2, 14, '#fffaf3');
     r(g, 7, 13, 18, 1, '#fffaf3');
     r(g, 3, 3, 26, 2, '#8a5a3c');
@@ -718,9 +759,13 @@ export function drawHeart(c: Ctx, x: number, y: number) {
 export const NIGHT_TINT: Record<Sky, string> = { day: '', dusk: 'rgba(90,60,120,0.16)', night: 'rgba(20,24,70,0.42)' };
 
 // Warm light added on top of the night tint ('lighter' blending brightens what is underneath).
+// Light spreads well past its source (GLOW_REACH times the listed radius): bright near it, then a long soft falloff.
+export const GLOW_REACH = 1.8;
 export function drawGlow(c: Ctx, x: number, y: number, rad: number, alpha: number) {
+  rad *= GLOW_REACH;
   const g = c.createRadialGradient(x, y, 1, x, y, rad);
   g.addColorStop(0, `rgba(255,214,140,${alpha})`);
+  g.addColorStop(0.35, `rgba(255,214,140,${alpha * 0.55})`);
   g.addColorStop(1, 'rgba(255,214,140,0)');
   c.save();
   c.globalCompositeOperation = 'lighter';
