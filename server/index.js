@@ -8,7 +8,7 @@ import { openStore, checkPassword } from './store.js';
 import { openPgStore } from './store-pg.js';
 import { files, isPng, isJpeg } from './files.js';
 import {
-  ITEMS, WALLPAPERS, FLOORS, SKINS, HAIRS, SHIRTS, STYLES, FACES, OUTFITS, BODIES, ACCESSORIES, FOCUS_LENGTHS, canPlace, placeSwaps, focusReward, quitReward, quitMinutes, focusEnd, streakDays, streakBonus,
+  ITEMS, WALLPAPERS, FLOORS, SKINS, HAIRS, SHIRTS, STYLES, FACES, OUTFITS, BODIES, ACCESSORIES, isFocusLength, canPlace, placeSwaps, focusReward, quitReward, quitMinutes, focusEnd, streakDays, streakBonus,
   WALL_PATTERNS, FLOOR_STYLES, PETS, MAX_PETS, EXPAND_COST, colorsFor, USES, PET_ACCS, MAX_ROOMS, ROOM_COST,
   isPlant, TASK_COINS, TASK_REWARDS_PER_DAY, discounted, GIFT_COINS, GIFTS_PER_DAY, nextRot, sellPrice,
 } from '../shared/game.js';
@@ -285,7 +285,7 @@ function handle(p, m) {
       }
       return; // no full broadcast for movement
     case 'focus_start':
-      if (!FOCUS_LENGTHS.includes(m.minutes) || p.focus) return;
+      if (!isFocusLength(m.minutes) || p.focus) return;
       setTz(p, m.tz);
       p.focus = { minutes: m.minutes, endsAt: Date.now() + m.minutes * 60_000, tag: cleanText(m.tag, 24) || 'Study' };
       p.hiddenSubjects = (p.hiddenSubjects ?? []).filter((t) => t !== p.focus.tag); // using a subject again brings it back

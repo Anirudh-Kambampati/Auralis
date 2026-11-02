@@ -1,6 +1,6 @@
 import {
   SHELVES, buildGrid, walkable, canPlace, placeSwaps,roomSize, MAX_ROOMS, ROOM_COST, colorsFor, ITEMS, PETS, PET_ACCS, MAX_PETS, EXPAND_COST, ROOM_SIZES,
-  WALLPAPERS, WALL_PATTERNS, FLOORS, FLOOR_STYLES, SKINS, HAIRS, SHIRTS, STYLES, FACES, OUTFITS, BODIES, ACCESSORIES, FOCUS_LENGTHS,
+  WALLPAPERS, WALL_PATTERNS, FLOORS, FLOOR_STYLES, SKINS, HAIRS, SHIRTS, STYLES, FACES, OUTFITS, BODIES, ACCESSORIES, FOCUS_LENGTHS, isFocusLength,
   WALL_H, WALL, FLOOR, DOOR, BLOCKED, VOID, buddyMultiplier, focusEnd, streakDays, streakBonus, sellPrice, footprint, lying, THIRSTY_MS, isPlant, discounted, GIFT_COINS, activeEvents, nextEvent,
 } from '../shared/game.js';
 import {
@@ -1375,7 +1375,7 @@ function streakLine() {
 }
 function againButton() {
   const len = Number(localStorage.getItem('auralis.length'));
-  return FOCUS_LENGTHS.includes(len) ? `<div class="center"><button data-act="focus" data-v="${len}">▶ Again: ${len} min${lastTag ? ` of ${esc(lastTag)}` : ''}</button></div>` : '';
+  return isFocusLength(len) ? `<div class="center"><button data-act="focus" data-v="${len}">▶ Again: ${len} min${lastTag ? ` of ${esc(lastTag)}` : ''}</button></div>` : '';
 }
 // Character options as pictures: my character wearing each choice, the whole body or just the head.
 const LOOK_LABEL: Record<string, string> = { halfup: 'half up', twintails: 'twin tails', manbun: 'man bun', sidelong: 'side long', catears: 'cat ears', round: 'round glasses', chubby: 'plus' };
@@ -1559,14 +1559,16 @@ function panelBody(mine: Member) {
          <div class="bar panel-bar"><i id="pbar" style="width:${progress(f)}%"></i></div>
          <p class="center">Finish to earn <b>${f.minutes}</b> ${coin()}</p>${together}
          <div class="center"><button class="danger" data-act="cancel">Give up</button></div>`
-      : `${tomatoes()}${streakLine()}${againButton()}${joinable().map((o) => `<div class="invite">📚 <b>${esc(o.name)}</b> is studying <b>${esc(o.focus!.tag ?? 'Study')}</b>, ${fmt(o.focus!.endsAt - Date.now())} left.
+      : `${tomatoes()}${streakLine()}${againButton()}${joinable().map((o) => `<div class="invite"><span>📚 <b>${esc(o.name)}</b> is studying <b>${esc(o.focus!.tag ?? 'Study')}</b>, ${fmt(o.focus!.endsAt - Date.now())} left.</span>
            <button data-act="joingroup" data-v="${o.id}">Join them</button></div>`).join('')}
          <h3>What are you studying?</h3>
          <div class="row"><input id="tag" maxlength="24" placeholder="Study" value="${esc(lastTag)}" aria-label="Subject">
            <button class="off" data-act="tagsave" title="Save as a quick pick">★ Save</button></div>
          ${subjectChips()}
          <h3>How long?</h3>
-         <div class="tiles">${FOCUS_LENGTHS.map((n) => `<button class="tile" data-act="focus" data-v="${n}"><b>${n}</b><small>min</small><span class="reward">+${n} ${coin()}</span></button>`).join('')}</div>
+         <div class="tiles lengths">${FOCUS_LENGTHS.map((n) => `<button class="tile" data-act="focus" data-v="${n}"><b>${n}</b><small>min</small><span class="reward">+${n} ${coin()}</span></button>`).join('')}</div>
+         <div class="row custom-len"><input id="customLen" type="number" min="10" max="180" step="5" inputmode="numeric" placeholder="Custom" aria-label="Custom length in minutes" aria-describedby="customHint">
+           <span id="customHint" class="hint">min · multiple of 5, 10 to 180</span><button data-act="focuscustom">Start</button></div>
          <p class="hint center">You'll walk to your desk and study until the timer ends. Study at the same time as housemates for +25% coins each, up to ×2.</p>${together}`) + examsHTML(mine);
   }
   if (openPanel === 'shop') return shopBody(mine);
@@ -1627,6 +1629,10 @@ function renderPanel() {
   const th = THEMES[openPanel];
   const scroll = panel.querySelector('.pb')?.scrollTop ?? 0;
   const railX = panel.querySelector('.rail')?.scrollLeft ?? 0; // keep the swiped category strip where it was
+  // A house update (any housemate's action) rebuilds the panel: keep the box being typed in, its text and cursor.
+  const typing = document.activeElement instanceof HTMLInputElement && panel.contains(document.activeElement) ? document.activeElement : null;
+  const typingAt = typing?.id ? `#${typing.id}` : typing?.dataset.slot ? `.${typing.className}[data-slot="${typing.dataset.slot}"]` : null;
+  const typed = typing && { value: typing.value, start: typing.selectionStart, end: typing.selectionEnd };
   panel.hidden = false;
   panel.style.setProperty('--theme', th.color);
   panel.innerHTML = `<header class="ph"><img src="${uiIconURL(th.icon)}" alt=""><h2>${th.title}</h2>
@@ -1634,6 +1640,26 @@ function renderPanel() {
   panel.querySelector('.pb')!.scrollTop = scroll;
   const rail = panel.querySelector<HTMLElement>('.rail');
   if (rail) rail.scrollLeft = railX;
+  const again = typingAt && typed ? panel.querySelector<HTMLInputElement>(typingAt) : null;
+  if (again && typed) {
+    again.value = typed.value;
+    again.focus();
+    try { again.setSelectionRange(typed.start, typed.end); } catch { /* date and number boxes have no cursor */ }
+  }
+  // A typed length shows what it pays as you type, and Enter starts it.
+  const custom = panel.querySelector<HTMLInputElement>('#customLen'), hint = panel.querySelector('#customHint');
+  const showPay = () => {
+    const n = Number(custom!.value);
+    hint!.innerHTML = custom!.value === '' ? 'min · multiple of 5, 10 to 180' : isFocusLength(n) ? `min · earns <b>+${n}</b> ${coin()}` : 'min · needs a multiple of 5, 10 to 180';
+  };
+  custom?.addEventListener('input', showPay);
+  custom?.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); panel.querySelector<HTMLButtonElement>('[data-act="focuscustom"]')?.click(); } });
+  if (custom?.value) showPay(); // kept through a rebuild
+  const tagInput = panel.querySelector<HTMLInputElement>('#tag');
+  tagInput?.addEventListener('input', () => { lastTag = tagInput.value; });
+  tagInput?.addEventListener('keydown', (e) => { // Enter saves the subject, like ★ Save
+    if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); panel.querySelector<HTMLButtonElement>('[data-act="tagsave"]')?.click(); }
+  });
   const nameInput = panel.querySelector<HTMLInputElement>('#name');
   nameInput?.addEventListener('change', () => send({ t: 'look', name: nameInput.value, look: mine.look }));
   panel.querySelectorAll<HTMLInputElement>('.pet-name').forEach((i) => i.addEventListener('change', () => send({ t: 'pet_style', slot: Number(i.dataset.slot), name: i.value })));
@@ -1647,7 +1673,14 @@ panel.addEventListener('click', (e) => {
   const room = myRoom()!;
   switch (b.dataset.act) {
     case 'close': setPanel(null); break;
+    case 'focuscustom': {
+      const n = Number(panel.querySelector<HTMLInputElement>('#customLen')?.value);
+      if (!isFocusLength(n)) { toast('Pick a multiple of 5 minutes, from 10 to 180.', 'error'); break; }
+      b.dataset.v = String(n); // then start it like any other length
+    }
+    // falls through
     case 'focus': {
+      const v = b.dataset.v!;
       lastTag = panel.querySelector<HTMLInputElement>('#tag')?.value.trim() ?? '';
       localStorage.setItem('auralis.tag', lastTag);
       localStorage.setItem('auralis.length', v);

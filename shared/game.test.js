@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {
   buildGrid, canPlace, placeSwaps, focusReward, quitReward, quitMinutes, focusEnd, streakDays, streakBonus, colorsFor, roomSize, PETS, EXPAND_COST,
   ITEMS, EVENTS, easterSunday, activeEvents, nextEvent, footprint, nextRot,
-  DOOR, WALL, FLOOR, BLOCKED, VOID, ROOM_W, colsFor,
+  DOOR, WALL, FLOOR, BLOCKED, VOID, ROOM_W, colsFor, isFocusLength, FOCUS_LENGTHS,
 } from './game.js';
 
 const empty = (level = 0) => ({ level, furniture: [] });
@@ -178,4 +178,9 @@ test('streak bonus counts local days', () => {
   assert.equal(streakDays(s, at(14, 9), tz), 0);
   assert.equal(streakDays(s, at(12, 13), 0), 2); // in UTC the first two fall on one day
   assert.deepEqual([2, 3, 7, 30].map(streakBonus), [0, 0.1, 0.25, 0.5]);
+});
+
+test('a focus length is a multiple of 5 from 10 minutes to 3 hours', () => {
+  for (const n of [10, 15, 35, 120, 180, ...FOCUS_LENGTHS]) assert.ok(isFocusLength(n), n);
+  for (const n of [0, 5, 12, 185, 9.5, -10, NaN, '20']) assert.ok(!isFocusLength(n), n);
 });

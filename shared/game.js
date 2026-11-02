@@ -474,7 +474,9 @@ export const OUTFITS = ['tee', 'tie', 'sweater', 'jacket', 'hoodie', 'overalls',
 export const BODIES = ['regular', 'lean', 'athletic', 'chubby', 'broad', 'stocky', 'petite', 'curvy'];
 export const ACCESSORIES = ['none', 'glasses', 'round', 'shades', 'bandage', 'mask', 'earring', 'headphones', 'cap', 'beanie', 'catears'];
 
-export const FOCUS_LENGTHS = [15, 25, 45, 60, 90];
+export const FOCUS_LENGTHS = [15, 20, 25, 45, 60, 90]; // one-tap picks
+// Any length can be typed in too: a multiple of 5 minutes, from 10 minutes up to 3 hours.
+export const isFocusLength = (n) => Number.isInteger(n) && n % 5 === 0 && n >= 10 && n <= 180;
 
 // Room upgrades: each level makes the floor bigger. EXPAND_COST[n] is the price to reach level n.
 export const ROOM_SIZES = [{ w: 10, h: 8 }, { w: 12, h: 9 }, { w: 14, h: 10 }, { w: 16, h: 11 }];

@@ -240,6 +240,11 @@ input:focus, textarea:focus { outline: 3px solid var(--gold); outline-offset: 1p
 label { display: flex; flex-direction: column; gap: 6px; font-weight: 700; }
 
 .tiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+.tiles.lengths { grid-template-columns: repeat(3, 1fr); } /* six session lengths: two even rows, on phones too */
+.custom-len { align-items: center; margin-top: 10px; }
+.custom-len input { width: 6.5em; flex: none; }
+.custom-len .hint { flex: 1; margin: 0; }
+.custom-len .coin { height: 1em; vertical-align: -2px; }
 .tile { flex-direction: column; gap: 0; padding: 12px 4px 10px; background: var(--paper); color: var(--ink); }
 .tile b { font-size: 36px; line-height: 1; }
 .tile small { font-size: 14px; color: var(--muted); }
