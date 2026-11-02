@@ -56,7 +56,7 @@ let notesSeen = 0; // newest desk note already shown
 let noteTo: string | null = null; // housemate I'm writing a desk note for
 let finishedSession = false; // the session that just ended ran to the end (not given up): take a break
 let missed = 0; // messages that arrived while I was focusing, quietly
-const cheers = new Map<string, { by: string; at: number }>(); // 👏 floating over a studying player
+const cheers = new Map<string, { text: string; at: number; hop?: boolean }>(); // 👏 or ✋ floating up over a player (hop: a little jump too)
 let me: Me = { id: myId, coins: 0, inventory: {}, sessions: [], subjects: [], hiddenSubjects: [], todos: [], dm: {} };
 let statsTab = 'mine';
 let statsRange = 'week';
@@ -234,7 +234,17 @@ function onMessage(m: any) {
     board = m;
     if (openPanel === 'stats') renderPanel();
   } else if (m.t === 'cheer') {
-    cheers.set(m.to, { by: m.from, at: Date.now() }); // silent, even for the one studying
+    cheers.set(m.to, { text: `👏 ${m.from}`, at: Date.now() }); // silent, even for the one studying
+  } else if (m.t === 'invite') { // a housemate who's studying asks me along: one tap joins, ending when theirs does
+    if (myMember()?.focus) return;
+    notify(chime);
+    toast(`📚 <b>${esc(m.by)}</b> invites you to study <b>${esc(m.tag)}</b> together. <u>Tap to join</u> (or open Focus)`, 'reward', {
+      ms: 10_000, onClick: () => send({ t: 'focus_join', id: m.from, tz: new Date().getTimezoneOffset() }),
+    });
+  } else if (m.t === 'highfive') {
+    const at = Date.now();
+    for (const id of [m.from, m.to]) cheers.set(id, { text: '✋', at, hop: true });
+    if (m.to === myId) toast(`✋ <b>${esc(m.by)}</b> high-fived you!`);
   } else if (m.t === 'reward') {
     notify(chime);
     if (!m.text) finishedSession = true; // a focus session paid out
@@ -685,9 +695,14 @@ function tapAt(e: PointerEvent) {
     return;
   }
   if (e.pointerType === 'touch') showTip(clickLabel(tx, ty), e.clientX, e.clientY - 40, 1200); // fingers can't hover
-  // A housemate studying: cheer them on.
-  const studier = studyingAt(tx, ty);
-  if (studier) { send({ t: 'cheer', to: studier.id }); return; }
+  // A housemate: cheer them on while they study. Idle while I study: invite them along. Both idle: a high five.
+  const friend = friendAt(tx, ty), focus = mine?.focus;
+  if (friend) {
+    if (friend.focus) send({ t: 'cheer', to: friend.id });
+    else if (focus?.pausedAt) toast(`Resume your session first, then invite ${esc(friend.name)}.`);
+    else send({ t: focus ? 'invite' : 'highfive', to: friend.id });
+    return;
+  }
   // Clicking a window in one of your rooms opens or closes its curtains, for everyone.
   const wi = windowAt(tx, ty);
   if (wi >= 0 && slots[wi].m.id === myId) { send({ t: 'curtains', r: slots[wi].ri }); return; }
@@ -1050,7 +1065,8 @@ function render(t: number, dt: number) {
     const act = walking ? undefined : acts.get(tileKey(a.x, a.y));
     const seated = !!m.focus && !!act && !!(ITEMS[act.item as ItemKey] as { chair?: boolean }).chair; // studying at a desk
     const stepFrame = walking ? 1 + (Math.floor(a.dist * 4) % 2) : 0;
-    const ax = Math.round(a.x * T), ay = Math.round(a.y * T);
+    const pop = cheers.get(m.id), hop = pop?.hop && now - pop.at < 660 ? Math.round(Math.abs(Math.sin((now - pop.at) / 105)) * 3) : 0; // a high five: two quick hops
+    const ax = Math.round(a.x * T), ay = Math.round(a.y * T) - hop;
     sprites.push({
       y: act ? Math.max(a.y + 0.99, act.z + 0.01) : a.y + 0.99, // on a bed's pillow row: drawn over the bed, not under it
       draw: () => (act ? drawActing(ctx, m.look, act.act, act.item, ax, ay, t, act.col, seated)
@@ -1148,10 +1164,10 @@ function render(t: number, dt: number) {
     // 👏 from a housemate rising over someone studying.
     const ch = cheers.get(m.id);
     if (ch && now - ch.at < 2500) {
-      ctx.font = `600 ${fs}px 'Fredoka', system-ui, sans-serif`;
+      ctx.font = `600 ${fs * 1.5}px 'Fredoka', system-ui, sans-serif`;
       ctx.globalAlpha = 1 - (now - ch.at) / 2500;
       ctx.fillStyle = '#2b2530';
-      ctx.fillText(`👏 ${ch.by}`, sx, sy - fs * 1.6 - (now - ch.at) / 40);
+      ctx.fillText(ch.text, sx, sy - fs * 1.6 - (now - ch.at) / 40);
       ctx.globalAlpha = 1;
     }
     // Chat speech bubble above the name.
@@ -1299,7 +1315,8 @@ $('#skipBreak').addEventListener('click', () => { endBreak(); restUntil = 0; sta
 $<HTMLImageElement>('#deckMarker').src = coinSrc;
 
 let toastTimer = 0;
-function toast(html: string, kind = '') {
+// opts.onClick makes the whole toast a button (an invite: tap to join); opts.ms keeps it up longer.
+function toast(html: string, kind = '', opts: { ms?: number; onClick?: () => void } = {}) {
   const el = $('#toast');
   el.innerHTML = `<span>${html}</span>`; // one inline run so bold words don't become separate flex items
   el.className = kind;
@@ -1307,8 +1324,10 @@ function toast(html: string, kind = '') {
   el.hidden = true;
   void el.offsetWidth; // restart the drop-in animation
   el.hidden = false;
+  el.onclick = opts.onClick ? () => { el.hidden = true; opts.onClick!(); } : null;
+  el.style.cursor = opts.onClick ? 'pointer' : '';
   clearTimeout(toastTimer);
-  toastTimer = window.setTimeout(() => (el.hidden = true), 3200);
+  toastTimer = window.setTimeout(() => (el.hidden = true), opts.ms ?? 3200);
 }
 
 function copyCode(code = houseCode) {
@@ -1821,18 +1840,19 @@ const USE_LABELS: Record<string, string> = {
 const cap = (s: string) => s[0].toUpperCase() + s.slice(1);
 
 // A housemate studying at the tile (or just under their timer bubble), if any.
-function studyingAt(tx: number, ty: number) {
+// A housemate (online, not me) standing on this tile, or with their head on it.
+function friendAt(tx: number, ty: number) {
   return members.find((m) => {
     const a = avatars.get(m.id);
-    return m.id !== myId && m.focus && m.online && a && Math.round(a.tx) === tx && (Math.round(a.ty) === ty || Math.round(a.ty) - 1 === ty);
+    return m.id !== myId && m.online && a && Math.round(a.tx) === tx && (Math.round(a.ty) === ty || Math.round(a.ty) - 1 === ty);
   });
 }
 
 // What clicking this tile would do, in a few words (null: just walk there). Mirrors the click handler.
 function clickLabel(tx: number, ty: number): string | null {
   if (tx < 0 || ty < 0 || tx >= grid.w || ty >= grid.h) return null;
-  const studier = studyingAt(tx, ty);
-  if (studier) return `Cheer ${studier.name} on 👏`;
+  const friend = friendAt(tx, ty), mine = myMember()?.focus;
+  if (friend) return friend.focus ? `Cheer ${friend.name} on 👏` : mine ? `Invite ${friend.name} to study with you 📚` : `High five ${friend.name} ✋`;
   const wi = windowAt(tx, ty);
   if (wi >= 0 && slots[wi].m.id === myId) return slots[wi].room.curtains ? 'Open curtains' : 'Close curtains';
   const si = grid.owner[ty * grid.w + tx] ?? -1, hit = slots[si];

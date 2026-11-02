@@ -47,7 +47,8 @@ const lastChat = new Map(); // playerId -> ms, simple flood guard
 // house code -> the video it is watching together: { src, by, byName, playing, pos, at }. Not saved: a restart ends it.
 const watches = new Map();
 const lastDm = new Map(); // playerId -> ms, same guard for private messages
-const lastCheer = new Map(); // playerId -> ms, so cheers can't be spammed
+const lastCheer = new Map(); // playerId -> ms, so cheers and high fives can't be spammed
+const lastInvite = new Map(); // 'from>to' -> ms: one study invite per pair every 30 s
 const MAX_EVENTS = 100; // per calendar; the earliest dates drop off first
 let nextId = Date.now();
 
@@ -420,6 +421,23 @@ function handle(p, m) {
       lastCheer.set(p.id, Date.now());
       for (const id of h.members) send(sockets.get(id), { t: 'cheer', from: p.name, to: them.id });
       return; // nothing saved, nothing to rebroadcast
+    }
+    case 'invite': { // I'm studying and a housemate isn't: ask them along (they can join and end when I do)
+      const h = db.houses[p.house], them = h.members.includes(m.to) && m.to !== p.id ? db.players[m.to] : null;
+      if (!them || them.focus || !p.focus || p.focus.pausedAt) return;
+      const key = `${p.id}>${them.id}`, now = Date.now();
+      if (now - (lastInvite.get(key) ?? 0) < 30_000) return send(sockets.get(p.id), { t: 'info', text: `You just invited ${them.name}. Give them a moment!` });
+      lastInvite.set(key, now);
+      send(sockets.get(them.id), { t: 'invite', from: p.id, by: p.name, tag: p.focus.tag ?? 'Study' });
+      send(sockets.get(p.id), { t: 'info', text: `Invited ${them.name} to study with you. 📚` });
+      return; // nothing saved
+    }
+    case 'highfive': { // both of us idle: a high five the whole house sees
+      const h = db.houses[p.house], them = h.members.includes(m.to) && m.to !== p.id ? db.players[m.to] : null;
+      if (!them || p.focus || them.focus || Date.now() - (lastCheer.get(p.id) ?? 0) < 3000) return;
+      lastCheer.set(p.id, Date.now());
+      for (const id of h.members) send(sockets.get(id), { t: 'highfive', from: p.id, to: them.id, by: p.name });
+      return;
     }
     case 'exam_add': { // an exam date to count down to; housemates see it on your desk calendar
       const subject = cleanText(m.subject, 24), at = Date.parse(`${m.date}T00:00:00`);
