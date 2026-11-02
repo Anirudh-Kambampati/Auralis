@@ -470,6 +470,13 @@ export function drawActing(c: Ctx, look: Look, act: string, item: string, x: num
       box(c, x + dx - 1, y + dy - 1, 2, 4, col ?? '#f48a8a');
       box(c, x + dx + 4, y + dy - 1, 2, 4, col ?? '#f48a8a');
     }
+  } else if (act === 'pullup') {
+    // Hanging from the crossbar (18px up), facing it: up until the chin clears the bar, then slowly back down.
+    const p = (1 - Math.cos(t / 450)) / 2, ay = y - 19 - Math.round(p * 6);
+    r(c, x + 4, y + 14, 8, 2, 'rgba(58,38,51,0.18)'); // shadow stays on the floor
+    c.drawImage(baked(`av|${Object.values(look).join()}|0true`, 16, AVATAR_H, (g) => paintRows(g, avatarRows(look, 0, true), lookPal(look))), x, ay);
+    for (const ax of [2, 12]) r(c, x + ax, y - 17, 2, ay + 10 - (y - 17), look.skin); // arms up to the bar
+    for (const ax of [1, 11]) r(c, x + ax, y - 18, 4, 2, shade(look.skin, -0.1)); // hands round it
   } else if (act === 'punch') {
     drawAvatar(c, look, x + 5 - beat * 2, y + 1, 0, true);
     if (beat) { r(c, x + 2, y - 8, 2, 1, '#fff3b0'); r(c, x + 1, y - 10, 1, 1, '#fff3b0'); }

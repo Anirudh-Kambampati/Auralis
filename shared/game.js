@@ -223,7 +223,7 @@ export const ITEMS = {
   yogaMat: { name: 'Yoga mat', w: 1, h: 1, price: 15, solid: true, colors: 'pastel', act: 'stretch', shelf: 'fitness' },
   rowingMachine: { name: 'Rowing machine', w: 2, h: 1, price: 100, solid: true, act: 'bike', shelf: 'fitness' },
   kettlebells: { name: 'Kettlebells', w: 1, h: 1, price: 25, solid: true, colors: 'pastel', act: 'lift', shelf: 'fitness' },
-  pullUpBar: { name: 'Pull-up bar', w: 1, h: 1, price: 55, solid: true, act: 'lift', shelf: 'fitness' },
+  pullUpBar: { name: 'Pull-up bar', w: 1, h: 1, price: 55, solid: true, act: 'pullup', shelf: 'fitness' },
   weightBench: { name: 'Weight bench', w: 2, h: 1, price: 85, solid: true, act: 'lift', shelf: 'fitness' },
   stepper: { name: 'Stair stepper', w: 1, h: 1, price: 60, solid: true, act: 'run', shelf: 'fitness' },
   jumpRope: { name: 'Jump rope', w: 1, h: 1, price: 11, solid: true, act: 'run', shelf: 'fitness' },

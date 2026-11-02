@@ -1017,7 +1017,7 @@ function render(t: number, dt: number) {
         : a.use && !walking ? drawUsing(ctx, m.look, a.use, ax, ay, t)
         : drawAvatar(ctx, m.look, ax, ay, stepFrame, a.up)),
     });
-    labels.push({ x: a.x, y: a.y, m, seated, lift: seated ? 30 : act ? 12 : 7 });
+    labels.push({ x: a.x, y: a.y, m, seated, lift: seated ? 30 : act?.act === 'pullup' ? 28 : act ? 12 : 7 });
     // Studying after dark: a desk lamp clicks on, on the table in front of the chair.
     if (seated && dark) {
       sprites.push({ y: a.y + 1.6, draw: () => drawDeskLamp(ctx, ax + 10, ay + T + 4) });
@@ -1732,7 +1732,7 @@ function writeNote(id: string) {
 }
 
 // ---------- what a click does: hover labels, cheering, exam countdowns ----------
-const ACT_LABELS: Record<string, string> = { sit: 'Sit', sleep: 'Nap (5-min break)', bounce: 'Bounce', lift: 'Work out', run: 'Run', punch: 'Box', bike: 'Ride', stretch: 'Stretch' };
+const ACT_LABELS: Record<string, string> = { sit: 'Sit', sleep: 'Nap (5-min break)', bounce: 'Bounce', lift: 'Work out', pullup: 'Pull-ups', run: 'Run', punch: 'Box', bike: 'Ride', stretch: 'Stretch' };
 const USE_LABELS: Record<string, string> = {
   water: 'Water', read: 'Study here', snack: 'Snack (2-min break)', tea: 'Tea (2-min break)', primp: 'Change your look', dress: 'Change your look',
   stargaze: 'Stargaze', feed: 'Feed the pets', music: 'Play music', strum: 'Play guitar', drum: 'Drum', dj: 'DJ', warm: 'Warm up', wind: 'Wind it up',
