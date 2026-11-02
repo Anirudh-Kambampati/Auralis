@@ -8,7 +8,7 @@ import {
   coinURL, uiIconURL, AV, drawPaper, isDark, paintBlockText, drawWindow as drawWin, drawDroplet, drawHeart, tileURL, type Look,
 } from './draw';
 import { drawPet, petPos, petIconURL, seedOf } from './pets';
-import { toggleSound, soundName, chime, ping, stopAllSounds } from './sounds';
+import { toggleSound, soundName, chime, ping, stopAllSounds, setVolume } from './sounds';
 import { countUnseen } from './tabBadge';
 import { syncWatch } from './watch';
 import { parseVideo } from '../shared/watch.js';
@@ -329,6 +329,30 @@ function labelTheme() {
 }
 labelTheme();
 matchMedia('(prefers-color-scheme: dark)').addEventListener('change', labelTheme); // following the system until picked
+const muteBtn = $<HTMLButtonElement>('#mute'), volMore = $<HTMLButtonElement>('#volMore'), volMenu = $<HTMLElement>('#volMenu');
+const sliders = document.querySelectorAll<HTMLInputElement>('input[data-vol]'); // master first
+let muted = localStorage.getItem('auralis.muted') === 'on';
+function applyVolume() {
+  sliders.forEach((s) => setVolume(s.dataset.vol!, s.dataset.vol === 'all' && muted ? 0 : +s.value));
+  muteBtn.textContent = muted || sliders[0].value === '0' ? '🔇' : '🔊';
+  muteBtn.title = muteBtn.ariaLabel = muted ? 'Unmute' : 'Mute';
+}
+sliders.forEach((s) => {
+  s.value = localStorage.getItem(`auralis.volume.${s.dataset.vol}`) ?? '1';
+  s.addEventListener('input', () => {
+    if (s.dataset.vol === 'all') { muted = false; localStorage.setItem('auralis.muted', 'off'); }
+    localStorage.setItem(`auralis.volume.${s.dataset.vol}`, s.value);
+    applyVolume();
+  });
+});
+applyVolume();
+muteBtn.addEventListener('click', () => {
+  muted = !muted;
+  localStorage.setItem('auralis.muted', muted ? 'on' : 'off');
+  applyVolume();
+});
+volMore.addEventListener('click', () => { volMenu.hidden = !volMenu.hidden; volMore.ariaExpanded = String(!volMenu.hidden); });
+$<HTMLButtonElement>('#stopAll').addEventListener('click', () => { stopAllSounds(); toast('All sounds stopped.'); });
 themeBtn.addEventListener('click', () => {
   setTheme(isDark() ? 'light' : 'dark');
   try { localStorage.setItem('auralis.theme', document.documentElement.dataset.theme!); } catch {}

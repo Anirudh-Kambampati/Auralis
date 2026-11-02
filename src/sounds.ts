@@ -415,18 +415,27 @@ const edm: Start = (ctx, out) => {
   });
 };
 
+// A looping file from public/sounds; stop() fades `out` and closes the context, then this pauses it.
+const file = (name: string): Start => (ctx, out) => {
+  const a = new Audio(`/sounds/${name}.mp3`);
+  a.loop = true;
+  ctx.createMediaElementSource(a).connect(out);
+  a.play().catch(() => {});
+  return () => setTimeout(() => a.pause(), 700);
+};
+
 // [what the toast calls it, the sound, what kind: 'music' plays alone; band instruments play together, but not over music]
 const SOUNDS: Record<string, [string, Start, ('music' | 'band')?]> = {
-  recordPlayer: ['Ambience', music, 'music'],
+  recordPlayer: ['Ambience', file('Ambience'), 'music'],
   djDeck: ['EDM study mix', edm, 'music'],
-  piano: ['Jazz piano', piano, 'band'],
-  guitar: ['Jazz guitar', guitar, 'band'],
-  saxophone: ['Sax solo', saxophone, 'band'],
+  piano: ['Jazz piano', file('Piano'), 'music'],
+  guitar: ['Jazz guitar', file('Guitar'), 'music'],
+  saxophone: ['Sax solo', file('Saxophone'), 'music'],
   drumKit: ['Jazz drums', drumKit, 'band'],
   synth: ['Electric piano', synth, 'band'],
-  cello: ['Walking bass', cello, 'band'],
-  violin: ['Swing violin', violin, 'band'],
-  harp: ['Harp', harp, 'band'],
+  cello: ['Walking bass', file('Guitar'), 'music'],
+  violin: ['Swing violin', file('Violin'), 'music'],
+  harp: ['Harp', file('Harp'), 'music'],
   dhol: ['Dhol beat', dhol, 'band'],
   fireplace: ['Crackling fire', fire],
   grandClock: ['Tick-tock', clock(1400, 1)],
@@ -434,6 +443,13 @@ const SOUNDS: Record<string, [string, Start, ('music' | 'band')?]> = {
 };
 const keyOf = (item: string) => item;
 const playing = new Map<string, { ctx: AudioContext; out: GainNode; stop: () => void }>();
+const volumes: Record<string, number> = { all: 1, music: 1, ambient: 1, alerts: 1 }; // all is 0 when muted
+const level = (key: string) => 0.8 * volumes.all * volumes[SOUNDS[key][2] ? 'music' : 'ambient'];
+
+export function setVolume(group: string, v: number) {
+  volumes[group] = v;
+  for (const [key, p] of playing) { p.out.gain.cancelScheduledValues(p.ctx.currentTime); p.out.gain.setTargetAtTime(level(key), p.ctx.currentTime, 0.05); }
+}
 
 export const soundName = (item: string) => SOUNDS[keyOf(item)]?.[0];
 
@@ -460,7 +476,7 @@ export function toggleSound(item: string): boolean {
   if (kind) for (const k of [...playing.keys()]) if (SOUNDS[k][2] === 'music' || (kind === 'music' && SOUNDS[k][2])) stop(k);
   const ctx = new AudioContext(), out = ctx.createGain(), limit = ctx.createDynamicsCompressor();
   out.gain.setValueAtTime(0, ctx.currentTime);
-  out.gain.linearRampToValueAtTime(0.8, ctx.currentTime + 1.5);
+  out.gain.linearRampToValueAtTime(level(key), ctx.currentTime + 1.5);
   out.connect(limit).connect(ctx.destination);
   playing.set(key, { ctx, out, stop: SOUNDS[key][1](ctx, out) });
   return true;
@@ -468,6 +484,8 @@ export function toggleSound(item: string): boolean {
 
 // A few soft sine notes in a row. Fine outside a click once the page has been clicked before.
 function notes(list: number[], gap: number, vol: number) {
+  if (!(volumes.all * volumes.alerts)) return;
+  vol *= volumes.all * volumes.alerts;
   const ctx = new AudioContext();
   list.forEach((m, i) => {
     const o = ctx.createOscillator(), g = ctx.createGain(), at = ctx.currentTime + 0.05 + i * gap;

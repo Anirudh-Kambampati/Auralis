@@ -123,6 +123,16 @@
         <button id="zoomIn" aria-label="Zoom in" title="Zoom in (+)">+</button>
       </div>
       <div class="hud-right">
+        <div class="chip vol">
+          <button id="mute"></button><input type="range" data-vol="all" min="0" max="1" step="0.05" aria-label="Volume" />
+          <button id="volMore" aria-expanded="false" aria-controls="volMenu" aria-label="More sound controls" title="More sound controls">▾</button>
+          <div id="volMenu" hidden>
+            <label>Music <input type="range" data-vol="music" min="0" max="1" step="0.05" /></label>
+            <label>Fire &amp; clocks <input type="range" data-vol="ambient" min="0" max="1" step="0.05" /></label>
+            <label>Chimes <input type="range" data-vol="alerts" min="0" max="1" step="0.05" /></label>
+            <button id="stopAll">⏹ Stop all sounds</button>
+          </div>
+        </div>
         <button class="chip theme" id="theme"></button>
         <button class="chip house" id="code" title="Copy house code"></button>
       </div>
