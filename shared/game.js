@@ -499,8 +499,8 @@ export const roomSize = (room) => ROOM_SIZES[room?.level ?? 0] ?? ROOM_SIZES[0];
 export const VOID = 0, FLOOR = 1, WALL = 2, BLOCKED = 3, DOOR = 4;
 
 // rooms: [{ level?, furniture: [{ item, x, y }] }] in house order, filling each row of the square grid first.
-// Rooms pack side by side by their real size, colsFor(n) per row, sharing one wall. That shared wall opens up almost floor to floor so neighbours read as one
-// big space; a tile of wall stays at each end of the opening (and the back wall) so each room keeps its look.
+// Rooms pack side by side by their real size, colsFor(n) per row, sharing one wall column. Along the floor it opens all the way
+// so neighbours read as one big space, split only where the floors change; the back wall above it stays.
 // Rows link with a 2-tile doorway, so back walls (windows, wallpaper) stay whole.
 export function buildGrid(rooms) {
   const sizes = rooms.map(roomSize);
@@ -536,9 +536,9 @@ export function buildGrid(rooms) {
   rooms.forEach((_, i) => {
     const o = origins[i], s = sizes[i];
     if (i % COLS < COLS - 1 && i + 1 < rooms.length) {
-      // Open the shared wall between side-by-side rooms, leaving a post at the top and bottom.
+      // Open the shared wall between side-by-side rooms wherever both have floor.
       const X = o.x + s.w, rows = Math.min(s.h, sizes[i + 1].h);
-      for (let y = o.y + 1; y < o.y + rows - 1; y++) set(X, y, DOOR);
+      for (let y = o.y; y < o.y + rows; y++) set(X, y, DOOR);
     }
     if (i + COLS < rooms.length) {
       // Doorway down to the room below, through wherever their floors overlap.

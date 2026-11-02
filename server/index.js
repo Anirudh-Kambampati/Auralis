@@ -159,7 +159,6 @@ function broadcastHouse(code) {
   const house = {
     code, owner: h.owner ?? null, ownerName: db.players[h.owner]?.name ?? null,
     members: h.members.map((id) => publicPlayer(db.players[id])), todos: h.todos ?? [], chat: h.chat ?? [],
-    group: h.group?.endsAt > Date.now() ? h.group : null, // a group focus session housemates can still join
     events: h.events ?? [], watch: w ? { ...w, now: Date.now() } : null,
   };
   for (const id of h.members) {
@@ -283,13 +282,13 @@ function handle(p, m) {
       setTz(p, m.tz);
       p.focus = { minutes: m.minutes, endsAt: Date.now() + m.minutes * 60_000, tag: cleanText(m.tag, 24) || 'Study' };
       p.hiddenSubjects = (p.hiddenSubjects ?? []).filter((t) => t !== p.focus.tag); // using a subject again brings it back
-      if (m.group) db.houses[p.house].group = { by: p.id, byName: p.name, minutes: m.minutes, endsAt: p.focus.endsAt, tag: p.focus.tag };
       break;
-    case 'focus_join': { // join a housemate's group session: same subject, and the timer ends when theirs does
-      const g = db.houses[p.house].group, left = g ? g.endsAt - Date.now() : 0;
+    case 'focus_join': { // join a housemate's running session: same subject, and the timer ends when theirs does
+      const o = db.houses[p.house].members.includes(m.id) ? db.players[m.id] : null;
+      const endsAt = o?.focus && !o.focus.pausedAt ? o.focus.endsAt : 0, left = endsAt - Date.now();
       if (p.focus || left < 60_000) return;
       setTz(p, m.tz);
-      p.focus = { minutes: Math.round(left / 60_000), endsAt: g.endsAt, tag: g.tag };
+      p.focus = { minutes: Math.round(left / 60_000), endsAt, tag: o.focus.tag };
       break;
     }
     case 'focus_pause':
@@ -523,7 +522,7 @@ function handle(p, m) {
     case 'pet_release': {
       if (!Number.isInteger(m.slot) || !p.pets?.[m.slot]) return;
       const [gone] = p.pets.splice(m.slot, 1);
-      send(sockets.get(p.id), { t: 'error', text: `Waved goodbye to your ${PETS[gone.kind]?.name.toLowerCase() ?? 'pet'}. 💛` });
+      send(sockets.get(p.id), { t: 'error', text: `Waved goodbye to ${gone.name ?? `your ${PETS[gone.kind]?.name.toLowerCase() ?? 'pet'}`}. 💛` });
       break;
     }
     // Dress up a pet: a free coat colour, and an accessory you own (or '' for none).
@@ -532,6 +531,7 @@ function handle(p, m) {
       if (!pet) return;
       if (Number.isInteger(m.coat) && m.coat >= 0 && m.coat < PETS[pet.kind].coats.length) pet.coat = m.coat;
       if (m.acc === '' || (p.petAccs ?? []).includes(m.acc)) pet.acc = m.acc || undefined;
+      if (typeof m.name === 'string') pet.name = cleanText(m.name, 16) || undefined;
       if (typeof m.away === 'boolean') pet.away = m.away || undefined; // kept, but not out in the room
       break;
     }

@@ -19,13 +19,13 @@ type Furniture = { item: string; x: number; y: number; v?: number; s?: number; f
 type Room = { wallpaper: string; floor: string; pattern?: string; floorStyle?: string; level?: number; curtains?: boolean; furniture: Furniture[] };
 type Member = {
   id: string; name: string; look: Look; rooms: Room[]; focus: Focus | null;
-  totalMinutes: number; online: boolean; pos: { x: number; y: number } | null; pets: { kind: string; coat?: number; acc?: string; away?: boolean }[]; fedAt?: number;
+  totalMinutes: number; online: boolean; pos: { x: number; y: number } | null; pets: { kind: string; name?: string; coat?: number; acc?: string; away?: boolean }[]; fedAt?: number;
   exams?: { subject: string; date: string }[]; // YYYY-MM-DD, soonest first
 };
 type Todo = { id: number; text: string; done: boolean; by: string; all?: boolean; ticks?: string[] }; // all: everyone has to tick it
 type Chat = { id: number; from: string; by: string; text: string; at: number };
 type CalEvent = { id: number; date: string; time?: string; text: string; by?: string }; // date YYYY-MM-DD, time HH:MM
-type Focus = { minutes: number; endsAt: number; pausedAt?: number | null };
+type Focus = { minutes: number; endsAt: number; tag?: string; pausedAt?: number | null };
 type Session = { at: number; minutes: number; tag: string; early?: boolean };
 type Me = { id: string; home?: string; visited?: { code: string; ownerName: string | null; online: number }[]; banned?: { id: string; name: string }[]; coins: number; discount?: boolean; notes?: { from: string; text: string; at: number }[]; events?: CalEvent[]; inventory: Record<string, number>; sessions: Session[]; subjects: string[]; hiddenSubjects: string[]; todos: Todo[]; dm: Record<string, Chat[]>; petAccs?: string[] };
 type Board = { scope: string; period: string; rows: { name: string; me: boolean; minutes: number }[] };
@@ -51,10 +51,7 @@ let chat: Chat[] = [];
 let dmPeer: string | null = null; // null = talking to the whole house
 let houseCode = '';
 let houseOwnerName = ''; // whose home this house is (empty for old shared houses with no owner)
-// A housemate's group focus session that others can still join; their timers all end together.
-type Group = { by: string; byName: string; minutes: number; endsAt: number; tag: string };
-let group: Group | null = null;
-let groupSeen = 0; // endsAt of the last group session I was told about
+let focusSeen: Set<string> | null = null; // housemates who were studying at the last state; null until the first one
 let notesSeen = 0; // newest desk note already shown
 let noteTo: string | null = null; // housemate I'm writing a desk note for
 let finishedSession = false; // the session that just ended ran to the end (not given up): take a break
@@ -68,6 +65,8 @@ let boardScope = 'house', boardPeriod = 'week';
 let board: Board | null = null;
 let grid = buildGrid([]);
 let petSpots: { x: number; y: number }[][] = []; // walkable floor tiles per room, for pets to wander
+let petNear: number[][] = []; // per room: the rooms its pets can walk into (through an opening or doorway)
+let petRoutes = new Map<string, { x: number; y: number }[] | null>(); // pet walks between rooms, cached until the house changes
 const avatars = new Map<string, Avatar>();
 const bubbles = new Map<string, { text: string; until: number }>();
 let lastChatId = -1;
@@ -127,12 +126,12 @@ function onMessage(m: any) {
     todos = m.house.todos;
     houseEvents = m.house.events ?? [];
     me = m.me;
-    group = m.house.group ?? null;
-    if (group && group.by !== myId && group.endsAt !== groupSeen && !myMember()?.focus) {
-      groupSeen = group.endsAt;
+    const started = joinable().filter((o) => focusSeen && !focusSeen.has(o.id));
+    if (started.length && !myMember()?.focus) {
       notify(chime);
-      toast(`📚 <b>${esc(group.byName)}</b> started a group focus session. Open Focus to join in!`, 'reward');
+      for (const o of started) toast(`📚 <b>${esc(o.name)}</b> started studying <b>${esc(o.focus!.tag ?? 'Study')}</b>. Open Focus to join in!`, 'reward');
     }
+    focusSeen = new Set(members.filter((o) => o.focus).map((o) => o.id));
     const notes = (me.notes ?? []).filter((n) => n.at > notesSeen);
     if (notes.length) {
       notesSeen = Math.max(...notes.map((n) => n.at));
@@ -178,6 +177,24 @@ function onMessage(m: any) {
       }
       return toys;
     });
+    // Rooms linked by a run of open (door) tiles: everything touching the same run is a neighbour.
+    petNear = slots.map(() => []);
+    petRoutes = new Map();
+    const doneDoor = new Set<number>();
+    for (let c = 0; c < grid.w * grid.h; c++) {
+      if (grid.cell[c] !== DOOR || doneDoor.has(c)) continue;
+      const rooms = new Set<number>(), stack = [c];
+      doneDoor.add(c);
+      while (stack.length) {
+        const d = stack.pop()!, x = d % grid.w, y = Math.floor(d / grid.w);
+        for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+          const nx = x + dx, ny = y + dy, n = ny * grid.w + nx;
+          if (grid.at(nx, ny) === DOOR && !doneDoor.has(n)) { doneDoor.add(n); stack.push(n); }
+          else if (grid.at(nx, ny) !== VOID && grid.owner[n] >= 0) rooms.add(grid.owner[n]);
+        }
+      }
+      for (const r of rooms) for (const o of rooms) if (r !== o && !petNear[r].includes(o)) petNear[r].push(o);
+    }
     const canStand = (x: number, y: number) => walkable(grid.at(x, y)) || acts.has(tileKey(x, y));
     for (const mem of members) {
       let a = avatars.get(mem.id);
@@ -354,6 +371,13 @@ function standUp() {
 function roomSpawn(i: number) {
   const o = grid.origins[Math.max(i, 0)] ?? { x: 1, y: WALL_H };
   return nearestWalkable(o.x + 5, o.y + 4);
+}
+
+// Pets hop over furniture too, so a crowded room never shuts them in.
+function petRoute(a: { x: number; y: number }, b: { x: number; y: number }) {
+  const k = `${a.x},${a.y}>${b.x},${b.y}`;
+  if (!petRoutes.has(k)) petRoutes.set(k, bfs({ x: Math.round(a.x), y: Math.round(a.y) }, (x, y) => x === b.x && y === b.y, (x, y) => { const c = grid.at(x, y); return walkable(c) || c === BLOCKED; }));
+  return petRoutes.get(k)!;
 }
 
 function bfs(from: { x: number; y: number }, done: (x: number, y: number) => boolean, pass = (x: number, y: number) => walkable(grid.at(x, y))) {
@@ -681,7 +705,7 @@ canvas.addEventListener('wheel', (e) => {
   setZoom(zoom + (e.deltaY < 0 ? 1 : -1));
 }, { passive: false });
 addEventListener('keydown', (e) => {
-  if ((e.target as HTMLElement).tagName === 'INPUT') return;
+  if ((e.target as HTMLElement).closest('input, textarea, select')) return;
   if (e.key === '+' || e.key === '=') { e.preventDefault(); setZoom(zoom + 1); }
   else if (e.key === '-' || e.key === '_') { e.preventDefault(); setZoom(zoom - 1); }
 });
@@ -740,7 +764,7 @@ addEventListener('keydown', (e) => {
 addEventListener('keydown', (e) => {
   const a = avatars.get(myId);
   const d = ({ ArrowUp: [0, -1], ArrowDown: [0, 1], ArrowLeft: [-1, 0], ArrowRight: [1, 0], w: [0, -1], s: [0, 1], a: [-1, 0], d: [1, 0] } as Record<string, number[]>)[e.key];
-  if (!a || !d || (e.target as HTMLElement).tagName === 'INPUT') return;
+  if (!a || !d || (e.target as HTMLElement).closest('input, textarea, select')) return;
   const n = path[path.length - 1] ?? { x: a.tx, y: a.ty };
   if (walkable(grid.at(n.x + d[0], n.y + d[1]))) path = [...path.slice(0, 1), { x: n.x + d[0], y: n.y + d[1] }];
   quietUntil = Date.now() + 2500; // I'm steering: no wandering on top of it
@@ -752,7 +776,7 @@ function frame(t: number) {
   const dt = Math.min(0.1, (t - last) / 1000);
   last = t;
   step(dt);
-  render(t);
+  render(t, dt);
   requestAnimationFrame(frame);
 }
 
@@ -801,7 +825,7 @@ function step(dt: number) {
   }
 }
 
-function render(t: number) {
+function render(t: number, dt: number) {
   const dpr = devicePixelRatio || 1;
   const cw = Math.round(innerWidth * dpr), ch = Math.round(innerHeight * dpr);
   if (canvas.width !== cw || canvas.height !== ch) {
@@ -839,10 +863,15 @@ function render(t: number) {
   const tx = follow(bx + camPan.x, vw, grid.w * T), ty = follow(by + camPan.y, vh, grid.h * T);
   camPan.x = tx - bx; camPan.y = ty - by; // dragging past the edge of the house doesn't pile up
   if (!cam || cam.scale !== scale) cam = { x: tx, y: ty, scale };
-  const ease = pan?.moved ? 1 : 0.12; // glide when moving to another room; stick to the finger while dragging
+  const ease = pan?.moved ? 1 : 1 - Math.exp(-dt * 8); // glide when moving to another room (same pace at any frame rate); stick to the finger while dragging
   cam.x += (tx - cam.x) * ease;
   cam.y += (ty - cam.y) * ease;
-  view = { scale, ox: Math.round(coverLeft / scale + vw / 2 - cam.x), oy: Math.round(coverTop / scale + vh / 2 - cam.y) };
+  // Snapped to screen pixels, not art pixels: tiles stay crisp and a glide moves one screen pixel at a time, not in steps.
+  view = { scale, ox: Math.round((coverLeft / scale + vw / 2 - cam.x) * scale) / scale, oy: Math.round((coverTop / scale + vh / 2 - cam.y) * scale) / scale };
+  // Only what's on screen gets drawn: a tile around it, and a few rows below for tall furniture reaching up into view.
+  const X0 = Math.max(0, Math.floor(-view.ox / T) - 1), X1 = Math.min(grid.w, Math.ceil((cw / scale - view.ox) / T) + 1);
+  const Y0 = Math.max(0, Math.floor(-view.oy / T) - 1), Y1 = Math.min(grid.h, Math.ceil((ch / scale - view.oy) / T) + 4);
+  const onScreen = (x: number, y: number, w = 1, h = 1) => x + w >= X0 && x <= X1 && y + h >= Y0 && y <= Y1;
 
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   drawPaper(ctx, cw, ch, scale);
@@ -850,10 +879,10 @@ function render(t: number) {
 
   // Soft drop shadow under the whole house, like a diorama on a table.
   ctx.fillStyle = 'rgba(43,37,48,0.13)';
-  for (let y = 0; y < grid.h; y++) for (let x = 0; x < grid.w; x++) if (grid.at(x, y)) ctx.fillRect(x * T + 5, y * T + 7, T, T);
+  for (let y = Y0; y < Y1; y++) for (let x = X0; x < X1; x++) if (grid.at(x, y)) ctx.fillRect(x * T + 5, y * T + 7, T, T);
 
-  for (let y = 0; y < grid.h; y++) {
-    for (let x = 0; x < grid.w; x++) {
+  for (let y = Y0; y < Y1; y++) {
+    for (let x = X0; x < X1; x++) {
       const k = grid.at(x, y);
       const px = x * T, py = y * T;
       const room = (dy: number) => slots[grid.owner[(y + dy) * grid.w + x]]?.room;
@@ -868,18 +897,32 @@ function render(t: number) {
       }
       else if (k === WALL) {
         // Two-tile back wall: the row touching the floor gets the panel strip, the row above it the crown.
-        const below = y + 1 < grid.h ? room(1) : undefined;
-        const below2 = y + 2 < grid.h && grid.at(x, y + 1) === WALL ? room(2) : undefined;
-        if (below) drawWallFace(ctx, px, py, below.wallpaper, below.pattern);
-        else if (below2) drawWallTop(ctx, px, py, below2.wallpaper, below2.pattern);
-        else drawWall(ctx, px, py);
+        const paper = (cx: number) => {
+          const own = (dy: number) => (y + dy < grid.h ? slots[grid.owner[(y + dy) * grid.w + cx]]?.room : undefined);
+          const below = own(1), below2 = grid.at(x, y + 1) === WALL ? own(2) : undefined;
+          if (below) drawWallFace(ctx, px, py, below.wallpaper, below.pattern);
+          else if (below2) drawWallTop(ctx, px, py, below2.wallpaper, below2.pattern);
+          return !!(below || below2);
+        };
+        // Over the opening between side-by-side rooms, each half carries on its own room's wallpaper.
+        const fy = grid.at(x, y + 1) === WALL ? y + 2 : y + 1;
+        if (grid.at(x, fy) === DOOR && grid.owner[fy * grid.w + x - 1] >= 0 && grid.owner[fy * grid.w + x + 1] >= 0) {
+          for (const side of [0, 1]) {
+            ctx.save();
+            ctx.beginPath();
+            ctx.rect(px + side * 8, py, 8, T);
+            ctx.clip();
+            paper(x + (side ? 1 : -1));
+            ctx.restore();
+          }
+        } else if (!paper(x)) drawWall(ctx, px, py);
       }
     }
   }
 
   // One crisp outline around the outside of the house, and soft shade where walls meet the floor.
-  for (let y = 0; y < grid.h; y++) {
-    for (let x = 0; x < grid.w; x++) {
+  for (let y = Y0; y < Y1; y++) {
+    for (let x = X0; x < X1; x++) {
       const k = grid.at(x, y);
       if (!k) continue;
       const px = x * T, py = y * T;
@@ -903,11 +946,13 @@ function render(t: number) {
   slots.forEach(({ room }, i) => {
     const o = grid.origins[i], s = grid.sizes[i];
     const wy = (o.y - WALL_H) * T;
+    if (!onScreen(o.x, o.y - WALL_H, s.w, WALL_H)) return;
     if (i < grid.cols) for (let lx = 1; lx + 2 <= s.w - 1; lx += 6) drawWindow(ctx, (o.x + lx) * T, wy, sky, !!room.curtains);
     else drawPainting(ctx, (o.x + 1) * T, wy + 8);
   });
 
   // Rugs under everything, then furniture, pets and avatars sorted by their bottom edge.
+  const petLabels: { x: number; y: number; name: string }[] = [];
   const sprites: { y: number; draw: () => void }[] = [];
   // Chairs someone sits in are drawn by drawSeated, wrapped around the sitter.
   const occupied = new Set<number>();
@@ -920,6 +965,7 @@ function render(t: number) {
     room.furniture.forEach((f, idx) => {
       const it = ITEMS[f.item as ItemKey] as (typeof ITEMS)[ItemKey] & { chair?: boolean; top?: boolean };
       if (!it || (it.chair && occupied.has(tileKey(o.x + f.x, o.y + f.y)))) return;
+      if (!onScreen(o.x + f.x, o.y + f.y, Math.max(it.w, it.h), Math.max(it.w, it.h))) return;
       const dragged = drag?.moved && m.id === myId && ri === editRoom && drag.index === idx;
       // Drinks and toys stand on top of whatever table they were put on.
       const under = it.top ? room.furniture.find((g) => {
@@ -936,9 +982,7 @@ function render(t: number) {
       const thirsty = isPlant(f.item) && now - (f.wateredAt ?? now) > THIRSTY_MS; // droops until someone waters it
       const draw = () => {
         if (dragged) ctx.globalAlpha = 0.35;
-        if (thirsty) ctx.filter = 'grayscale(0.7) brightness(0.9)';
-        drawFurniture(ctx, f.item, (o.x + f.x) * T, (o.y + f.y) * T - lift, t, furnColor(f), f.flip, it.w, f.s, bare, f.rot, it.h, lying(it));
-        ctx.filter = 'none';
+        drawFurniture(ctx, f.item, (o.x + f.x) * T, (o.y + f.y) * T - lift, t, furnColor(f), f.flip, it.w, f.s, bare, f.rot, it.h, lying(it), thirsty);
         ctx.globalAlpha = 1;
         if (thirsty) drawDroplet(ctx, (o.x + f.x) * T + T / 2, (o.y + f.y) * T - lift - 6 + Math.round(Math.sin(t / 300)));
       };
@@ -947,9 +991,9 @@ function render(t: number) {
       else sprites.push({ y: o.y + f.y + fp.h - 0.5, draw });
     });
     if (ri === 0) m.pets?.forEach((p, slot) => { // pets live in their owner's first room
-      const spots = petSpots[i];
-      if (!spots?.length || p.away) return; // switched off in the You panel
-      const pos = petPos(seedOf(m.id, slot), now, spots, petToys[i]);
+      if (!petSpots[i]?.length || p.away) return; // switched off in the You panel
+      const pos = petPos(seedOf(m.id, slot), now, slots.map((_, j) => ({ spots: petSpots[j], toys: petToys[j] })), i, petNear[i], petRoute);
+      if (p.name) petLabels.push({ x: pos.x, y: pos.y - (pos.act === 'perch' ? 1 : 0), name: p.name });
       const fed = now - (m.fedAt ?? 0); // just fed: a heart floats up for a few seconds
       sprites.push({ y: pos.y + 0.9, draw: () => {
         drawPet(ctx, p.kind, Math.round(pos.x * T), Math.round(pos.y * T), pos.moving, pos.left, now, pos.act, p.coat, p.acc);
@@ -984,7 +1028,7 @@ function render(t: number) {
 
   if (dark) {
     ctx.fillStyle = NIGHT_TINT[sky];
-    for (let y = 0; y < grid.h; y++) for (let x = 0; x < grid.w; x++) if (grid.at(x, y)) ctx.fillRect(x * T, y * T, T, T);
+    for (let y = Y0; y < Y1; y++) for (let x = X0; x < X1; x++) if (grid.at(x, y)) ctx.fillRect(x * T, y * T, T, T);
     slots.forEach(({ room }, i) => {
       const o = grid.origins[i];
       for (const f of room.furniture) {
@@ -993,7 +1037,7 @@ function render(t: number) {
       }
     });
     const flicker = 0.03 * Math.sin(t / 700);
-    for (const l of lights) drawGlow(ctx, l.x, l.y, l.rad, (sky === 'night' ? l.alpha : l.alpha * 0.5) + flicker);
+    for (const l of lights) if (onScreen(l.x / T - 3, l.y / T - 3, 6, 6)) drawGlow(ctx, l.x, l.y, l.rad, (sky === 'night' ? l.alpha : l.alpha * 0.5) + flicker);
   }
 
   const mine = myMember();
@@ -1022,6 +1066,16 @@ function render(t: number) {
   // Text in device pixels so it stays crisp.
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.textAlign = 'center';
+  for (const { x, y, name } of petLabels) { // a named pet: small, quiet tag over its head
+    const fs = Math.max(10, 2.4 * scale);
+    ctx.font = `600 ${fs}px 'Fredoka', system-ui, sans-serif`;
+    ctx.lineWidth = Math.max(2, fs / 4);
+    ctx.strokeStyle = 'rgba(43,37,48,0.75)';
+    ctx.fillStyle = '#fff';
+    const sx = (view.ox + x * T + 8) * scale, sy = (view.oy + y * T - 2) * scale;
+    ctx.strokeText(name, sx, sy);
+    ctx.fillText(name, sx, sy);
+  }
   for (const { x, y, m, seated, lift } of labels) {
     // A studying player gets a bigger timer bubble floating over their desk.
     const sx = (view.ox + x * T + 8) * scale, sy = (view.oy + y * T - lift) * scale;
@@ -1228,7 +1282,7 @@ function icon(item: string, cls = 'icon', style = 0) {
     const g = c.getContext('2d')!;
     g.imageSmoothingEnabled = false;
     g.scale(AV, AV);
-    drawFurniture(g, item, 0, top, 0, undefined, false, 1, style);
+    drawFurniture(g, item, 0, top, 0, undefined, false, it.w, style, 0, 0, it.h);
     icons.set(key, c.toDataURL());
   }
   return `<img class="${cls}" src="${icons.get(key)}" alt="">`;
@@ -1442,6 +1496,9 @@ function subjectChips() {
       <button data-act="tagpick" data-v="${esc(t)}">${esc(t)}</button><button class="x" data-act="tagdel" data-v="${esc(t)}" aria-label="Remove ${esc(t)}">×</button></span>`).join('')}</div>`;
 }
 
+// Housemates whose session I can still join: running, not paused, at least a minute left (the server checks the same).
+const joinable = () => members.filter((o) => o.id !== myId && o.focus && !o.focus.pausedAt && o.focus.endsAt - Date.now() >= 60_000);
+
 function panelBody(mine: Member) {
   if (openPanel === 'stats') return statsBody();
   if (openPanel === 'calendar') return calendarBody();
@@ -1455,15 +1512,14 @@ function panelBody(mine: Member) {
          <div class="bar panel-bar"><i id="pbar" style="width:${progress(f)}%"></i></div>
          <p class="center">Finish to earn <b>${f.minutes}</b> ${coin()}</p>${together}
          <div class="center"><button class="danger" data-act="cancel">Give up</button></div>`
-      : `${tomatoes()}${streakLine()}${againButton()}${group && group.by !== myId ? `<div class="invite">📚 <b>${esc(group.byName)}</b> is studying <b>${esc(group.tag)}</b>, ${fmt(group.endsAt - Date.now())} left.
-           <button data-act="joingroup">Join them</button></div>` : ''}
+      : `${tomatoes()}${streakLine()}${againButton()}${joinable().map((o) => `<div class="invite">📚 <b>${esc(o.name)}</b> is studying <b>${esc(o.focus!.tag ?? 'Study')}</b>, ${fmt(o.focus!.endsAt - Date.now())} left.
+           <button data-act="joingroup" data-v="${o.id}">Join them</button></div>`).join('')}
          <h3>What are you studying?</h3>
          <div class="row"><input id="tag" maxlength="24" placeholder="Study" value="${esc(lastTag)}" aria-label="Subject">
            <button class="off" data-act="tagsave" title="Save as a quick pick">★ Save</button></div>
          ${subjectChips()}
          <h3>How long?</h3>
          <div class="tiles">${FOCUS_LENGTHS.map((n) => `<button class="tile" data-act="focus" data-v="${n}"><b>${n}</b><small>min</small><span class="reward">+${n} ${coin()}</span></button>`).join('')}</div>
-         ${members.length > 1 ? '<label class="center invite-check"><input type="checkbox" id="groupInvite"> Invite housemates to join this session</label>' : ''}
          <p class="hint center">You'll walk to your desk and study until the timer ends. Study at the same time as housemates for +25% coins each, up to ×2.</p>${together}`) + examsHTML(mine);
   }
   if (openPanel === 'shop') return shopBody(mine);
@@ -1479,7 +1535,7 @@ function panelBody(mine: Member) {
       ${mine.pets.length ? `<h3>Your pets</h3>${mine.pets.map((p, slot) => {
         const coats = PETS[p.kind as PetKey]?.coats ?? [];
         const accs = me.petAccs ?? [];
-        return `<div class="pet-row"><span class="pet-chip">${petIcon(p.kind, 'chip-icon', p.coat, p.acc)}${PETS[p.kind as PetKey]?.name ?? p.kind}</span>
+        return `<div class="pet-row"><span class="pet-chip">${petIcon(p.kind, 'chip-icon', p.coat, p.acc)}<input class="pet-name" data-slot="${slot}" maxlength="16" value="${esc(p.name ?? '')}" placeholder="${PETS[p.kind as PetKey]?.name ?? p.kind}" aria-label="Pet name"></span>
           <button class="${p.away ? 'off' : 'on'} small-chip" data-act="petshow" data-slot="${slot}" data-v="${p.away ? 'in' : 'out'}" aria-pressed="${!p.away}" title="Show this pet in your room">${p.away ? 'Hidden' : 'In room'}</button>
           <button class="danger small-chip" data-act="petrelease" data-slot="${slot}" title="Let this pet go for good">Release</button>
           <div class="swatches">${coats.map((c, k) => `<button class="swatch${(p.coat ?? 0) === k ? ' on' : ''}" style="background:${c}" data-act="petcoat" data-slot="${slot}" data-v="${k}" aria-label="Coat ${k + 1}"></button>`).join('')}</div>
@@ -1532,6 +1588,7 @@ function renderPanel() {
   if (rail) rail.scrollLeft = railX;
   const nameInput = panel.querySelector<HTMLInputElement>('#name');
   nameInput?.addEventListener('change', () => send({ t: 'look', name: nameInput.value, look: mine.look }));
+  panel.querySelectorAll<HTMLInputElement>('.pet-name').forEach((i) => i.addEventListener('change', () => send({ t: 'pet_style', slot: Number(i.dataset.slot), name: i.value })));
 }
 
 panel.addEventListener('click', (e) => {
@@ -1547,7 +1604,7 @@ panel.addEventListener('click', (e) => {
       localStorage.setItem('auralis.tag', lastTag);
       localStorage.setItem('auralis.length', v);
       endBreak();
-      send({ t: 'focus_start', minutes: Number(v), tag: lastTag || 'Study', tz: new Date().getTimezoneOffset(), group: !!panel.querySelector<HTMLInputElement>('#groupInvite')?.checked });
+      send({ t: 'focus_start', minutes: Number(v), tag: lastTag || 'Study', tz: new Date().getTimezoneOffset() });
       setPanel(null);
       break;
     }
@@ -1646,7 +1703,7 @@ panel.addEventListener('click', (e) => {
       renderPanel();
       break;
     }
-    case 'joingroup': send({ t: 'focus_join', tz: new Date().getTimezoneOffset() }); setPanel(null); break;
+    case 'joingroup': send({ t: 'focus_join', id: v, tz: new Date().getTimezoneOffset() }); setPanel(null); break;
     case 'examadd': {
       const subject = panel.querySelector<HTMLInputElement>('#examSubject')!.value.trim(), date = panel.querySelector<HTMLInputElement>('#examDate')!.value;
       if (subject && date) send({ t: 'exam_add', subject, date });
@@ -2221,26 +2278,27 @@ function heroFrame(t: number) {
     drawWallFace(c, x * T, T, '#fbd0d4', 'hearts');
     for (let y = 2; y < HH; y++) drawFloor(c, x * T, y * T, '#e0b382', x, y, 'herringbone');
   }
+  const put = (item: ItemKey, x: number, y: number, col?: string) => drawFurniture(c, item, x, y, t, col, false, ITEMS[item].w, 0, 0, 0, ITEMS[item].h);
   drawWin(c, 1 * T, 0, 'day');
   drawWin(c, 16 * T, 0, 'day');
-  drawFurniture(c, 'roundRug', 8 * T, 5 * T, t, '#b89af0');
-  drawFurniture(c, 'rug', 2 * T, 5 * T, t, '#9db4ee');
+  put('roundRug', 8 * T, 5 * T, '#b89af0');
+  put('rug', 2 * T, 5 * T, '#9db4ee');
   // Sorted back to front by their bottom edge, like the game does.
-  drawFurniture(c, 'bookshelf', 6 * T, 2 * T, t, '#d9a06a');
-  drawFurniture(c, 'lamp', 9 * T, 2 * T, t, '#ffd27a');
-  drawFurniture(c, 'aquarium', 10 * T, 2 * T, t);
-  drawFurniture(c, 'bonsai', 18 * T, 2 * T, t);
+  put('bookshelf', 6 * T, 2 * T, '#d9a06a');
+  put('lamp', 9 * T, 2 * T, '#ffd27a');
+  put('aquarium', 10 * T, 2 * T);
+  put('bonsai', 18 * T, 2 * T);
   drawSeated(c, heroLooks[0], 3 * T, 3 * T, t, '#f4a6b8');
   drawSeated(c, heroLooks[1], 14 * T, 3 * T, t, '#8fd0a8');
-  drawFurniture(c, 'desk', 2 * T, 4 * T, t, '#f0d2a8');
-  drawFurniture(c, 'desk', 13 * T, 4 * T, t, '#b07a4e');
-  const pets = (['cat', 'bunny', 'dragon'] as const).map((kind, i) => ({ kind, ...petPos(400 + i * 97, now, heroSpots) }));
+  put('desk', 2 * T, 4 * T, '#f0d2a8');
+  put('desk', 13 * T, 4 * T, '#b07a4e');
+  const pets = (['cat', 'bunny', 'dragon'] as const).map((kind, i) => ({ kind, ...petPos(400 + i * 97, now, [{ spots: heroSpots, toys: [] }]) }));
   const walk = Math.sin(now / 1400);
   const walker = { x: 8.5 + walk * 2.5, y: 5 };
   const sprites: { y: number; draw: () => void }[] = [
     ...pets.map((p) => ({ y: p.y + 0.9, draw: () => drawPet(c, p.kind, Math.round(p.x * T), Math.round(p.y * T), p.moving, p.left, now) })),
     { y: walker.y + 0.99, draw: () => drawAvatar(c, heroLooks[2], Math.round(walker.x * T), walker.y * T, Math.abs(Math.cos(now / 1400)) > 0.15 ? 1 + (Math.floor(now / 170) % 2) : 0, false) },
-    { y: 7.5, draw: () => drawFurniture(c, 'sofa', 15 * T, 7 * T, t, '#f4a6b8') },
+    { y: 7.5, draw: () => put('sofa', 15 * T, 7 * T, '#f4a6b8') },
   ];
   sprites.sort((a, b) => a.y - b.y).forEach((s) => s.draw());
 

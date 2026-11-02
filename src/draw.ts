@@ -638,7 +638,7 @@ export function drawWall(c: Ctx, x: number, y: number) {
   }), x, y);
 }
 
-// The opening between two side-by-side rooms: each half keeps its own room's floor, with a trim seam between.
+// The opening between two side-by-side rooms: each half keeps its own room's floor, meeting in the middle.
 export function drawSeam(c: Ctx, x: number, y: number, tx: number, ty: number, left: { floor: string; floorStyle?: string }, right: { floor: string; floorStyle?: string }) {
   for (const [side, room] of [[0, left], [1, right]] as const) {
     c.save();
@@ -648,9 +648,6 @@ export function drawSeam(c: Ctx, x: number, y: number, tx: number, ty: number, l
     drawFloor(c, x, y, room.floor, tx, ty, room.floorStyle);
     c.restore();
   }
-  r(c, x + 7, y, 2, T, '#fffaf3');
-  r(c, x + 6, y, 1, T, 'rgba(43,37,48,0.12)');
-  r(c, x + 9, y, 1, T, 'rgba(43,37,48,0.12)');
 }
 
 export function drawDoor(c: Ctx, x: number, y: number, tx: number, ty: number) {
@@ -2764,11 +2761,45 @@ function hdAt(c: Ctx, x: number, y: number, f: () => void) {
   c.restore();
 }
 const hdDraw = (hd: HdDraw): Draw => (c, x, y, t, col, bare) => hdAt(c, x, y, () => hd(c, t, col, bare));
-export function drawFurniture(c: Ctx, item: string, x: number, y: number, t: number, col?: string, flip = false, w = 1, s = 0, bare = 0, rot = 0, h = 1, lying = false) {
+// Painting a piece is hundreds of tiny rects, so each one is painted once into a cached canvas at character detail.
+// Only pieces that change over time (flickering lamps, fish...) are painted live every frame; turned ones are always cached.
+const PAD = 20; // room around a piece for glows and overhangs
+const animated = new Map<string, boolean>(); // item|style -> looks different at different times
+function animates(key: string, size: number, paint: (g: Ctx, t: number) => void) {
+  let v = animated.get(key);
+  if (v === undefined) {
+    const shots = [0, 777, 2345, 4567].map((t) => {
+      const cv = document.createElement('canvas');
+      cv.width = cv.height = size;
+      const g = cv.getContext('2d', { willReadFrequently: true })!;
+      paint(g, t);
+      return g.getImageData(0, 0, size, size).data;
+    });
+    v = shots.some((d) => d.some((b, i) => b !== shots[0][i]));
+    animated.set(key, v);
+  }
+  return v;
+}
+export function drawFurniture(c: Ctx, item: string, x: number, y: number, t: number, col?: string, flip = false, w = 1, s = 0, bare = 0, rot = 0, h = 1, lying = false, thirsty = false) {
   const draw = (s && ALT[item]?.[s - 1]) || (HD[item] && hdDraw(HD[item])) || DRAW[item] || recipeDraw(item);
   if (!draw) return;
-  furnishing = true;
-  try { paintFurniture(c, draw, item, x, y, t, col, flip, w, h, bare, rot, lying); } finally { furnishing = false; }
+  const filter = thirsty ? 'grayscale(0.7) brightness(0.9)' : 'none'; // a plant that needs water droops grey
+  const pad = PAD + (OVERHANG[item] ?? 0), size = (Math.max(w, h) * T + pad * 2) * AV;
+  const paint = (g: Ctx, tt: number) => {
+    g.imageSmoothingEnabled = false;
+    g.setTransform(AV, 0, 0, AV, pad * AV, pad * AV);
+    g.filter = filter;
+    furnishing = true;
+    try { paintFurniture(g, draw, item, 0, 0, tt, col, flip, w, h, bare, rot, lying); } finally { furnishing = false; }
+  };
+  if (!rot && animates(`${item}|${s}`, size, paint)) {
+    c.filter = filter;
+    furnishing = true;
+    try { paintFurniture(c, draw, item, x, y, t, col, flip, w, h, bare, rot, lying); } finally { furnishing = false; c.filter = 'none'; }
+    return;
+  }
+  const cv = baked(`fu|${item}|${col}|${flip}|${w}|${h}|${s}|${bare}|${rot}|${lying}|${thirsty}`, size, size, (g) => paint(g, 0));
+  c.drawImage(cv, x - pad, y - pad, size / AV, size / AV);
 }
 function paintFurniture(c: Ctx, draw: Draw, item: string, x: number, y: number, t: number, col: string | undefined, flip: boolean, w: number, h: number, bare: number, rot: number, lying: boolean) {
   if (rot) { drawTurned(c, draw, item, x, y, t, col, flip, w, h, bare, rot, lying); return; }
@@ -3018,10 +3049,13 @@ export const uiIconURL = (name: string) =>
 // ---------- backdrop ----------
 // Flat warm paper with a faint dot grid; px is the size of one art pixel in screen pixels.
 export function drawPaper(c: Ctx, w: number, h: number, px: number) {
-  r(c, 0, 0, w, h, '#efe6da');
-  const step = px * 12;
-  for (let y = step / 2; y < h; y += step) for (let x = step / 2; x < w; x += step) r(c, Math.round(x), Math.round(y), px, px, '#e3d7c8');
+  // One dot tile, repeated: a single fill instead of hundreds of rects a frame.
+  const step = Math.round(px * 12), half = Math.round(step / 2);
+  const tile = baked(`paper|${step}|${px}`, step, step, (g) => { r(g, 0, 0, step, step, '#efe6da'); r(g, half, half, px, px, '#e3d7c8'); });
+  c.fillStyle = (paperFill?.step === step ? paperFill : (paperFill = { step, p: c.createPattern(tile, 'repeat')! })).p;
+  c.fillRect(0, 0, w, h);
 }
+let paperFill: { step: number; p: CanvasPattern } | undefined;
 
 // ---------- blocky timer font ----------
 const GLYPHS: Record<string, string[]> = {

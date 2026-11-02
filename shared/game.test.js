@@ -18,13 +18,12 @@ test('single room has a two-tile back wall and no doors', () => {
   assert.ok(![...g.cell].includes(DOOR));
 });
 
-test('side-by-side rooms share one wall that opens up almost floor to floor', () => {
+test('side-by-side rooms share one wall that opens all the way along the floor', () => {
   const g = buildGrid([empty(), empty()]);
   const o = g.origins[0], next = g.origins[1], X = o.x + ROOM_W;
   assert.equal(next.x, X + 1); // one shared wall column, no hallway
-  for (let y = o.y + 1; y < o.y + 7; y++) assert.equal(g.at(X, y), DOOR);
-  assert.equal(g.at(X, o.y), WALL); // post at the top of the opening
-  assert.equal(g.at(X, o.y + 7), WALL); // and at the bottom
+  for (let y = o.y; y < o.y + 8; y++) assert.equal(g.at(X, y), DOOR); // no posts left at either end
+  assert.equal(g.at(X, o.y + 8), WALL); // the front edge of the house
   assert.equal(g.at(X, o.y - 1), WALL); // back wall stays, so each room keeps its wallpaper
   assert.equal(g.owner[next.y * g.w + next.x], 1);
 });
@@ -69,8 +68,8 @@ test('an upgraded room packs snugly next to a small one', () => {
   assert.equal(g.at(o.x + 15, o.y + 10), FLOOR);
   assert.equal(g.origins[1].x, o.x + big.w + 1);
   // opening only spans rows both rooms have
-  assert.equal(g.at(o.x + big.w, o.y + 6), DOOR);
-  assert.equal(g.at(o.x + big.w, o.y + 7), WALL);
+  assert.equal(g.at(o.x + big.w, o.y + 7), DOOR);
+  assert.equal(g.at(o.x + big.w, o.y + 8), WALL);
   // below the small room is open space, not floor
   assert.equal(g.at(g.origins[1].x + 2, g.origins[1].y + 10), VOID);
   assert.deepEqual(EXPAND_COST.slice(1), [250, 600, 1200]);

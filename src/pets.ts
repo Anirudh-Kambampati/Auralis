@@ -204,20 +204,35 @@ export const seedOf = (id: string, slot: number) => [...id].reduce((n, ch) => (n
 
 // Every 5 s a pet picks another floor tile in its room, trots there, then idles.
 // Sometimes it heads for a toy instead (cat tower, bed, ball...) and plays with it while it idles.
+// Each minute it may go visit a neighbouring room (near: room indexes), walking there along route() for a whole period.
 type Spot = { x: number; y: number; act?: string };
-export function petPos(seed: number, now: number, spots: Spot[], toys: Spot[] = []) {
-  const period = 5000;
+type Area = { spots: Spot[]; toys: Spot[] };
+export function petPos(seed: number, now: number, areas: Area[], home = 0, near: number[] = [], route?: (a: Spot, b: Spot) => Spot[] | null) {
+  const period = 5000, stay = 12; // periods per room choice
   const k = Math.floor(now / period) + (seed % 7);
   const f = (now % period) / period;
-  const target = (n: number) =>
-    toys.length && hash(seed + 0.5, n) < 0.45 ? toys[Math.floor(hash(seed + 0.25, n) * toys.length)] : spots[Math.floor(hash(seed, n) * spots.length)];
+  const roomAt = (n: number) => {
+    const w = Math.floor(n / stay), r = near.length && hash(seed + 0.75, w) < 0.4 ? near[Math.floor(hash(seed + 0.125, w) * near.length)] : home;
+    return areas[r]?.spots.length ? r : home;
+  };
+  const target = (n: number) => {
+    const { spots, toys } = areas[roomAt(n)];
+    return toys.length && hash(seed + 0.5, n) < 0.45 ? toys[Math.floor(hash(seed + 0.25, n) * toys.length)] : spots[Math.floor(hash(seed, n) * spots.length)];
+  };
   const a = target(k), b = target(k + 1);
+  if (roomAt(k) !== roomAt(k + 1)) {
+    // Off to another room: follow the floor through the opening, taking the whole period.
+    const path = route?.(a, b);
+    if (!path || path.length < 2) return { x: a.x, y: a.y, moving: false, left: false, act: undefined }; // no way through: wait
+    const e = f * f * (3 - 2 * f), t = e * (path.length - 1), i = Math.min(path.length - 2, Math.floor(t)), p = path[i], q = path[i + 1];
+    return { x: p.x + (q.x - p.x) * (t - i), y: p.y + (q.y - p.y) * (t - i), moving: f < 1, left: q.x < p.x, act: undefined };
+  }
   const m = Math.min(1, f / 0.45);
   const e = m * m * (3 - 2 * m);
   if (m === 1 && b.act === 'chase') {
-    // Running rings around the ball.
-    const w = now / 350;
-    return { x: b.x + Math.sin(w) * 0.6, y: b.y + Math.cos(w) * 0.3, moving: true, left: Math.cos(w) < 0, act: b.act };
+    // Running rings around the ball, widening from it and closing back in before the next trot (no jump either end).
+    const w = now / 350, r = Math.sin((Math.PI * (f - 0.45)) / 0.55);
+    return { x: b.x + Math.sin(w) * 0.6 * r, y: b.y + Math.cos(w) * 0.3 * r, moving: true, left: Math.cos(w) < 0, act: b.act };
   }
   return { x: a.x + (b.x - a.x) * e, y: a.y + (b.y - a.y) * e, moving: m < 1, left: b.x < a.x, act: m === 1 ? b.act : undefined };
 }
