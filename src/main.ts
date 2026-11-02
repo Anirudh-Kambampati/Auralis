@@ -247,7 +247,10 @@ function onMessage(m: any) {
     if (m.to === myId) toast(`✋ <b>${esc(m.by)}</b> high-fived you!`);
   } else if (m.t === 'reward') {
     notify(chime);
-    if (!m.text) finishedSession = true; // a focus session paid out
+    if (!m.text) {
+      finishedSession = true; // a focus session paid out
+      if (document.hidden && window.Notification?.permission === 'granted') new Notification('Auralis', { body: `Session complete! +${m.coins} coins` });
+    }
     if (m.text) toast(esc(m.text), 'reward');
     else toast(`Session complete! +${m.coins} ${coin()}${m.buddies ? ` (×${buddyMultiplier(m.buddies)} for studying together!)` : ''}${streakBonus(m.streak) ? ` 🔥 ${m.streak}-day streak +${streakBonus(m.streak) * 100}%` : ''}`, 'reward');
   } else if (m.t === 'error') {
@@ -366,6 +369,7 @@ const NAP_MS = 5 * 60_000, SNACK_MS = 2 * 60_000;
 let breakTimer = 0, breakEnds = 0; // breakEnds: shown counting down in the HUD
 function endBreak() { clearTimeout(breakTimer); breakTimer = 0; }
 function startBreak(ms: number, text: string) {
+  if (myMember()?.focus) { toast('Finish or give up your focus session before taking a break.', 'error'); return; }
   endBreak();
   toast(text);
   breakEnds = Date.now() + ms;
@@ -877,13 +881,6 @@ function step(dt: number) {
     }
   }
   wander();
-  const focus = myMember()?.focus;
-  // Keep asking until the server ends the session: a single try is lost if the connection blinks
-  // or this device's clock runs ahead of the server's (it refuses "done" before its own end time).
-  if (focus && Date.now() >= focusEnd(focus) && Date.now() - lastDoneTry > 3000) {
-    lastDoneTry = Date.now();
-    send({ t: 'focus_done' });
-  }
 }
 
 // Framing needs the size of the chrome around the room, but reading offsetHeight/offsetWidth forces layout.
@@ -1297,6 +1294,13 @@ function tickTimers() {
   $('#breakChip').hidden = !breakTimer;
   if (breakTimer) $('#breakTime').textContent = `☕ Break ${fmt(breakEnds - Date.now())}`;
   const f = myMember()?.focus;
+  // Here, not in the frame loop: frames stop in a background tab, this interval keeps running.
+  // Keep asking until the server ends the session: a single try is lost if the connection blinks
+  // or this device's clock runs ahead of the server's (it refuses "done" before its own end time).
+  if (f && Date.now() >= focusEnd(f) && Date.now() - lastDoneTry > 3000) {
+    lastDoneTry = Date.now();
+    send({ t: 'focus_done' });
+  }
   const showDeck = !!f && !deckHidden;
   $('#focusChip').hidden = !f || showDeck;
   $('#deck').hidden = !showDeck;
@@ -1728,6 +1732,7 @@ panel.addEventListener('click', (e) => {
       localStorage.setItem('auralis.tag', lastTag);
       localStorage.setItem('auralis.length', v);
       endBreak();
+      if (window.Notification?.permission === 'default') Notification.requestPermission(); // to say when the session ends in a background tab
       send({ t: 'focus_start', minutes: Number(v), tag: lastTag || 'Study', tz: new Date().getTimezoneOffset() });
       setPanel(null);
       break;
