@@ -3100,14 +3100,17 @@ export const uiIconURL = (name: string) =>
 
 // ---------- backdrop ----------
 // Flat warm paper with a faint dot grid; px is the size of one art pixel in screen pixels.
+// Matches --bg / --dot in style.css, light and dark.
+const darkScheme = matchMedia('(prefers-color-scheme: dark)');
 export function drawPaper(c: Ctx, w: number, h: number, px: number) {
   // One dot tile, repeated: a single fill instead of hundreds of rects a frame.
-  const step = Math.round(px * 12), half = Math.round(step / 2);
-  const tile = baked(`paper|${step}|${px}`, step, step, (g) => { r(g, 0, 0, step, step, '#efe6da'); r(g, half, half, px, px, '#e3d7c8'); });
-  c.fillStyle = (paperFill?.step === step ? paperFill : (paperFill = { step, p: c.createPattern(tile, 'repeat')! })).p;
+  const step = Math.round(px * 12), half = Math.round(step / 2), dark = darkScheme.matches;
+  const [bg, dot] = dark ? ['#3b3442', '#4d4555'] : ['#efe6da', '#e3d7c8'];
+  const tile = baked(`paper|${step}|${px}|${dark}`, step, step, (g) => { r(g, 0, 0, step, step, bg); r(g, half, half, px, px, dot); });
+  c.fillStyle = (paperFill?.step === step && paperFill.dark === dark ? paperFill : (paperFill = { step, dark, p: c.createPattern(tile, 'repeat')! })).p;
   c.fillRect(0, 0, w, h);
 }
-let paperFill: { step: number; p: CanvasPattern } | undefined;
+let paperFill: { step: number; dark: boolean; p: CanvasPattern } | undefined;
 
 // ---------- blocky timer font ----------
 const GLYPHS: Record<string, string[]> = {

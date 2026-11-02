@@ -6,6 +6,8 @@ A cozy pixel-art study game you play with friends. Start a focus timer and your 
 
 **Play it:** [auralis-ebon.vercel.app](https://auralis-ebon.vercel.app)
 
+[![Watch the 20-second trailer](brag-output/brag.jpg)](brag-output/brag.mp4)
+
 ![Landing page](docs/screenshots/landing.jpg)
 
 | Your house, with to-dos and chat | Focus mode with a friend studying too |

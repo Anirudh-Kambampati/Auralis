@@ -1,6 +1,8 @@
 /* Auralis: flat, calm, one outline colour, solid offset shadows. */
 :root {
   --bg: #efe6da;
+  --dot: #e3d7c8;
+  --on-bg: var(--ink); /* text sitting straight on the backdrop */
   --paper: #fffaf3;
   --soft: #ece2d5;
   --ink: #2b2530;
@@ -50,7 +52,7 @@ body.busy, body.busy * { cursor: var(--busy) !important; }
 /* ---------- loading screen ---------- */
 #loading {
   position: fixed; inset: 0; z-index: 50; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px;
-  padding: 24px; text-align: center; background: var(--bg); cursor: var(--busy);
+  padding: 24px; text-align: center; background: var(--bg); color: var(--on-bg); cursor: var(--busy);
 }
 .load-logo { width: 104px; height: 104px; image-rendering: auto; animation: loadBob 1.4s ease-in-out infinite; }
 .load-title { margin: 0; font-size: 24px; font-weight: 700; }
@@ -608,7 +610,7 @@ body.signed-out #deck, body.signed-out #game, body.signed-out #zoom { display: n
   overflow-y: auto;
   touch-action: pan-y pinch-zoom;
   background-color: var(--bg);
-  background-image: radial-gradient(#e3d7c8 1.5px, transparent 1.5px);
+  background-image: radial-gradient(var(--dot) 1.5px, transparent 1.5px);
   background-size: 24px 24px;
   -webkit-user-select: text;
   user-select: text;
@@ -631,13 +633,13 @@ body.signed-out #deck, body.signed-out #game, body.signed-out #zoom { display: n
   100% { transform: translateY(-115vh) rotate(200deg); opacity: 0; }
 }
 
-.land-top { text-align: center; }
+.land-top { text-align: center; color: var(--on-bg); }
 .brand { display: inline-flex; align-items: center; gap: 14px; }
 .brand img { width: 72px; height: 72px; image-rendering: auto; animation: wobble 3s ease-in-out infinite; }
 .bouncy { margin: 0; font-size: clamp(48px, 10vw, 76px); letter-spacing: 2px; display: inline-flex; }
 .bouncy span {
   display: inline-block;
-  color: var(--ink);
+  color: var(--on-bg);
   text-shadow: 0 4px 0 rgba(43, 37, 48, 0.15);
   animation: hop 2.4s ease-in-out infinite;
 }
@@ -721,7 +723,7 @@ body.signed-out #deck, body.signed-out #game, body.signed-out #zoom { display: n
 .step:nth-child(1) { background: #e3ebfb; transform: rotate(-1.5deg); }
 .step:nth-child(3) { background: #fff3d1; transform: rotate(1deg); }
 .step:nth-child(5) { background: #e2f3e8; transform: rotate(-1deg); }
-.arrow-step { align-self: center; font-size: 26px; font-weight: 700; }
+.arrow-step { align-self: center; font-size: 26px; font-weight: 700; color: var(--on-bg); }
 
 /* buddy + sign-up side by side */
 .land-grid { display: grid; gap: 20px; }
@@ -869,3 +871,9 @@ body.signed-out #deck, body.signed-out #game, body.signed-out #zoom { display: n
 .chip.break { gap: 8px; background: #8fd0a8; color: var(--ink); }
 .chip.break .small { padding: 2px 10px; font-size: 14px; }
 .tomatoes { font-size: 20px; margin: 4px 0 10px; }
+
+/* Dark mode: only the paper backdrop goes dark; cards, outlines and the pixel art keep their colours. */
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #3b3442; --dot: #4d4555; --on-bg: #f3ebe0; }
+  .tagline mark { background: linear-gradient(transparent 55%, rgba(242, 193, 78, 0.45) 55%); }
+}
