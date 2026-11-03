@@ -458,6 +458,8 @@ export const PET_ACCS = {
   cape: { name: 'Hero cape', price: 100 },
 };
 export const MAX_PETS = 4;
+// Bond grows by a minute for every focus minute a pet spends out in your room: level 1 at 25 min, 2 at 100, ... 5 at 625.
+export const bondLevel = (bond = 0) => Math.min(5, Math.floor(Math.sqrt(bond / 25)));
 
 export const WALLPAPERS = ['#f6dcc0', '#cfe8d8', '#ddd5f5', '#fbd0d4', '#cfe1f7', '#f8edc0', '#fffaf3', '#e8d3c0', '#c9e4ef', '#e6d0ea',
   '#f4c8a0', '#b8e0c8', '#c8c0f0', '#f0b8c0', '#a8c8f0', '#f0e0a0', '#d8d0c8', '#3a4060', '#4a5a48', '#f0f0f0'];

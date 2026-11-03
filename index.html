@@ -133,10 +133,12 @@
             <button id="stopAll">⏹ Stop all sounds</button>
           </div>
         </div>
+        <button class="chip pip" id="pip" hidden aria-label="Picture in picture" aria-pressed="false" title="Float your room over other windows">⧉</button>
         <button class="chip theme" id="theme"></button>
         <button class="chip house" id="code" title="Copy house code"></button>
       </div>
     </header>
+    <div id="pipPreview" hidden><video muted playsinline aria-label="Live view of your room"></video><button aria-label="Close preview">✕</button></div>
     <div id="toast" hidden></div>
     <!-- What the toast just said, for screen readers: the toast itself is hidden and shown again to animate. -->
     <p id="announce" class="sr-only" role="status" aria-live="polite"></p>

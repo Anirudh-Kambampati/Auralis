@@ -1,5 +1,5 @@
 import {
-  SHELVES, buildGrid, walkable, canPlace, placeSwaps,roomSize, MAX_ROOMS, ROOM_COST, colorsFor, ITEMS, PETS, PET_ACCS, MAX_PETS, EXPAND_COST, ROOM_SIZES,
+  SHELVES, buildGrid, walkable, canPlace, placeSwaps,roomSize, MAX_ROOMS, ROOM_COST, colorsFor, ITEMS, PETS, PET_ACCS, MAX_PETS, bondLevel, EXPAND_COST, ROOM_SIZES,
   WALLPAPERS, WALL_PATTERNS, FLOORS, FLOOR_STYLES, SKINS, HAIRS, SHIRTS, STYLES, FACES, OUTFITS, BODIES, ACCESSORIES, FOCUS_LENGTHS, isFocusLength,
   WALL_H, WALL, FLOOR, DOOR, BLOCKED, VOID, buddyMultiplier, focusEnd, streakDays, streakBonus, sellPrice, footprint, lying, THIRSTY_MS, isPlant, discounted, GIFT_COINS, activeEvents, nextEvent,
 } from '../shared/game.js';
@@ -19,7 +19,7 @@ type Furniture = { item: string; x: number; y: number; v?: number; s?: number; f
 type Room = { wallpaper: string; floor: string; pattern?: string; floorStyle?: string; level?: number; curtains?: boolean; furniture: Furniture[] };
 type Member = {
   id: string; name: string; look: Look; rooms: Room[]; focus: Focus | null;
-  totalMinutes: number; online: boolean; pos: { x: number; y: number } | null; pets: { kind: string; name?: string; coat?: number; acc?: string; away?: boolean }[]; fedAt?: number;
+  totalMinutes: number; online: boolean; pos: { x: number; y: number } | null; pets: { kind: string; name?: string; coat?: number; acc?: string; away?: boolean; follow?: boolean; bond?: number }[]; fedAt?: number;
   exams?: { subject: string; date: string }[]; // YYYY-MM-DD, soonest first
 };
 type Todo = { id: number; text: string; done: boolean; by: string; all?: boolean; ticks?: string[] }; // all: everyone has to tick it
@@ -131,6 +131,11 @@ function onMessage(m: any) {
       notify(chime);
       for (const o of started) toast(`📚 <b>${esc(o.name)}</b> started studying <b>${esc(o.focus!.tag ?? 'Study')}</b>. Open Focus to join in!`, 'reward');
     }
+    for (const o of members) { // pets greet owners who just came online, and do a happy spin when a session ends
+      if (focusSeen?.has(o.id) && !o.focus) petDone.set(o.id, Date.now());
+      if (o.online && !onlineSeen.has(o.id)) petGreet.set(o.id, Date.now());
+    }
+    onlineSeen = new Set(members.filter((o) => o.online).map((o) => o.id));
     focusSeen = new Set(members.filter((o) => o.focus).map((o) => o.id));
     const notes = (me.notes ?? []).filter((n) => n.at > notesSeen);
     if (notes.length) {
@@ -241,6 +246,13 @@ function onMessage(m: any) {
     toast(`📚 <b>${esc(m.by)}</b> invites you to study <b>${esc(m.tag)}</b> together. <u>Tap to join</u> (or open Focus)`, 'reward', {
       ms: 10_000, onClick: () => send({ t: 'focus_join', id: m.from, tz: new Date().getTimezoneOffset() }),
     });
+  } else if (m.t === 'pat') {
+    patAt.set(`${m.owner}:${m.slot}`, Date.now());
+    const pet = m.owner === myId && m.by !== myId ? myMember()?.pets[m.slot] : undefined;
+    if (pet) toast(`💕 <b>${esc(m.name)}</b> petted ${petName(pet)}.`);
+  } else if (m.t === 'fetch') { // the thrower's pets run for the ball, or the room owner's if they have none
+    const who = [m.by, m.owner].map((id) => members.find((o) => o.id === id)).find((o) => o?.pets.some((p) => !p.away));
+    who?.pets.forEach((p, slot) => { if (!p.away) fetches.set(`${who.id}:${slot}`, { x: m.x, y: m.y, by: m.by, at: Date.now() }); });
   } else if (m.t === 'highfive') {
     const at = Date.now();
     for (const id of [m.from, m.to]) cheers.set(id, { text: '✋', at, hop: true });
@@ -295,6 +307,12 @@ const furnColor = (f: Furniture) => (f.v === undefined ? undefined : colorsFor(f
 // Tiles you can use by standing on them; z = where that piece sorts when drawn, so whoever uses it is drawn on top.
 let acts = new Map<number, { item: string; act: string; col?: string; z: number }>();
 let petToys: { x: number; y: number; act: string }[][] = []; // per room: cat towers, beds, balls...
+// Pet reactions, keyed by owner id or `${owner}:${slot}`: all from messages and state changes every client sees.
+const petGreet = new Map<string, number>(), petDone = new Map<string, number>(), patAt = new Map<string, number>();
+const fetches = new Map<string, { x: number; y: number; by: string; at: number }>();
+const petFx = new Map<string, { x: number; y: number }>(); // where a pet is drawn while it's off its usual wander
+let petHits: { m: Member; slot: number; x: number; y: number }[] = [], onlineSeen = new Set<string>();
+const petName = (p: Member['pets'][number]) => esc(p.name ?? PETS[p.kind as PetKey]?.name ?? 'Your pet');
 const tileKey = (x: number, y: number) => y * 10000 + x;
 let seat: { x: number; y: number } | null = null; // furniture to step onto once the walk there ends
 let useNext: string | null = null; // what to do once the walk ends in front of a piece of furniture
@@ -724,6 +742,17 @@ function tapAt(e: PointerEvent) {
   }
   if (e.pointerType === 'touch') showTip(clickLabel(tx, ty), e.clientX, e.clientY - 40, 1200); // fingers can't hover
   // A housemate: cheer them on while they study. Idle while I study: invite them along. Both idle: a high five.
+  // A pet: pat it (everyone sees the hearts). My own also starts or stops following me, if I'm not studying.
+  const pet = petHits.find((h) => Math.abs(h.x - tx) < 0.75 && Math.abs(h.y - ty) < 0.75);
+  if (pet) {
+    send({ t: 'pat', owner: pet.m.id, slot: pet.slot });
+    const p = pet.m.pets[pet.slot];
+    if (pet.m.id === myId && !mine?.focus) {
+      send({ t: 'pet_style', slot: pet.slot, follow: !p.follow });
+      toast(p.follow ? `🐾 ${petName(p)} went back to wandering.` : `🐾 ${petName(p)} is following you!`);
+    }
+    return;
+  }
   const friend = friendAt(tx, ty), focus = mine?.focus;
   if (friend) {
     if (friend.focus) send({ t: 'cheer', to: friend.id });
@@ -737,6 +766,7 @@ function tapAt(e: PointerEvent) {
   const si = grid.owner[ty * grid.w + tx], hit = slots[si];
   const fi = hit ? furnitureAt(hit.room, tx - grid.origins[si].x, ty - grid.origins[si].y) : -1;
   const clicked = fi >= 0 ? hit.room.furniture[fi] : undefined;
+  if (clicked?.item === 'petBall') { send({ t: 'fetch', owner: hit.m.id, x: grid.origins[si].x + clicked.x, y: grid.origins[si].y + clicked.y }); return; }
   // Clicking something that makes a sound (record player, fireplace, clocks) in any room you can see toggles it, just for you.
   if (clicked && soundName(clicked.item)) {
     const what = soundName(clicked.item);
@@ -837,11 +867,14 @@ addEventListener('keydown', (e) => {
 
 // ---------- loop ----------
 let last = performance.now();
-function frame(t: number) {
+function tick(t: number) {
   const dt = Math.min(0.1, (t - last) / 1000);
   last = t;
   step(dt);
   render(t, dt);
+}
+function frame(t: number) {
+  tick(t);
   requestAnimationFrame(frame);
 }
 
@@ -1036,6 +1069,16 @@ function render(t: number, dt: number) {
     const a = avatars.get(m.id);
     if (a && (m.online || m.id === myId) && a.x === a.tx && a.y === a.ty && acts.has(tileKey(a.x, a.y))) occupied.add(tileKey(a.x, a.y));
   }
+  // Anyone sitting (not studying) is a lap any pet in that room may hop onto.
+  const laps: { x: number; y: number; act: string }[][] = slots.map(() => []);
+  for (const m of members) {
+    const a = avatars.get(m.id);
+    if (!a || m.focus || (!m.online && m.id !== myId) || a.x !== a.tx || a.y !== a.ty || acts.get(tileKey(a.x, a.y))?.act !== 'sit') continue;
+    laps[grid.owner[a.y * grid.w + a.x]]?.push({ x: a.x, y: a.y, act: 'lap' });
+  }
+  const areas = slots.map((_, j) => ({ spots: petSpots[j], toys: petToys[j], laps: laps[j] }));
+  type PetNow = { m: Member; p: Member['pets'][number]; slot: number; pos: ReturnType<typeof petPos>; goal?: { x: number; y: number }; act?: string; run?: boolean };
+  const pets: PetNow[] = [];
   slots.forEach(({ m, room, ri }, i) => {
     const o = grid.origins[i];
     room.furniture.forEach((f, idx) => {
@@ -1068,15 +1111,48 @@ function render(t: number, dt: number) {
     });
     if (ri === 0) m.pets?.forEach((p, slot) => { // pets live in their owner's first room
       if (!petSpots[i]?.length || p.away) return; // switched off in the You panel
-      const pos = petPos(seedOf(m.id, slot), now, slots.map((_, j) => ({ spots: petSpots[j], toys: petToys[j] })), i, petNear[i], petRoute);
-      if (p.name) petLabels.push({ x: pos.x, y: pos.y - (pos.act === 'perch' ? 1 : 0), name: p.name });
-      const fed = now - (m.fedAt ?? 0); // just fed: a heart floats up for a few seconds
-      sprites.push({ y: pos.y + 0.9, draw: () => {
-        drawPet(ctx, p.kind, Math.round(pos.x * T), Math.round(pos.y * T), pos.moving, pos.left, now, pos.act, p.coat, p.acc);
-        if (fed < 6000) drawHeart(ctx, pos.x * T + T / 2, pos.y * T - fed / 400);
-      } });
+      pets.push({ m, p, slot, pos: petPos(seedOf(m.id, slot), now, areas, i, petNear[i], petRoute) });
     });
   });
+  // What each pet does over its usual wander, most important first: fetch, nap by its studying owner,
+  // a happy spin (session done, or a pat once bonded), then greeting or following its owner.
+  for (const x of pets) {
+    const { m, p, slot } = x, key = `${m.id}:${slot}`, a = avatars.get(m.id), here = a && (m.online || m.id === myId) ? a : null;
+    const side = slot % 2 ? -0.7 : 0.7, back = slot > 1 ? 0.6 : 0.25, fe = fetches.get(key), fa = fe ? now - fe.at : Infinity;
+    const by = fe && avatars.get(fe.by);
+    if (fe && fa < 4500) x.goal = fa < 2000 || !by ? fe : { x: by.x + side, y: by.y + back };
+    else if (here && m.focus) { x.goal = { x: here.x + side, y: here.y + back }; x.act = 'sleep'; }
+    else if (now - (petDone.get(m.id) ?? 0) < 3000 || (now - (patAt.get(key) ?? 0) < 1200 && bondLevel(p.bond) >= 2)) x.run = true;
+    else if (here && (p.follow || now - (petGreet.get(m.id) ?? 0) < 5000)) x.goal = { x: here.x + side, y: here.y + back };
+  }
+  // Two idle pets close together play chase around each other.
+  const idle = pets.filter((x) => !x.goal && !x.run && !x.pos.moving && !x.pos.act);
+  for (const A of idle) for (const B of idle) {
+    if (A === B || A.goal || B.goal || Math.hypot(A.pos.x - B.pos.x, A.pos.y - B.pos.y) > 2) continue;
+    const cx = (A.pos.x + B.pos.x) / 2, cy = (A.pos.y + B.pos.y) / 2, sx = Math.sin(now / 400) * 0.7, sy = Math.cos(now / 400) * 0.35;
+    A.goal = { x: cx + sx, y: cy + sy }; B.goal = { x: cx - sx, y: cy - sy }; A.run = B.run = true;
+  }
+  petHits = [];
+  for (const { m, p, slot, pos, goal, act, run } of pets) {
+    const key = `${m.id}:${slot}`, fx = petFx.get(key);
+    let { x: px, y: py, moving, left, act: pact } = pos;
+    if (goal || fx) { // ease toward the goal (or back onto the wander) instead of jumping
+      const cur = fx ?? { x: px, y: py }, tx = goal?.x ?? px, ty = goal?.y ?? py;
+      const dx = tx - cur.x, dy = ty - cur.y, d = Math.hypot(dx, dy), step = d ? Math.min(d, dt * 5) / d : 0;
+      cur.x += dx * step; cur.y += dy * step;
+      if (!goal && d < 0.05) petFx.delete(key); else petFx.set(key, cur);
+      px = cur.x; py = cur.y; moving = d > 0.05; pact = moving ? undefined : goal ? act : pact;
+      if (moving) left = dx < 0;
+    }
+    if (run) { moving = true; if (!goal) left = Math.floor(now / 150) % 2 === 0; } // spin: flip side to side
+    petHits.push({ m, slot, x: px, y: py });
+    if (p.name) petLabels.push({ x: px, y: py - (pact === 'perch' ? 1 : 0), name: p.name });
+    const love = Math.min(now - (m.fedAt ?? 0), (now - (patAt.get(key) ?? 0)) * 4); // fed or petted: a heart floats up
+    sprites.push({ y: py + (pact === 'lap' ? 2 : 0.9), draw: () => {
+      drawPet(ctx, p.kind, Math.round(px * T), Math.round(py * T), moving, left, now, pact, p.coat, p.acc);
+      if (love < 6000) drawHeart(ctx, px * T + T / 2, py * T - love / 400);
+    } });
+  }
   const labels: { x: number; y: number; m: Member; seated: boolean; lift: number }[] = [];
   const lights: { x: number; y: number; rad: number; alpha: number }[] = [];
   for (const m of members) {
@@ -1633,10 +1709,11 @@ function panelBody(mine: Member) {
         const accs = me.petAccs ?? [];
         return `<div class="pet-row"><span class="pet-chip">${petIcon(p.kind, 'chip-icon', p.coat, p.acc)}<input class="pet-name" data-slot="${slot}" maxlength="16" value="${esc(p.name ?? '')}" placeholder="${PETS[p.kind as PetKey]?.name ?? p.kind}" aria-label="Pet name"></span>
           <button class="${p.away ? 'off' : 'on'} small-chip" data-act="petshow" data-slot="${slot}" data-v="${p.away ? 'in' : 'out'}" aria-pressed="${!p.away}" title="Show this pet in your room">${p.away ? 'Hidden' : 'In room'}</button>
+          <small class="hint" title="Grows with every focus minute this pet spends in your room">♥ Bond ${bondLevel(p.bond)}/5</small>
           <button class="danger small-chip" data-act="petrelease" data-slot="${slot}" title="Let this pet go for good">Release</button>
           <div class="swatches">${coats.map((c, k) => `<button class="swatch${(p.coat ?? 0) === k ? ' on' : ''}" style="background:${c}" data-act="petcoat" data-slot="${slot}" data-v="${k}" aria-label="Coat ${k + 1}"></button>`).join('')}</div>
           ${accs.length ? `<div class="row">${['', ...accs].map((a) => `<button class="${(p.acc ?? '') === a ? 'on' : 'off'}" data-act="petacc" data-slot="${slot}" data-v="${a}">${a ? PET_ACCS[a as keyof typeof PET_ACCS].name : 'None'}</button>`).join('')}</div>` : ''}</div>`;
-      }).join('')}${(me.petAccs ?? []).length ? '' : '<p class="hint">Get bows, hats and more for your pets in Shop → Pet style.</p>'}` : ''}
+      }).join('')}${(me.petAccs ?? []).length ? '' : '<p class="hint">Get bows, hats and more for your pets in Shop → Pet style.</p>'}<p class="hint">Tap your pet in the room to have it follow you. Study with it out to grow your bond: bonded pets do tricks and sometimes find coins.</p>` : ''}
       <div class="center"><button class="off" data-act="randomlook">🎲 Randomize look</button></div>
       <h3>Body type</h3>${lookTiles('body', BODIES, mine.look)}
       <h3>Skin tone</h3>${swatches('skin', SKINS, mine.look.skin)}
@@ -2570,3 +2647,38 @@ if (sessionStorage.getItem('auralis.sessionEnded')) {
   notice.textContent = 'Your session ended. Log back in to pick up where you left off.';
 }
 requestAnimationFrame(frame);
+
+// Picture in picture: the live room (with my timer bubble) streamed into a video that floats over other apps.
+// Chrome, Edge and Safari float it on a click. Firefox has no API for that, so there the video shows as a small
+// preview in the corner and Firefox's own picture-in-picture button (on hover, or right-click) floats it.
+// Background tabs get no animation frames, so while it's out a worker's timer keeps it drawing at 4 fps.
+{
+  const pipBtn = $<HTMLButtonElement>('#pip'), preview = $<HTMLElement>('#pipPreview'), video = preview.querySelector('video')!;
+  const native = !!document.pictureInPictureEnabled;
+  let ticker: Worker | null = null;
+  const floating = (on: boolean) => {
+    ticker?.terminate();
+    ticker = on ? new Worker(URL.createObjectURL(new Blob(['setInterval(() => postMessage(0), 250)']))) : null;
+    if (ticker) ticker.onmessage = () => { if (document.hidden) tick(performance.now()); };
+    pipBtn.classList.toggle('on', on);
+    pipBtn.setAttribute('aria-pressed', String(on));
+  };
+  pipBtn.hidden = !canvas.captureStream;
+  pipBtn.addEventListener('click', async () => {
+    try {
+      if (document.pictureInPictureElement) return void (await document.exitPictureInPicture());
+      if (!preview.hidden) { preview.hidden = true; floating(false); return; }
+      video.srcObject ??= canvas.captureStream(15);
+      if (!native) { // Firefox
+        preview.hidden = false;
+        floating(true);
+        toast('Hover the preview and click its picture-in-picture button (or right-click it → <b>Watch in Picture-in-Picture</b>).', '', { ms: 8000 });
+      }
+      await video.play();
+      if (native) await video.requestPictureInPicture();
+    } catch { toast("Couldn't open picture in picture in this browser.", 'error'); }
+  });
+  preview.querySelector('button')!.addEventListener('click', () => { preview.hidden = true; floating(false); });
+  video.addEventListener('enterpictureinpicture', () => floating(true));
+  video.addEventListener('leavepictureinpicture', () => floating(false));
+}

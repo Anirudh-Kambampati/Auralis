@@ -206,7 +206,7 @@ export const seedOf = (id: string, slot: number) => [...id].reduce((n, ch) => (n
 // Sometimes it heads for a toy instead (cat tower, bed, ball...) and plays with it while it idles.
 // Each minute it may go visit a neighbouring room (near: room indexes), walking there along route() for a whole period.
 type Spot = { x: number; y: number; act?: string };
-type Area = { spots: Spot[]; toys: Spot[] };
+type Area = { spots: Spot[]; toys: Spot[]; laps?: Spot[] }; // laps: anyone sitting in that room
 export function petPos(seed: number, now: number, areas: Area[], home = 0, near: number[] = [], route?: (a: Spot, b: Spot) => Spot[] | null) {
   const period = 5000, stay = 12; // periods per room choice
   const k = Math.floor(now / period) + (seed % 7);
@@ -216,7 +216,8 @@ export function petPos(seed: number, now: number, areas: Area[], home = 0, near:
     return areas[r]?.spots.length ? r : home;
   };
   const target = (n: number) => {
-    const { spots, toys } = areas[roomAt(n)];
+    const { spots, toys, laps } = areas[roomAt(n)];
+    if (laps?.length && hash(seed + 0.375, n) < 0.3) return laps[Math.floor(hash(seed + 0.625, n) * laps.length)];
     return toys.length && hash(seed + 0.5, n) < 0.45 ? toys[Math.floor(hash(seed + 0.25, n) * toys.length)] : spots[Math.floor(hash(seed, n) * spots.length)];
   };
   const a = target(k), b = target(k + 1);
@@ -242,6 +243,7 @@ export function drawPet(c: CanvasRenderingContext2D, kind: string, x: number, y:
   const sleeping = act === 'sleep';
   const hop = sleeping ? 1 : moving ? -Math.abs(Math.round(Math.sin(now / 90) * 2)) : Math.floor(now / 800) % 2 ? 0 : -1;
   if (act === 'perch') y -= 16;
+  else if (act === 'lap') y -= 8;
   else {
     c.fillStyle = 'rgba(58,38,51,0.18)';
     c.fillRect(x + 3, y + 14, 10, 2);

@@ -9,7 +9,7 @@ import { openPgStore } from './store-pg.js';
 import { files, isPng, isJpeg } from './files.js';
 import {
   ITEMS, WALLPAPERS, FLOORS, SKINS, HAIRS, SHIRTS, STYLES, FACES, OUTFITS, BODIES, ACCESSORIES, isFocusLength, canPlace, placeSwaps, focusReward, quitReward, quitMinutes, focusEnd, streakDays, streakBonus,
-  WALL_PATTERNS, FLOOR_STYLES, PETS, MAX_PETS, EXPAND_COST, colorsFor, USES, PET_ACCS, MAX_ROOMS, ROOM_COST,
+  WALL_PATTERNS, FLOOR_STYLES, PETS, MAX_PETS, bondLevel, EXPAND_COST, colorsFor, USES, PET_ACCS, MAX_ROOMS, ROOM_COST,
   isPlant, TASK_COINS, TASK_REWARDS_PER_DAY, discounted, GIFT_COINS, GIFTS_PER_DAY, nextRot, sellPrice,
 } from '../shared/game.js';
 import { parseVideo } from '../shared/watch.js';
@@ -339,8 +339,17 @@ function handle(p, m) {
       const streak = streakDays(p.sessions, now, p.tz); // includes today, now that this session counts
       const reward = focusReward(p.focus.minutes, buddies) + Math.ceil(p.focus.minutes * streakBonus(streak));
       p.coins += reward;
+      const studied = p.focus.minutes;
       p.focus = null;
       send(sockets.get(p.id), { t: 'reward', coins: reward, buddies, streak });
+      // Pets out in the room bond with you as you study; a well-bonded one sometimes digs up a few coins.
+      const out = (p.pets ?? []).filter((x) => !x.away);
+      for (const x of out) x.bond = (x.bond ?? 0) + studied;
+      const best = out.reduce((b, x) => (bondLevel(x.bond) > bondLevel(b?.bond) ? x : b), null), lvl = bondLevel(best?.bond);
+      if (lvl && Math.random() < lvl * 0.1) {
+        p.coins += lvl * 2;
+        send(sockets.get(p.id), { t: 'reward', text: `🐾 ${best.name ?? `Your ${PETS[best.kind]?.name.toLowerCase() ?? 'pet'}`} found ${lvl * 2} coins for you!` });
+      }
       break;
     }
     case 'buy': {
@@ -431,6 +440,19 @@ function handle(p, m) {
       send(sockets.get(them.id), { t: 'invite', from: p.id, by: p.name, tag: p.focus.tag ?? 'Study' });
       send(sockets.get(p.id), { t: 'info', text: `Invited ${them.name} to study with you. 📚` });
       return; // nothing saved
+    }
+    case 'pat': { // pet anyone's pet in the house: hearts the whole house sees
+      const h = db.houses[p.house], owner = h.members.includes(m.owner) ? db.players[m.owner] : null;
+      if (!owner?.pets?.[m.slot] || Date.now() - (lastCheer.get(p.id) ?? 0) < 1500) return;
+      lastCheer.set(p.id, Date.now());
+      for (const id of h.members) send(sockets.get(id), { t: 'pat', owner: owner.id, slot: m.slot, by: p.id, name: p.name });
+      return;
+    }
+    case 'fetch': { // threw the pet ball: the thrower's pets (or the room owner's) run for it
+      if (![m.x, m.y].every(Number.isInteger) || Date.now() - (lastCheer.get(p.id) ?? 0) < 3000) return;
+      lastCheer.set(p.id, Date.now());
+      for (const id of db.houses[p.house].members) send(sockets.get(id), { t: 'fetch', by: p.id, owner: m.owner, x: m.x, y: m.y });
+      return;
     }
     case 'highfive': { // both of us idle: a high five the whole house sees
       const h = db.houses[p.house], them = h.members.includes(m.to) && m.to !== p.id ? db.players[m.to] : null;
@@ -563,6 +585,7 @@ function handle(p, m) {
       if (m.acc === '' || (p.petAccs ?? []).includes(m.acc)) pet.acc = m.acc || undefined;
       if (typeof m.name === 'string') pet.name = cleanText(m.name, 16) || undefined;
       if (typeof m.away === 'boolean') pet.away = m.away || undefined; // kept, but not out in the room
+      if (typeof m.follow === 'boolean') pet.follow = m.follow || undefined; // trots after you when you're not studying
       break;
     }
     case 'todo_add': {

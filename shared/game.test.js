@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {
   buildGrid, canPlace, placeSwaps, focusReward, quitReward, quitMinutes, focusEnd, streakDays, streakBonus, colorsFor, roomSize, PETS, EXPAND_COST,
   ITEMS, EVENTS, easterSunday, activeEvents, nextEvent, footprint, nextRot,
-  DOOR, WALL, FLOOR, BLOCKED, VOID, ROOM_W, colsFor, isFocusLength, FOCUS_LENGTHS,
+  DOOR, WALL, FLOOR, BLOCKED, VOID, ROOM_W, colsFor, isFocusLength, FOCUS_LENGTHS, bondLevel,
 } from './game.js';
 
 const empty = (level = 0) => ({ level, furniture: [] });
@@ -183,4 +183,8 @@ test('streak bonus counts local days', () => {
 test('a focus length is a multiple of 5 from 10 minutes to 3 hours', () => {
   for (const n of [10, 15, 35, 120, 180, ...FOCUS_LENGTHS]) assert.ok(isFocusLength(n), n);
   for (const n of [0, 5, 12, 185, 9.5, -10, NaN, '20']) assert.ok(!isFocusLength(n), n);
+});
+
+test('pet bond levels up with focus minutes and caps at 5', () => {
+  assert.deepEqual([undefined, 24, 25, 100, 624, 625, 99999].map(bondLevel), [0, 0, 1, 2, 4, 5, 5]);
 });
