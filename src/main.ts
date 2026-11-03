@@ -315,6 +315,17 @@ let petToys: { x: number; y: number; act: string }[][] = []; // per room: cat to
 const petGreet = new Map<string, number>(), petDone = new Map<string, number>(), patAt = new Map<string, number>();
 const fetches = new Map<string, { x: number; y: number; by: string; at: number }>();
 const petFx = new Map<string, { x: number; y: number }>(); // where a pet is drawn while it's off its usual wander
+const trails = new Map<string, { pts: { x: number; y: number }[]; movedAt: number }>(); // per person: recent path, newest last
+// The point `dist` tiles back along a trail from its newest end (or its oldest point, if the trail is shorter).
+function trailPoint(pts: { x: number; y: number }[], dist: number) {
+  for (let i = pts.length - 1; i > 0; i--) {
+    const a = pts[i], b = pts[i - 1], l = Math.hypot(b.x - a.x, b.y - a.y);
+    if (dist <= l) return { x: a.x + ((b.x - a.x) * dist) / l, y: a.y + ((b.y - a.y) * dist) / l };
+    dist -= l;
+  }
+  return pts[0];
+}
+console.assert(JSON.stringify(trailPoint([{ x: 0, y: 0 }, { x: 0, y: 2 }, { x: 3, y: 2 }], 4)) === '{"x":0,"y":1}', 'trailPoint walks back along the path');
 let petHits: { m: Member; slot: number; x: number; y: number }[] = [], onlineSeen = new Set<string>();
 const petName = (p: Member['pets'][number]) => esc(p.name ?? PETS[p.kind as PetKey]?.name ?? 'Your pet');
 const tileKey = (x: number, y: number) => y * 10000 + x;
@@ -1120,18 +1131,28 @@ function render(t: number, dt: number) {
       pets.push({ m, p, slot, pos: petPos(seedOf(m.id, slot), now, areas, i, petNear[i], petRoute) });
     });
   });
-  // What each pet does over its usual wander, most important first: fetch, nap by its studying owner,
-  // a happy spin (session done, or a pat once bonded), then greeting or following its owner.
+  // Breadcrumbs of where each person walked, so a following pet can walk the same path behind them.
+  for (const m of members) {
+    const a = avatars.get(m.id);
+    if (!a) continue;
+    const tr = trails.get(m.id) ?? { pts: [{ x: a.x, y: a.y }], movedAt: 0 }, last = tr.pts[tr.pts.length - 1];
+    if (Math.hypot(a.x - last.x, a.y - last.y) > 0.2) { tr.pts.push({ x: a.x, y: a.y }); if (tr.pts.length > 60) tr.pts.shift(); tr.movedAt = now; }
+    trails.set(m.id, tr);
+  }
+  // What each pet does over its usual wander, most important first: fetch, nap by its studying owner
+  // (unless it's a follower: those roam free while I study or stand still), a happy spin (session done,
+  // or a pat once bonded), then greeting its owner or following their trail while they walk.
   for (const x of pets) {
     const { m, p, slot } = x, key = `${m.id}:${slot}`, a = avatars.get(m.id), here = a && (m.online || m.id === myId) ? a : null;
     const side = slot % 2 ? -0.7 : 0.7, back = slot > 1 ? 0.6 : 0.25, fe = fetches.get(key), fa = fe ? now - fe.at : Infinity;
-    const by = fe && avatars.get(fe.by);
+    const by = fe && avatars.get(fe.by), tr = trails.get(m.id), gap = 2.5 + slot * 0.9;
     if (fe && fa < 4500) x.goal = fa < 2000 || !by ? fe : { x: by.x + side, y: by.y + back };
-    else if (here && m.focus) { x.goal = { x: here.x + side, y: here.y + back }; x.act = 'sleep'; }
+    else if (here && m.focus && !p.follow) { x.goal = { x: here.x + side, y: here.y + back }; x.act = 'sleep'; }
     else if (now - (petDone.get(m.id) ?? 0) < 3000 || (now - (patAt.get(key) ?? 0) < 1200 && bondLevel(p.bond) >= 2)) x.run = true;
-    else if (here && (p.follow || now - (petGreet.get(m.id) ?? 0) < 5000)) { // on a leash: waits until I'm far enough, then trails behind
-      const cur = petFx.get(key) ?? x.pos, dx = cur.x - here.x, dy = cur.y - here.y, d = Math.hypot(dx, dy) || 1, leash = 1.6 + slot * 0.5;
-      x.goal = d > leash ? { x: here.x + (dx / d) * leash, y: here.y + (dy / d) * leash } : { x: cur.x, y: cur.y };
+    else if (here && p.follow && !m.focus && tr && now - tr.movedAt < 600) x.goal = trailPoint(tr.pts, gap);
+    else if (here && now - (petGreet.get(m.id) ?? 0) < 5000) { // greeting: run up, but stop a little way off
+      const cur = petFx.get(key) ?? x.pos, dx = cur.x - here.x, dy = cur.y - here.y, d = Math.hypot(dx, dy) || 1;
+      x.goal = d > gap ? { x: here.x + (dx / d) * gap, y: here.y + (dy / d) * gap } : { x: cur.x, y: cur.y };
     }
   }
   // Two idle pets close together play chase around each other.
