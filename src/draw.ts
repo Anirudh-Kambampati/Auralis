@@ -2922,6 +2922,23 @@ function drawTurned(c: Ctx, draw: Draw, item: string, x: number, y: number, t: n
 
 // ---------- UI icons ----------
 const UI_ICONS: Record<string, { rows: string[]; pal: Record<string, string> }> = {
+  pip: { // picture in picture: a lavender window with a little pink one popping out of its corner, a heart inside
+    rows: [
+      '............',
+      'oooooooooo..',
+      'otttttttto..',
+      'owwwwwwwwo..',
+      'owwwwwwwwo..',
+      'owwwwooooooo',
+      'owwwwopppppo',
+      'owwwwowrwrwo',
+      'oooooorrrrro',
+      '.....owrrrwo',
+      '.....owwrwwo',
+      '.....ooooooo',
+    ],
+    pal: { o: OUT, t: '#b89af0', w: '#fff4e6', p: '#f4a6b8', r: '#f48a8a' },
+  },
   todo: { // a clipboard: wooden board, gold clip, two ticked items and one still to do
     rows: [
       '....oooo....',

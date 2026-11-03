@@ -33,7 +33,11 @@ type Avatar = { x: number; y: number; tx: number; ty: number; up: boolean; dist:
 type ItemKey = keyof typeof ITEMS;
 type PetKey = keyof typeof PETS;
 
-const $ = <E extends HTMLElement>(s: string) => document.querySelector(s) as E;
+// The window the app lives in right now: this tab, or the floating picture-in-picture window it moves into.
+let ui: Document = document, win: Window = window;
+const $ = <E extends HTMLElement>(s: string) => ui.querySelector(s) as E;
+const keyFns: ((e: KeyboardEvent) => void)[] = []; // keyboard shortcuts, attached to whichever window has the app
+const onKey = (fn: (e: KeyboardEvent) => void) => { keyFns.push(fn); addEventListener('keydown', fn); };
 const canvas = $<HTMLCanvasElement>('#game');
 const ctx = canvas.getContext('2d')!;
 const panel = $('#panel');
@@ -282,7 +286,7 @@ function receiveChat(list: Chat[]) {
       if (c.from !== myId) {
         if (chatHidden()) pingOrHold();
         countUnseen();
-        if (document.body.dataset.side !== 'chat' || dmPeer) unread = true;
+        if (ui.body.dataset.side !== 'chat' || dmPeer) unread = true;
         noteUnreadChat();
       }
     }
@@ -338,11 +342,11 @@ const notify = (sound: () => void) => { if (chimes) sound(); };
 // Light or dark backdrop, picked with the button by the house code; index.html applies the saved one before first paint.
 const themeBtn = $<HTMLButtonElement>('#theme');
 function setTheme(theme: string) {
-  document.documentElement.dataset.theme = theme;
+  ui.documentElement.dataset.theme = theme;
   // Pin the browser bar colour too, instead of letting it follow the system.
-  document.querySelectorAll<HTMLMetaElement>('meta[name="theme-color"]').forEach((m) => (m.content = theme === 'dark' ? '#3b3442' : '#efe6da'));
+  ui.querySelectorAll<HTMLMetaElement>('meta[name="theme-color"]').forEach((m) => (m.content = theme === 'dark' ? '#3b3442' : '#efe6da'));
 }
-if (document.documentElement.dataset.theme) setTheme(document.documentElement.dataset.theme);
+if (ui.documentElement.dataset.theme) setTheme(ui.documentElement.dataset.theme);
 function labelTheme() {
   const next = isDark() ? 'light' : 'dark';
   themeBtn.textContent = isDark() ? '☀️' : '🌙';
@@ -351,7 +355,7 @@ function labelTheme() {
 labelTheme();
 matchMedia('(prefers-color-scheme: dark)').addEventListener('change', labelTheme); // following the system until picked
 const muteBtn = $<HTMLButtonElement>('#mute'), volMore = $<HTMLButtonElement>('#volMore'), volMenu = $<HTMLElement>('#volMenu');
-const sliders = document.querySelectorAll<HTMLInputElement>('input[data-vol]'); // master first
+const sliders = ui.querySelectorAll<HTMLInputElement>('input[data-vol]'); // master first
 let muted = localStorage.getItem('auralis.muted') === 'on';
 function applyVolume() {
   sliders.forEach((s) => setVolume(s.dataset.vol!, s.dataset.vol === 'all' && muted ? 0 : +s.value));
@@ -376,7 +380,7 @@ volMore.addEventListener('click', () => { volMenu.hidden = !volMenu.hidden; volM
 $<HTMLButtonElement>('#stopAll').addEventListener('click', () => { stopAllSounds(); toast('All sounds stopped.'); });
 themeBtn.addEventListener('click', () => {
   setTheme(isDark() ? 'light' : 'dark');
-  try { localStorage.setItem('auralis.theme', document.documentElement.dataset.theme!); } catch {}
+  try { localStorage.setItem('auralis.theme', ui.documentElement.dataset.theme!); } catch {}
   labelTheme();
 });
 // Do not disturb: messages during a focus session are counted, not pinged, and summed up afterwards.
@@ -654,7 +658,7 @@ const without = (room: Room, index: number) => ({ ...room, furniture: room.furni
 
 // ---------- input ----------
 function tileAt(e: PointerEvent) {
-  const dpr = devicePixelRatio || 1;
+  const dpr = win.devicePixelRatio || 1;
   return {
     tx: Math.floor((e.clientX * dpr / view.scale - view.ox) / T),
     ty: Math.floor((e.clientY * dpr / view.scale - view.oy) / T),
@@ -699,7 +703,7 @@ canvas.addEventListener('pointermove', (e) => {
   if (!pan.moved && Math.hypot(dx, dy) < 8) return;
   if (!pan.moved) showTip(null);
   pan.moved = true;
-  const k = (devicePixelRatio || 1) / view.scale; // screen pixels to art pixels
+  const k = (win.devicePixelRatio || 1) / view.scale; // screen pixels to art pixels
   camPan.x = pan.px - dx * k;
   camPan.y = pan.py - dy * k;
   canvas.style.cursor = 'var(--grabbing)';
@@ -799,7 +803,7 @@ canvas.addEventListener('wheel', (e) => {
   e.preventDefault();
   setZoom(zoom + (e.deltaY < 0 ? 1 : -1));
 }, { passive: false });
-addEventListener('keydown', (e) => {
+onKey((e) => {
   if ((e.target as HTMLElement).closest('input, textarea, select')) return;
   if (e.key === '+' || e.key === '=') { e.preventDefault(); setZoom(zoom + 1); }
   else if (e.key === '-' || e.key === '_') { e.preventDefault(); setZoom(zoom - 1); }
@@ -843,7 +847,7 @@ canvas.addEventListener('pointerup', () => {
 });
 
 // Decorate shortcuts for the selected piece: arrows nudge it a tile, R rotates, F flips, Delete puts it away, Esc is done.
-addEventListener('keydown', (e) => {
+onKey((e) => {
   if (openPanel !== 'decorate' || moving === null || (e.target as HTMLElement).closest('input, textarea, select')) return;
   const f = myRoom()?.furniture[moving];
   if (!f) return;
@@ -856,7 +860,7 @@ addEventListener('keydown', (e) => {
   e.preventDefault();
   e.stopImmediatePropagation(); // the arrows move the piece, not the avatar
 });
-addEventListener('keydown', (e) => {
+onKey((e) => {
   const a = avatars.get(myId);
   const d = ({ ArrowUp: [0, -1], ArrowDown: [0, 1], ArrowLeft: [-1, 0], ArrowRight: [1, 0], w: [0, -1], s: [0, 1], a: [-1, 0], d: [1, 0] } as Record<string, number[]>)[e.key];
   if (!a || !d || (e.target as HTMLElement).closest('input, textarea, select')) return;
@@ -873,9 +877,11 @@ function tick(t: number) {
   step(dt);
   render(t, dt);
 }
-function frame(t: number) {
-  tick(t);
-  requestAnimationFrame(frame);
+let loopGen = 0;
+function startLoop() { // a new loop on the current window; the old one stops at its next frame
+  const gen = ++loopGen;
+  const frame = () => { if (gen !== loopGen) return; tick(performance.now()); win.requestAnimationFrame(frame); };
+  win.requestAnimationFrame(frame);
 }
 
 function step(dt: number) {
@@ -923,16 +929,16 @@ let chromeRev = 0;
 const chromeDirty = () => { chromeRev++; };
 let chrome = { key: '', below: 0, right: 0 };
 function measureChrome(dpr: number) {
-  const wide = innerWidth >= 900;
-  const sheet = !wide ? (!panel.hidden ? panel : document.body.classList.contains('side-open') ? sideEl : null) : null;
+  const wide = win.innerWidth >= 900;
+  const sheet = !wide ? (!panel.hidden ? panel : ui.body.classList.contains('side-open') ? sideEl : null) : null;
   const below = !deckEl.hidden ? deckEl.offsetHeight + (wide ? 24 : 0)
     : sheet ? sheet.offsetHeight + dockEl.offsetHeight + 40 : dockEl.offsetHeight + 24;
   return { below, right: wide && !panel.hidden ? (panel.offsetWidth + 20) * dpr : 0 };
 }
 
 function render(t: number, dt: number) {
-  const dpr = devicePixelRatio || 1;
-  const cw = Math.round(innerWidth * dpr), ch = Math.round(innerHeight * dpr);
+  const dpr = win.devicePixelRatio || 1;
+  const cw = Math.round(win.innerWidth * dpr), ch = Math.round(win.innerHeight * dpr);
   if (canvas.width !== cw || canvas.height !== ch) {
     canvas.width = cw; canvas.height = ch;
     // Match CSS size to whole device pixels so the browser never resamples the canvas.
@@ -942,7 +948,7 @@ function render(t: number, dt: number) {
   const me_ = avatars.get(myId) ?? { x: 0, y: 0 };
   const now = Date.now();
   // Fit and centre my room in the part of the screen not covered by the HUD, dock, deck, side bar or panel.
-  const chromeKey = `${innerWidth}x${innerHeight}@${dpr}|${chromeRev}`;
+  const chromeKey = `${win.innerWidth}x${win.innerHeight}@${dpr}|${chromeRev}`;
   if (chrome.key !== chromeKey) chrome = { key: chromeKey, ...measureChrome(dpr) };
   const coverTop = 70 * dpr, coverBottom = chrome.below * dpr, coverRight = chrome.right;
   const coverLeft = 0;
@@ -1123,7 +1129,10 @@ function render(t: number, dt: number) {
     if (fe && fa < 4500) x.goal = fa < 2000 || !by ? fe : { x: by.x + side, y: by.y + back };
     else if (here && m.focus) { x.goal = { x: here.x + side, y: here.y + back }; x.act = 'sleep'; }
     else if (now - (petDone.get(m.id) ?? 0) < 3000 || (now - (patAt.get(key) ?? 0) < 1200 && bondLevel(p.bond) >= 2)) x.run = true;
-    else if (here && (p.follow || now - (petGreet.get(m.id) ?? 0) < 5000)) x.goal = { x: here.x + side, y: here.y + back };
+    else if (here && (p.follow || now - (petGreet.get(m.id) ?? 0) < 5000)) { // on a leash: waits until I'm far enough, then trails behind
+      const cur = petFx.get(key) ?? x.pos, dx = cur.x - here.x, dy = cur.y - here.y, d = Math.hypot(dx, dy) || 1, leash = 1.6 + slot * 0.5;
+      x.goal = d > leash ? { x: here.x + (dx / d) * leash, y: here.y + (dy / d) * leash } : { x: cur.x, y: cur.y };
+    }
   }
   // Two idle pets close together play chase around each other.
   const idle = pets.filter((x) => !x.goal && !x.run && !x.pos.moving && !x.pos.act);
@@ -1351,7 +1360,7 @@ const SHOP_TABS: { id: string; label: string; items?: ItemKey[] }[] = [
 const coinSrc = coinURL();
 const coin = () => `<img class="coin" src="${coinSrc}" alt="coins">`;
 $<HTMLImageElement>('#coinIcon').src = coinSrc;
-document.querySelectorAll<HTMLImageElement>('img[data-icon]').forEach((img) => (img.src = uiIconURL(img.dataset.icon!)));
+ui.querySelectorAll<HTMLImageElement>('img[data-icon]').forEach((img) => (img.src = uiIconURL(img.dataset.icon!)));
 
 const progress = (f: Focus) =>
   Math.max(0, Math.min(100, 100 * (1 - (focusEnd(f) - Date.now()) / (f.minutes * 60_000))));
@@ -1382,7 +1391,7 @@ function tickTimers() {
   $('#deck').hidden = !showDeck;
   $('#dock').hidden = showDeck;
   if (showDeck && openPanel) setPanel(null);
-  document.querySelector('#dock [data-panel="chat"]')?.classList.toggle('unread', unread);
+  ui.querySelector('#dock [data-panel="chat"]')?.classList.toggle('unread', unread);
   if (!unread) $('#fold-chat').classList.remove('dot'); // read elsewhere: the folded card's dot goes too
   if (!f) return;
   const left = fmt(focusEnd(f) - Date.now());
@@ -1754,7 +1763,7 @@ function renderPanel() {
   const scroll = panel.querySelector('.pb')?.scrollTop ?? 0;
   const railX = panel.querySelector('.rail')?.scrollLeft ?? 0; // keep the swiped category strip where it was
   // A house update (any housemate's action) rebuilds the panel: keep the box being typed in, its text and cursor.
-  const typing = document.activeElement instanceof HTMLInputElement && panel.contains(document.activeElement) ? document.activeElement : null;
+  const typing = ui.activeElement instanceof HTMLInputElement && panel.contains(ui.activeElement) ? ui.activeElement : null;
   const typingAt = typing?.id ? `#${typing.id}` : typing?.dataset.slot ? `.${typing.className}[data-slot="${typing.dataset.slot}"]` : null;
   const typed = typing && { value: typing.value, start: typing.selectionStart, end: typing.selectionEnd };
   panel.hidden = false;
@@ -1980,14 +1989,14 @@ function clickLabel(tx: number, ty: number): string | null {
 const tip = document.createElement('div');
 tip.id = 'tip';
 tip.hidden = true;
-document.body.append(tip);
+ui.body.append(tip);
 let tipTimer = 0;
 function showTip(text: string | null, x = 0, y = 0, ms = 0) {
   clearTimeout(tipTimer);
   tip.hidden = !text;
   if (!text) return;
   tip.textContent = text;
-  tip.style.left = `${Math.min(x, innerWidth - tip.offsetWidth - 8)}px`;
+  tip.style.left = `${Math.min(x, win.innerWidth - tip.offsetWidth - 8)}px`;
   tip.style.top = `${y}px`;
   if (ms) tipTimer = window.setTimeout(() => { tip.hidden = true; }, ms);
 }
@@ -2072,7 +2081,7 @@ function welcome() {
     box.remove();
     localStorage.setItem('auralis.tour', 'done');
   });
-  document.body.append(box);
+  ui.body.append(box);
   show();
 }
 
@@ -2092,15 +2101,15 @@ function setPanel(name: string | null) {
   openPanel = name;
   placing = null;
   moving = null;
-  document.querySelectorAll<HTMLButtonElement>('#dock button').forEach((x) => x.classList.toggle('on', x.dataset.panel === name));
-  document.body.classList.toggle('side-open', isSide(name));
-  document.body.dataset.side = isSide(name) ? name : '';
+  ui.querySelectorAll<HTMLButtonElement>('#dock button').forEach((x) => x.classList.toggle('on', x.dataset.panel === name));
+  ui.body.classList.toggle('side-open', isSide(name));
+  ui.body.dataset.side = isSide(name) ? name : '';
   if (isSide(name) && folds[name]) toggleFold(name);
   if (name === 'chat') { unread = false; tickTimers(); scrollChat(); }
   renderPanel();
-  document.body.classList.toggle('panel-open', !panel.hidden);
+  ui.body.classList.toggle('panel-open', !panel.hidden);
 }
-document.querySelectorAll<HTMLButtonElement>('#dock button').forEach((b) =>
+ui.querySelectorAll<HTMLButtonElement>('#dock button').forEach((b) =>
   b.addEventListener('click', () => {
     if (b.dataset.panel === 'focus' && myMember()?.focus) { deckHidden = false; tickTimers(); return; }
     const card = b.dataset.panel!;
@@ -2140,7 +2149,7 @@ function noteNewDms() {
     if (last.id <= seen) continue;
     const fresh = list.filter((c) => c.id > seen && c.from !== myId).length;
     // Unread unless that thread is open on screen right now.
-    const onScreen = dmPeer === peer && document.body.dataset.side === 'chat';
+    const onScreen = dmPeer === peer && ui.body.dataset.side === 'chat';
     if (dmReady) countUnseen(fresh);
     if (dmReady && fresh && !onScreen) {
       pingOrHold();
@@ -2338,9 +2347,9 @@ const folds = (() => {
   catch { return {} as Record<SideCard, boolean>; }
 })();
 const sideCard: Record<SideCard, HTMLElement> = {
-  todos: document.querySelector('.side-card.todos')!,
+  todos: ui.querySelector('.side-card.todos')!,
 
-  chat: document.querySelector('.side-card.chat')!,
+  chat: ui.querySelector('.side-card.chat')!,
 };
 const sideLabel: Record<SideCard, string> = { todos: 'to-dos', chat: 'chat' };
 
@@ -2369,7 +2378,7 @@ function openSide(card: SideCard, input: string, text = '') {
   el.focus();
 }
 // Group chat you can't see right now: worth a ping.
-const chatHidden = () => document.hidden || document.body.dataset.side !== 'chat';
+const chatHidden = () => ui.hidden || ui.body.dataset.side !== 'chat';
 for (const card of ['todos', 'chat'] as SideCard[]) {
   applyFold(card);
   $(`#fold-${card}`).addEventListener('click', () => toggleFold(card));
@@ -2419,12 +2428,12 @@ let authMode: 'signup' | 'login' = 'signup';
 let pendingLook: Look | null = null; // buddy picked on the landing page, applied once the game state arrives
 // The landing and login page can be zoomed like any web page (for reading); the game itself can't, so pinches
 // zoom the room instead of the whole page.
-const viewport = document.querySelector('meta[name=viewport]')!;
+const viewport = ui.querySelector('meta[name=viewport]')!;
 function showLanding(on: boolean) {
   viewport.setAttribute('content', on ? 'width=device-width, initial-scale=1, viewport-fit=cover'
     : 'width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover, user-scalable=no');
-  document.body.classList.toggle('signed-out', on);
-  document.documentElement.classList.toggle('signed-out', on);
+  ui.body.classList.toggle('signed-out', on);
+  ui.documentElement.classList.toggle('signed-out', on);
   $('#landing').hidden = !on;
   if (on) requestAnimationFrame(heroFrame);
 }
@@ -2439,10 +2448,10 @@ function signOut(tellServer: boolean) {
   location.reload(); // simplest way to drop all in-memory game state
 }
 
-document.querySelectorAll<HTMLButtonElement>('#authForm [data-mode]').forEach((b) =>
+ui.querySelectorAll<HTMLButtonElement>('#authForm [data-mode]').forEach((b) =>
   b.addEventListener('click', () => {
     authMode = b.dataset.mode as 'signup' | 'login';
-    document.querySelectorAll('#authForm [data-mode]').forEach((x) => x.className = x === b ? 'on' : 'off');
+    ui.querySelectorAll('#authForm [data-mode]').forEach((x) => x.className = x === b ? 'on' : 'off');
     $('#authSubmit').textContent = authMode === 'signup' ? 'Create my room' : 'Log in';
     $<HTMLInputElement>('#authPass').autocomplete = authMode === 'signup' ? 'new-password' : 'current-password';
     $('#authTitle').textContent = authMode === 'signup' ? 'Move into the house 🏠' : 'Welcome back! 👋';
@@ -2467,7 +2476,7 @@ $('#authForm').addEventListener('submit', async (e) => {
     return;
   }
   btn.disabled = true;
-  document.body.classList.add('busy');
+  ui.body.classList.add('busy');
   try {
     const res = await fetch(`${apiBase}/api/${authMode}`, {
       method: 'POST',
@@ -2491,7 +2500,7 @@ $('#authForm').addEventListener('submit', async (e) => {
     err.hidden = false;
   } finally {
     btn.disabled = false;
-    document.body.classList.remove('busy');
+    ui.body.classList.remove('busy');
   }
 });
 
@@ -2503,7 +2512,7 @@ const heroCtx = hero.getContext('2d')!;
 hero.width = HW * T * AV; hero.height = HH * T * AV; // 2x, so the characters' detail shows
 const coinImg = new Image();
 coinImg.src = coinSrc;
-document.querySelectorAll<HTMLImageElement>('#landing .coin-d').forEach((img) => (img.src = coinSrc));
+ui.querySelectorAll<HTMLImageElement>('#landing .coin-d').forEach((img) => (img.src = coinSrc));
 
 const heroLooks: Look[] = [
   { skin: '#ffe0c8', hair: '#3a2a35', shirt: '#b89af0', style: 'buns', face: 'happy', outfit: 'sweater' },
@@ -2641,44 +2650,40 @@ else showLanding(true);
 // Sent back here because the server no longer accepts our session: start on Log in and say why.
 if (sessionStorage.getItem('auralis.sessionEnded')) {
   sessionStorage.removeItem('auralis.sessionEnded');
-  document.querySelector<HTMLButtonElement>('#authForm [data-mode="login"]')?.click();
+  ui.querySelector<HTMLButtonElement>('#authForm [data-mode="login"]')?.click();
   const notice = $('#authHint');
   notice.className = 'auth-note'; // a callout, not the usual grey helper line: it explains why you're here
   notice.textContent = 'Your session ended. Log back in to pick up where you left off.';
 }
-requestAnimationFrame(frame);
+startLoop();
 
-// Picture in picture: the live room (with my timer bubble) streamed into a video that floats over other apps.
-// Chrome, Edge and Safari float it on a click. Firefox has no API for that, so there the video shows as a small
-// preview in the corner and Firefox's own picture-in-picture button (on hover, or right-click) floats it.
-// Background tabs get no animation frames, so while it's out a worker's timer keeps it drawing at 4 fps.
+// Picture in picture: the whole app (room, timer, chat, buttons) moves into a small always-on-top window and back.
+// Only Chrome and Edge (116+) have Document Picture-in-Picture; elsewhere the button stays hidden.
 {
-  const pipBtn = $<HTMLButtonElement>('#pip'), preview = $<HTMLElement>('#pipPreview'), video = preview.querySelector('video')!;
-  const native = !!document.pictureInPictureEnabled;
-  let ticker: Worker | null = null;
-  const floating = (on: boolean) => {
-    ticker?.terminate();
-    ticker = on ? new Worker(URL.createObjectURL(new Blob(['setInterval(() => postMessage(0), 250)']))) : null;
-    if (ticker) ticker.onmessage = () => { if (document.hidden) tick(performance.now()); };
-    pipBtn.classList.toggle('on', on);
-    pipBtn.setAttribute('aria-pressed', String(on));
+  const pipBtn = $<HTMLButtonElement>('#pip');
+  const dpip = (window as unknown as { documentPictureInPicture?: { requestWindow(o: object): Promise<Window> } }).documentPictureInPicture;
+  const moveTo = (to: Window) => {
+    const from = ui;
+    to.document.documentElement.className = from.documentElement.className;
+    Object.assign(to.document.documentElement.dataset, from.documentElement.dataset);
+    to.document.body.className = from.body.className;
+    Object.assign(to.document.body.dataset, from.body.dataset);
+    to.document.body.append(...Array.from(from.body.childNodes));
+    ui = to.document; win = to;
+    pipBtn.classList.toggle('on', to !== window);
+    pipBtn.setAttribute('aria-pressed', String(to !== window));
+    chromeDirty();
+    startLoop();
   };
-  pipBtn.hidden = !canvas.captureStream;
+  pipBtn.hidden = !dpip;
   pipBtn.addEventListener('click', async () => {
+    if (win !== window) return win.close();
     try {
-      if (document.pictureInPictureElement) return void (await document.exitPictureInPicture());
-      if (!preview.hidden) { preview.hidden = true; floating(false); return; }
-      video.srcObject ??= canvas.captureStream(15);
-      if (!native) { // Firefox
-        preview.hidden = false;
-        floating(true);
-        toast('Hover the preview and click its picture-in-picture button (or right-click it → <b>Watch in Picture-in-Picture</b>).', '', { ms: 8000 });
-      }
-      await video.play();
-      if (native) await video.requestPictureInPicture();
-    } catch { toast("Couldn't open picture in picture in this browser.", 'error'); }
+      const pw = await dpip!.requestWindow({ width: 420, height: 560 });
+      for (const n of Array.from(document.head.querySelectorAll('link[rel=stylesheet], style'))) pw.document.head.append(n.cloneNode(true));
+      for (const fn of keyFns) pw.addEventListener('keydown', fn);
+      pw.addEventListener('pagehide', () => moveTo(window), { once: true });
+      moveTo(pw);
+    } catch { toast("Couldn't open picture in picture.", 'error'); }
   });
-  preview.querySelector('button')!.addEventListener('click', () => { preview.hidden = true; floating(false); });
-  video.addEventListener('enterpictureinpicture', () => floating(true));
-  video.addEventListener('leavepictureinpicture', () => floating(false));
 }

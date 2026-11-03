@@ -896,19 +896,3 @@ body.signed-out #deck, body.signed-out #game, body.signed-out #zoom { display: n
 :root[data-theme="dark"] { --bg: #3b3442; --dot: #4d4555; --on-bg: #f3ebe0; }
 :root[data-theme="dark"] .tagline mark { background: linear-gradient(transparent 55%, rgba(242, 193, 78, 0.45) 55%); }
 
-/* Firefox picture in picture: a small live preview its own PiP button can float */
-#pipPreview {
-  position: fixed;
-  right: 16px;
-  bottom: calc(96px + env(safe-area-inset-bottom, 0));
-  z-index: 40;
-  width: min(280px, 45vw);
-  border: 3px solid var(--ink);
-  border-radius: 12px;
-  box-shadow: 0 4px 0 var(--ink);
-  overflow: hidden;
-  background: var(--paper);
-}
-#pipPreview[hidden] { display: none; }
-#pipPreview video { display: block; width: 100%; }
-#pipPreview button { position: absolute; top: 4px; right: 4px; }
