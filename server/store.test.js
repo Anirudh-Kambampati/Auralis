@@ -141,3 +141,19 @@ test('friends are saved, changed and removed', () => {
   assert.deepEqual(again.friends().map((f) => f.b), ['p2']);
   again.close();
 });
+
+test('saves only write rows that changed', () => {
+  const dir = tmp(), file = path.join(dir, 'd.db');
+  const s = openStore(file);
+  s.db.players.p1 = { id: 'p1', coins: 1 };
+  s.db.players.p2 = { id: 'p2', coins: 2 };
+  s.saveAll();
+  // Change p2 behind the store's back in the file: if p2 is rewritten unchanged, this edit is lost.
+  new DatabaseSync(file).prepare("update players set data = ? where id = 'p2'").run(JSON.stringify({ id: 'p2', coins: 99 }));
+  s.db.players.p1.coins = 5;
+  s.saveAll();
+  s.close();
+  const again = openStore(file);
+  assert.deepEqual([again.db.players.p1.coins, again.db.players.p2.coins], [5, 99]);
+  again.close();
+});

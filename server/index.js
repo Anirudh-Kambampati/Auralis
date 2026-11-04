@@ -30,6 +30,9 @@ const { db } = store;
 const friends = new Map((await store.friends()).map((f) => [`${f.a}|${f.b}`, f]));
 const pairKey = (x, y) => [x, y].sort().join('|');
 const isFriend = (x, y) => friends.get(pairKey(x, y))?.status === 'accepted';
+// "Can I visit?" asks, as "host|guest". shortcut: in memory only, so a restart drops open asks; save them if that matters.
+const visitAsks = new Set();
+const sentSessions = new Map(); // playerId -> how many sessions their client has
 // Players used to have one `room`; now they have `rooms`, the first being the original.
 for (const p of Object.values(db.players)) if (!p.rooms) { p.rooms = [p.room ?? newRoom()]; delete p.room; }
 // Plants placed before watering existed start out freshly watered.
@@ -190,7 +193,8 @@ function friendList(p) {
     const q = db.players[f.a === p.id ? f.b : f.a];
     if (!q) continue;
     out.push({ id: q.id, name: q.name, look: q.look, online: sockets.has(q.id), focus: !!q.focus,
-      status: f.status === 'accepted' ? 'friend' : f.asked_by === p.id ? 'outgoing' : 'incoming' });
+      status: f.status === 'accepted' ? 'friend' : f.asked_by === p.id ? 'outgoing' : 'incoming',
+      here: !!p.house && q.house === p.house, visit: visitAsks.has(`${p.id}|${q.id}`), asked: visitAsks.has(`${q.id}|${p.id}`) });
   }
   return out;
 }
@@ -214,7 +218,8 @@ function broadcastHouse(code) {
   for (const id of h.members) {
     const p = db.players[id];
     // Personal to-dos ride along in `me`, which only this player receives.
-    send(sockets.get(id), { t: 'state', house: { ...house, todos: house.todos.filter((t) => canSee(t, h, id)) }, me: { id: p.id, home: p.home, ...houseLists(p), coins: p.coins, discount: !!p.discount, notes: p.notes ?? [], events: p.events ?? [], inventory: p.inventory, petAccs: p.petAccs ?? [], sessions: p.sessions ?? [], subjects: p.subjects ?? [], hiddenSubjects: p.hiddenSubjects ?? [], todos: p.todos ?? [], dm: p.dm ?? {}, groups: p.groups ?? {}, friends: friendList(p), notify: p.notify ?? {}, pushKey: pushOn ? PUSH_KEY : undefined } });
+    send(sockets.get(id), { t: 'state', house: { ...house, todos: house.todos.filter((t) => canSee(t, h, id)) }, me: { id: p.id, home: p.home, ...houseLists(p), coins: p.coins, discount: !!p.discount, notes: p.notes ?? [], events: p.events ?? [], inventory: p.inventory, petAccs: p.petAccs ?? [], ...(sentSessions.get(id) !== (p.sessions ?? []).length && { sessions: p.sessions ?? [] }), subjects: p.subjects ?? [], hiddenSubjects: p.hiddenSubjects ?? [], todos: p.todos ?? [], dm: p.dm ?? {}, groups: p.groups ?? {}, friends: friendList(p), notify: p.notify ?? {}, pushKey: pushOn ? PUSH_KEY : undefined } });
+    if (sockets.has(id)) sentSessions.set(id, (p.sessions ?? []).length);
   }
 }
 
@@ -236,8 +241,19 @@ function handle(p, m) {
   if (['move', 'pickup', 'turn', 'flip', 'restyle', 'shape', 'light', 'water'].includes(m.t) && !Number.isInteger(m.index)) return;
   if (m.t === 'water' && !Number.isInteger(m.r)) return;
   switch (m.t) {
-    case 'look':
-      p.name = cleanName(m.name);
+    case 'look': {
+      // Your name is your login username, so a new one must be free and username-shaped.
+      const name = String(m.name ?? '').trim();
+      if (name && name !== p.name) {
+        if (!USERNAME.test(name)) send(sockets.get(p.id), { t: 'error', text: 'Names: 3–20 letters, numbers, _ . or - (no spaces). It is also your username.' });
+        else Promise.resolve(store.renameAccount(p.id, name)).then((ok) => {
+          if (!ok) return send(sockets.get(p.id), { t: 'error', text: `"${name}" is taken. Pick another name.` });
+          p.name = name;
+          send(sockets.get(p.id), { t: 'renamed', name });
+          save();
+          refresh(p.id, ...friendList(p).map((f) => f.id));
+        }).catch((err) => console.error('rename failed', err));
+      }
       p.look = {
         skin: pick(SKINS, m.look?.skin, p.look.skin),
         hair: pick(HAIRS, m.look?.hair, p.look.hair),
@@ -249,6 +265,7 @@ function handle(p, m) {
         acc: pick(ACCESSORIES, m.look?.acc, p.look.acc ?? ACCESSORIES[0]),
       };
       break;
+    }
     case 'join': {
       const code = String(m.code ?? '').toUpperCase();
       if (!db.houses[code]) return send(sockets.get(p.id), { t: 'error', text: 'No house with that code.' });
@@ -309,7 +326,9 @@ function handle(p, m) {
     case 'leaderboard': {
       // Ranked by focused minutes, this week (last 7 days) or all time; house only or everyone.
       const since = m.period === 'all' ? 0 : Date.now() - 7 * 86_400_000;
-      const pool = m.scope === 'all' ? Object.values(db.players) : db.houses[p.house].members.map((id) => db.players[id]);
+      const pool = m.scope === 'all' ? Object.values(db.players)
+        : m.scope === 'friends' ? [p, ...friendList(p).filter((f) => f.status === 'friend').map((f) => db.players[f.id])]
+          : db.houses[p.house].members.map((id) => db.players[id]);
       const rows = pool
         .map((o) => ({
           name: o.name,
@@ -744,13 +763,16 @@ function handle(p, m) {
     }
     // Friends: ask by username; they accept or decline. Friends can message each other from any house.
     case 'friend_request': {
-      const name = cleanText(m.name, 40);
+      // By username, a housemate's display name or id, or a house code (its owner).
+      const mate = (db.houses[p.house]?.members ?? []).map((id) => db.players[id])
+        .find((q) => q.id === m.id || (m.name && q.name?.toLowerCase() === String(m.name).trim().toLowerCase()));
+      const name = cleanText(m.name, 40) || mate?.name;
       if (!name) return;
       const fail = (text) => send(sockets.get(p.id), { t: 'error', text });
       if ([...friends.values()].filter((f) => f.asked_by === p.id && f.status === 'pending').length >= 20) return fail('You have 20 friend requests waiting already.');
       Promise.resolve(store.playerByUsername(name)).then((id) => {
-        const q = id && db.players[id];
-        if (!q) return fail(`No one is called "${name}".`);
+        const q = db.players[id] ?? mate ?? db.players[db.houses[name.toUpperCase()]?.owner];
+        if (!q) return fail(`No one is called "${name}", and no house has that code.`);
         if (q.id === p.id) return fail("That's you!");
         const key = pairKey(p.id, q.id), f = friends.get(key);
         if (f?.status === 'accepted') return fail(`You and ${q.name} are already friends.`);
@@ -763,6 +785,22 @@ function handle(p, m) {
         if (!f && !sockets.has(q.id)) push(q, { title: 'Friend request', body: `${p.name} wants to be friends`, tag: `friend-${p.id}` }, 'dm');
         refresh(p.id, q.id);
       }).catch((err) => console.error('friend request failed', err));
+      return;
+    }
+    // Visiting a friend: ask, and they let you in (you join their house) or say no.
+    case 'visit_ask': {
+      const q = db.players[m.id];
+      if (!q || !isFriend(p.id, q.id) || !q.house || q.house === p.house) return;
+      visitAsks.add(`${q.id}|${p.id}`);
+      if (!sockets.has(q.id)) push(q, { title: 'Visit request', body: `${p.name} wants to visit your house`, tag: `visit-${p.id}` }, 'dm');
+      refresh(p.id, q.id);
+      return;
+    }
+    case 'visit_answer': {
+      const guest = db.players[m.id];
+      if (!visitAsks.delete(`${p.id}|${m.id}`) || !guest) return;
+      if (m.yes && isFriend(p.id, guest.id) && p.house) return handle(guest, { t: 'join', code: p.house }); // same checks as joining by code
+      refresh(p.id, guest.id);
       return;
     }
     case 'friend_accept': {
@@ -1143,6 +1181,7 @@ wss.on('connection', (ws) => {
       if (!db.houses[p.house]?.members.includes(p.id)) goHome(p); // new player, or their house is gone
       sockets.get(p.id)?.close();
       sockets.set(p.id, ws);
+      sentSessions.delete(p.id); // a new connection gets the full history once
       save();
       broadcastHouse(p.house);
       for (const r of p.missed ?? []) send(ws, { t: 'remind', ...r, missed: true }); // reminders that came due while away

@@ -968,3 +968,5 @@ body.signed-out #deck, body.signed-out #game, body.signed-out #zoom { display: n
 /* A document sent in chat: a tappable file chip */
 .chat-doc { display: flex; align-items: center; gap: 6px; max-width: 100%; margin-top: 4px; padding: 6px 10px; font: inherit; font-size: 13px; font-weight: 700; color: var(--ink); text-align: left; background: var(--paper, #fff); border: 2px solid var(--ink); border-radius: 10px; box-shadow: none; cursor: var(--point); }
 .chat-doc span { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.chat-sec { padding: 8px 8px 2px; font-size: 12px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); }
+.chat-row.req .chat-end button:disabled { opacity: .5; }

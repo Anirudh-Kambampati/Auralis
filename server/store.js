@@ -31,6 +31,13 @@ export function* savedMessages(db) {
     for (const [gid, g] of Object.entries(p.groups ?? {})) for (const m of g.msgs ?? []) yield [`g:${gid}`, m];
   }
 }
+// Players and houses whose JSON differs from what was last written: [key, object, json].
+export function changedRows(db, lastJson) {
+  const out = [];
+  for (const p of Object.values(db.players)) { const j = JSON.stringify(p); if (lastJson.get(`p:${p.id}`) !== j) out.push([`p:${p.id}`, p, j]); }
+  for (const h of Object.values(db.houses)) { const j = JSON.stringify(h); if (lastJson.get(`h:${h.code}`) !== j) out.push([`h:${h.code}`, h, j]); }
+  return out;
+}
 export const rowMessage = (r) => ({ id: Number(r.id), from: r.from_id, by: r.by_name, text: r.body, at: Number(r.at), ...(r.img && { img: r.img }) });
 
 export function openStore(file, legacyJsonFile) {
@@ -48,6 +55,7 @@ export function openStore(file, legacyJsonFile) {
     create table if not exists auth (token text primary key, player_id text not null, expires integer not null);
     create table if not exists messages (id integer primary key, thread text not null, from_id text not null, by_name text not null, body text not null, img text, at integer not null);
     create index if not exists messages_thread on messages (thread, id);
+    create index if not exists auth_player on auth (player_id);
     create index if not exists messages_img on messages (img) where img is not null;
     -- One row per pair of players (a < b): 'pending' (asked_by sent the request) or 'accepted'.
     create table if not exists friends (a text not null, b text not null, status text not null, asked_by text not null, at integer not null, primary key (a, b));
@@ -68,24 +76,27 @@ export function openStore(file, legacyJsonFile) {
     if (db.players[r.player_id]) db.players[r.player_id].coins = written[r.player_id] = r.coins;
   }
 
+  sql.prepare('delete from auth where expires < ?').run(Date.now()); // expired sign-ins
   const upsertPlayer = sql.prepare('insert into players (id, data) values (?, ?) on conflict(id) do update set data = excluded.data');
   const upsertHouse = sql.prepare('insert into houses (code, data) values (?, ?) on conflict(code) do update set data = excluded.data');
   // Only overwrite coins nobody edited by hand since our last write; syncCoins picks those edits up instead.
   const saveCoins = sql.prepare('update accounts set coins = ? where player_id = ? and coins is ?');
 
-  // shortcut: rewrites every row in one transaction; fine for hundreds of players, track dirty rows beyond that.
+  // Only rows that changed since they were last written go to the database.
+  const lastJson = new Map(); // 'p:<id>' / 'h:<code>' -> JSON last written
   function saveAll() {
-    const wrote = [];
+    const wrote = [], rows = changedRows(db, lastJson);
     sql.exec('begin');
     try {
-      for (const p of Object.values(db.players)) {
-        upsertPlayer.run(p.id, JSON.stringify(p));
-        const c = p.coins ?? null;
-        if (saveCoins.run(c, p.id, written[p.id] ?? null).changes) wrote.push([p.id, c]);
+      for (const [k, obj, json] of rows) {
+        if (k[0] === 'h') { upsertHouse.run(obj.code, json); continue; }
+        upsertPlayer.run(obj.id, json);
+        const c = obj.coins ?? null;
+        if (c !== (written[obj.id] ?? null) && saveCoins.run(c, obj.id, written[obj.id] ?? null).changes) wrote.push([obj.id, c]);
       }
-      for (const h of Object.values(db.houses)) upsertHouse.run(h.code, JSON.stringify(h));
       sql.exec('commit');
       for (const [id, c] of wrote) written[id] = c;
+      for (const [k, , json] of rows) lastJson.set(k, json);
     } catch (err) {
       sql.exec('rollback');
       console.error('save failed', err);
@@ -136,6 +147,11 @@ export function openStore(file, legacyJsonFile) {
     setFriend: (f) => sql.prepare('insert into friends (a, b, status, asked_by, at) values (?, ?, ?, ?, ?) on conflict(a, b) do update set status = excluded.status, asked_by = excluded.asked_by, at = excluded.at')
       .run(f.a, f.b, f.status, f.asked_by, f.at),
     deleteFriend: (a, b) => sql.prepare('delete from friends where a = ? and b = ?').run(a, b),
+    usernames: () => sql.prepare('select player_id, username from accounts').all(),
+    // Your name is your username: renaming changes how you log in. False if someone else has it.
+    renameAccount: (playerId, name) => {
+      try { return sql.prepare('update accounts set username = ? where player_id = ?').run(String(name), playerId).changes > 0; } catch { return false; }
+    },
     playerByUsername: (name) => sql.prepare('select player_id from accounts where username = ?').get(String(name))?.player_id ?? null,
     deleteHouse: (code) => sql.prepare('delete from houses where code = ?').run(code),
     // Log in with either the username or the email.

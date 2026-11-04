@@ -29,7 +29,7 @@ type Chat = { id: number; from: string; by: string; text: string; at: number; im
 type CalEvent = { id: number; date: string; time?: string; text: string; by?: string }; // date YYYY-MM-DD, time HH:MM
 type Focus = { minutes: number; endsAt: number; tag?: string; pausedAt?: number | null };
 type Session = { at: number; minutes: number; tag: string; early?: boolean };
-type Friend = { id: string; name: string; look: Look; online: boolean; focus: boolean; status: 'friend' | 'incoming' | 'outgoing' };
+type Friend = { id: string; name: string; look: Look; online: boolean; focus: boolean; status: 'friend' | 'incoming' | 'outgoing'; here?: boolean; visit?: boolean; asked?: boolean };
 type Me = { id: string; home?: string; visited?: { code: string; ownerName: string | null; online: number }[]; banned?: { id: string; name: string }[]; coins: number; discount?: boolean; notes?: { from: string; text: string; at: number }[]; events?: CalEvent[]; pushKey?: string; notify?: Record<string, boolean>; groups?: Record<string, { name: string; members: string[]; msgs: Chat[] }>; friends?: Friend[]; inventory: Record<string, number>; sessions: Session[]; subjects: string[]; hiddenSubjects: string[]; todos: Todo[]; dm: Record<string, Chat[]>; petAccs?: string[] };
 type Board = { scope: string; period: string; rows: { name: string; me: boolean; minutes: number }[] };
 type Avatar = { x: number; y: number; tx: number; ty: number; up: boolean; dist: number; use?: string };
@@ -132,7 +132,7 @@ function onMessage(m: any) {
     members = m.house.members;
     todos = m.house.todos;
     houseEvents = m.house.events ?? [];
-    me = m.me;
+    me = { ...m.me, sessions: m.me.sessions ?? me.sessions }; // study history only comes when it changed
     subscribePush();
     renderNotifyPrefs();
     const started = joinable().filter((o) => focusSeen && !focusSeen.has(o.id));
@@ -264,6 +264,8 @@ function onMessage(m: any) {
     if (m.msgs.length < 50) historyDone.add(key);
     historyBusy = false;
     renderSide();
+  } else if (m.t === 'renamed') {
+    toast(`You're now <b>${esc(m.name)}</b>. That's your username too: log in with it (or your email).`, 'reward');
   } else if (m.t === 'remind') { // a to-do I'm on just came due (missed: it came due while I was away)
     notify(chime);
     toast(`⏰ ${m.missed ? 'While you were away' : 'Reminder'}: <b>${esc(m.text)}</b>`, 'reward', { ms: 12_000, onClick: () => setPanel('todos') });
@@ -1745,7 +1747,7 @@ function statsBody() {
       `<button class="${cur === k ? 'on' : 'off'}" data-act="${act}" data-v="${k}">${l}</button>`).join('')}</div>`;
     const rows = board && board.scope === boardScope && board.period === boardPeriod ? board.rows : null;
     const medal = (i: number) => ['🥇', '🥈', '🥉'][i] ?? `#${i + 1}`;
-    return `${tabs}<div class="row">${seg('scope', boardScope, [['house', 'My house'], ['all', 'Everyone']])}
+    return `${tabs}<div class="row">${seg('scope', boardScope, [['house', 'My house'], ['friends', 'Friends'], ['all', 'Everyone']])}
         ${seg('period', boardPeriod, [['week', 'This week'], ['all', 'All time']])}</div>
       ${!rows ? '<p class="hint">Loading…</p>' : `<ol class="board">${rows.map((r, i) =>
         `<li class="${r.me ? 'me' : ''}"><span class="rank">${medal(i)}</span><b>${esc(r.name)}${r.me ? ' (you)' : ''}</b><span>${hm(r.minutes)}</span></li>`).join('')}</ol>`}
@@ -1818,7 +1820,7 @@ function panelBody(mine: Member) {
   if (openPanel === 'decorate') return decorateBody(mine);
   if (openPanel === 'avatar') {
     return `<div class="me">${avatarPreview(mine.look)}<div class="me-info">
-        <label>Name <input id="name" maxlength="16" value="${esc(mine.name)}"></label>
+        <label>Name <input id="name" maxlength="20" pattern="[A-Za-z0-9_.-]{3,20}" title="Also your username: 3–20 letters, numbers, _ . or -" value="${esc(mine.name)}"></label>
         <p class="hint">Total focus: <b>${mine.totalMinutes}</b> min</p>
         <div class="me-actions"><button class="off small-chip" data-act="logout">Log out</button>
         <button class="off small-chip" data-act="chimes">${chimes ? '🔔 Sounds on' : '🔕 Sounds off'}</button>
@@ -2319,6 +2321,7 @@ const faces = new Map<string, string>(); // a housemate's pixel face, by look
 const faceURL = (look: Look) => { const k = JSON.stringify(look); if (!faces.has(k)) faces.set(k, crispAvatar(look, 3, true, 0).url); return faces.get(k)!; };
 const ago = (at: number) => { const s = (Date.now() - at) / 1000; return s < 60 ? 'now' : s < 3600 ? `${Math.floor(s / 60)}m` : s < 86_400 ? `${Math.floor(s / 3600)}h` : `${Math.floor(s / 86_400)}d`; };
 let chatListHTML = '';
+const visitToasted = new Set<string>(); // friends whose visit ask I've been told about
 function syncChatList() {
   const others = members.filter((m) => m.id !== myId);
   const pals = friendsOnly().filter((f) => !others.some((m) => m.id === f.id)); // friends who aren't housemates
@@ -2329,8 +2332,9 @@ function syncChatList() {
   $('#chatTitle').textContent = !chatOpen ? 'Chats' : groupOf(dmPeer)?.name ?? (dmPeer ? person(dmPeer)!.name : 'House chat');
   $('#chatBack').hidden = !chatOpen;
   const friendThread = !!dmPeer && friendsOnly().some((f) => f.id === dmPeer);
-  $('#chatLeave').hidden = !chatOpen || !(groupOf(dmPeer) || friendThread);
-  $('#chatLeave').textContent = groupOf(dmPeer) ? 'Leave' : 'Unfriend';
+  const pending = (me.friends ?? []).find((f) => f.id === dmPeer);
+  $('#chatLeave').hidden = !chatOpen || !dmPeer || (!groupOf(dmPeer) && !!pending && !friendThread); // hidden while a request is open
+  $('#chatLeave').textContent = groupOf(dmPeer) ? 'Leave' : friendThread ? 'Unfriend' : '＋ Add friend';
   $('#chatList').hidden = chatOpen;
   $('#chatLog').hidden = !chatOpen;
   $('#chatForm').hidden = !chatOpen;
@@ -2338,7 +2342,7 @@ function syncChatList() {
   const lastAt = (l: Chat[]) => l[l.length - 1]?.at ?? 0;
   const rows = [{ id: '', name: 'House chat', pic: uiIconURL('house'), list: chat, n: houseUnread, dm: false },
     ...Object.entries(me.groups ?? {}).map(([gid, g]) => ({ id: `g:${gid}`, name: g.name, pic: uiIconURL('chat'), list: g.msgs, n: dmUnread[`g:${gid}`] ?? 0, dm: false })),
-    ...[...others, ...pals].map((m) => ({ id: m.id, name: m.name, pic: faceURL(m.look), list: me.dm?.[m.id] ?? [], n: dmUnread[m.id] ?? 0, dm: true, on: pals.includes(m as Friend) && m.online }))]
+    ...[...others, ...pals.filter((f) => me.dm?.[f.id]?.length)].map((m) => ({ id: m.id, name: m.name, pic: faceURL(m.look), list: me.dm?.[m.id] ?? [], n: dmUnread[m.id] ?? 0, dm: true, on: pals.includes(m as Friend) && m.online }))]
     .sort((x, y) => lastAt(y.list) - lastAt(x.list)); // newest first; nobody-said-anything-yet at the bottom
   const rowsHTML = rows.map((r) => {
     const c = r.list[r.list.length - 1];
@@ -2349,9 +2353,18 @@ function syncChatList() {
       <span class="chat-end">${c ? `<small>${ago(c.at)}</small>` : ''}${r.n ? `<i>${r.n > 99 ? '99+' : r.n}</i>` : ''}</span></button></li>`;
   }).join('');
   // Friend requests on top: theirs to answer, mine waiting.
-  const reqs = (me.friends ?? []).filter((f) => f.status !== 'friend').map((f) => `<li><div class="chat-row req"><img class="chat-face" src="${faceURL(f.look)}" alt="">
-      <span class="chat-mid"><b>${esc(f.name)}</b><small>${f.status === 'incoming' ? 'wants to be friends' : 'Friend request sent'}</small></span>
-      <span class="chat-end">${f.status === 'incoming' ? `<button data-accept="${f.id}">Accept</button>` : ''}<button class="off" data-unfriend="${f.id}">${f.status === 'incoming' ? 'Decline' : 'Cancel'}</button></span></div></li>`).join('');
+  const fr = me.friends ?? [];
+  for (const f of fr) if (f.visit && !visitToasted.has(f.id)) { visitToasted.add(f.id); toast(`🏠 <b>${esc(f.name)}</b> wants to visit. Open <b>Chats</b> to let them in.`, 'reward'); }
+  for (const id of visitToasted) if (!fr.some((f) => f.id === id && f.visit)) visitToasted.delete(id);
+  const act = (f: Friend) => f.status === 'incoming' ? `<button data-accept="${f.id}">Accept</button><button class="off" data-unfriend="${f.id}">Decline</button>`
+    : f.status === 'outgoing' ? `<button class="off" data-unfriend="${f.id}">Cancel</button>`
+      : f.visit ? `<button data-letin="${f.id}">Let in</button><button class="off" data-nope="${f.id}">No</button>`
+        : `<button class="off" data-peer="${f.id}" title="Message">💬</button>${f.here ? '' : `<button data-visit="${f.id}"${f.asked || !f.online ? ' disabled' : ''}>${f.asked ? 'Asked' : 'Visit'}</button>`}`;
+  const what = (f: Friend) => f.status === 'incoming' ? 'wants to be friends' : f.status === 'outgoing' ? 'Friend request sent'
+    : f.visit ? 'wants to visit you' : f.here ? 'In your house' : f.focus ? '📚 Studying' : f.online ? 'Online' : 'Offline';
+  const reqs = !fr.length ? '' : '<li class="chat-sec">Friends</li>' + [...fr].sort((a, b) => Number(b.status !== 'friend' || !!b.visit) - Number(a.status !== 'friend' || !!a.visit) || Number(b.online) - Number(a.online))
+    .map((f) => `<li><div class="chat-row req"><span class="chat-face-wrap${f.online && f.status === 'friend' ? ' on' : ''}"><img class="chat-face" src="${faceURL(f.look)}" alt=""></span>
+      <span class="chat-mid"><b>${esc(f.name)}</b><small>${what(f)}</small></span><span class="chat-end">${act(f)}</span></div></li>`).join('') + '<li class="chat-sec">Chats</li>';
   const html = reqs + rowsHTML
     + (others.length ? `<li><button class="chat-row new" data-new="1"><img class="chat-face" src="${uiIconURL('chat')}" alt=""><span class="chat-mid"><b>＋ New group</b><small>Chat with a few housemates</small></span></button></li>` : '')
     + `<li><button class="chat-row new" data-friend="1"><img class="chat-face" src="${uiIconURL('chat')}" alt=""><span class="chat-mid"><b>＋ Add friend</b><small>Message friends from any house</small></span></button></li>`;
@@ -2580,6 +2593,10 @@ $('#chatList').addEventListener('click', (e) => {
   const t = e.target as HTMLElement, acc = t.closest<HTMLButtonElement>('[data-accept]'), rm = t.closest<HTMLButtonElement>('[data-unfriend]');
   if (acc) return send({ t: 'friend_accept', id: acc.dataset.accept });
   if (rm) return send({ t: 'friend_remove', id: rm.dataset.unfriend });
+  const fb = t.closest<HTMLButtonElement>('[data-visit], [data-letin], [data-nope], .chat-end [data-peer]');
+  if (fb?.dataset.visit) { send({ t: 'visit_ask', id: fb.dataset.visit }); return toast("Asked! You'll go over once they let you in."); }
+  if (fb?.dataset.letin || fb?.dataset.nope) return send({ t: 'visit_answer', id: fb.dataset.letin ?? fb.dataset.nope, yes: !!fb.dataset.letin });
+  if (fb) { openThread(fb.dataset.peer!); return $('#chatInput').focus(); }
   const b = t.closest<HTMLButtonElement>('button.chat-row');
   if (!b) return;
   if (b.dataset.new) return openGroupModal();
@@ -2590,6 +2607,7 @@ $('#chatList').addEventListener('click', (e) => {
 $('#chatBack').addEventListener('click', () => { chatOpen = false; renderSide(); });
 $('#chatLeave').addEventListener('click', () => {
   const g = groupOf(dmPeer), f = !g && friendsOnly().find((x) => x.id === dmPeer);
+  if (!g && !f && dmPeer) return send({ t: 'friend_request', id: dmPeer }); // a housemate: ask them
   if (f) {
     if (confirm(`Unfriend ${f.name}? ${members.some((m) => m.id === f.id) ? '' : "You won't be able to message each other any more."}`)) { send({ t: 'friend_remove', id: f.id }); chatOpen = false; }
     return;

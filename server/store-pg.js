@@ -3,7 +3,7 @@
 import pg from 'pg';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
-import { hashPassword, savedMessages, rowMessage } from './store.js';
+import { hashPassword, savedMessages, rowMessage, changedRows } from './store.js';
 
 const TOKEN_DAYS = 30;
 const sha = (s) => crypto.createHash('sha256').update(s).digest('hex');
@@ -23,6 +23,7 @@ export async function openPgStore(url, legacyJsonFile) {
     create table if not exists messages (id bigint primary key, thread text not null, from_id text not null, by_name text not null, body text not null, img text, at bigint not null);
     create index if not exists messages_thread on messages (thread, id);
     create index if not exists messages_img on messages (img) where img is not null;
+    create index if not exists auth_player on auth (player_id);
     create table if not exists friends (a text not null, b text not null, status text not null, asked_by text not null, at bigint not null, primary key (a, b));
   `);
 
@@ -37,12 +38,18 @@ export async function openPgStore(url, legacyJsonFile) {
     if (db.players[r.player_id]) db.players[r.player_id].coins = written[r.player_id] = r.coins;
   }
 
+  await pool.query('delete from auth where expires < $1', [Date.now()]); // expired sign-ins
+
   // Saves run one at a time so an older snapshot never lands after a newer one.
   let queue = Promise.resolve();
+  const lastJson = new Map(); // only rows that changed since they were last written are sent
   function saveAll() {
-    const players = Object.values(db.players), houses = Object.values(db.houses);
-    const ids = players.map((p) => p.id), pdata = players.map((p) => JSON.stringify(p)), coins = players.map((p) => p.coins ?? null);
-    const codes = houses.map((h) => h.code), hdata = houses.map((h) => JSON.stringify(h));
+    const rows = changedRows(db, lastJson);
+    const players = rows.filter(([k]) => k[0] === 'p'), houses = rows.filter(([k]) => k[0] === 'h');
+    const ids = players.map(([, p]) => p.id), pdata = players.map(([, , j]) => j), coins = players.map(([, p]) => p.coins ?? null);
+    const codes = houses.map(([, h]) => h.code), hdata = houses.map(([, , j]) => j);
+    for (const [k, , j] of rows) lastJson.set(k, j); // marked now so the next save skips them; a failed save un-marks them
+    if (!rows.length) return queue;
     queue = queue.then(async () => {
       const c = await pool.connect();
       try {
@@ -58,6 +65,7 @@ export async function openPgStore(url, legacyJsonFile) {
         for (const r of wrote.rows) written[r.player_id] = r.coins;
       } catch (err) {
         await c.query('rollback').catch(() => {});
+        for (const [k, , j] of rows) if (lastJson.get(k) === j) lastJson.delete(k); // write these again next time
         console.error('save failed', err);
       } finally {
         c.release();
@@ -114,6 +122,9 @@ export async function openPgStore(url, legacyJsonFile) {
     setFriend: (f) => pool.query(`insert into friends (a, b, status, asked_by, at) values ($1, $2, $3, $4, $5)
       on conflict (a, b) do update set status = excluded.status, asked_by = excluded.asked_by, at = excluded.at`, [f.a, f.b, f.status, f.asked_by, f.at]),
     deleteFriend: (a, b) => pool.query('delete from friends where a = $1 and b = $2', [a, b]),
+    usernames: async () => (await pool.query('select player_id, username from accounts')).rows,
+    renameAccount: (playerId, name) => pool.query('update accounts set username = $1 where player_id = $2', [String(name), playerId])
+      .then((r) => r.rowCount > 0, () => false), // unique clash: someone else has it
     playerByUsername: async (name) => (await one('select player_id from accounts where lower(username) = lower($1)', [String(name)]))?.player_id ?? null,
     deleteHouse: (code) => pool.query('delete from houses where code = $1', [code]),
     // Log in with either the username or the email.
