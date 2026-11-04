@@ -2349,9 +2349,11 @@ function syncBell() {
   const perm = window.Notification?.permission;
   $('#todoBell').innerHTML = perm === 'granted' ? '🔔 Reminders are on.'
     : perm === 'default' ? '<button type="button" class="small" id="todoAllow">🔔 Allow reminders</button> so they reach you outside the app too.'
-    : perm === 'denied' ? '🔕 Notifications are blocked for this site. Allow them from the lock icon next to the address, then reopen this.'
+    : perm === 'denied' ? "🔕 Notifications are blocked, and browsers won't ask twice. To turn them on: click the icon left of the address bar → <b>Notifications</b> → <b>Allow</b>. Reminders switch on by themselves."
     : "🔕 This browser can't show notifications, so reminders only pop up while Auralis is open.";
 }
+// Flipping notifications on in the browser's site settings takes effect at once: no reload, no reopening.
+navigator.permissions?.query({ name: 'notifications' }).then((st) => { st.onchange = () => { syncBell(); subscribePush(); }; }).catch(() => {});
 $('#todoBell').addEventListener('click', (e) => {
   if (!(e.target as HTMLElement).closest('#todoAllow')) return;
   Notification.requestPermission().then(() => { subscribePush(); syncBell(); });
