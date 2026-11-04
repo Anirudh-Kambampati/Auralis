@@ -462,11 +462,13 @@ export const MAX_PETS = 4;
 export const bondLevel = (bond = 0) => Math.min(5, Math.floor(Math.sqrt(bond / 25)));
 
 export const WALLPAPERS = ['#f6dcc0', '#cfe8d8', '#ddd5f5', '#fbd0d4', '#cfe1f7', '#f8edc0', '#fffaf3', '#e8d3c0', '#c9e4ef', '#e6d0ea',
-  '#f4c8a0', '#b8e0c8', '#c8c0f0', '#f0b8c0', '#a8c8f0', '#f0e0a0', '#d8d0c8', '#3a4060', '#4a5a48', '#f0f0f0'];
-export const WALL_PATTERNS = ['plain', 'stripes', 'dots', 'hearts', 'checks', 'stars', 'flowers', 'waves', 'diamonds', 'brick', 'grid'];
+  '#f4c8a0', '#b8e0c8', '#c8c0f0', '#f0b8c0', '#a8c8f0', '#f0e0a0', '#d8d0c8', '#3a4060', '#4a5a48', '#f0f0f0',
+  '#ffe0cc', '#c4e8e0', '#f2d8f0', '#5a4a6a'];
+export const WALL_PATTERNS = ['plain', 'stripes', 'dots', 'hearts', 'checks', 'stars', 'flowers', 'waves', 'diamonds', 'brick', 'grid', 'gingham', 'scallops', 'paws'];
 export const FLOORS = ['#c8935f', '#b07a58', '#e0b382', '#9fae86', '#b3a2c9', '#d8a0a0', '#e8e3dc', '#8a7a8e', '#a8c4d8', '#d9b48a',
-  '#7a5a40', '#e8d0b0', '#5a5a60', '#c0c8c8', '#e8b8a8', '#a8b8e0', '#88b098', '#f0e8d8', '#6a4a58', '#d8c068'];
-export const FLOOR_STYLES = ['planks', 'tiles', 'carpet', 'herringbone', 'marble', 'parquet', 'stone', 'checker'];
+  '#7a5a40', '#e8d0b0', '#5a5a60', '#c0c8c8', '#e8b8a8', '#a8b8e0', '#88b098', '#f0e8d8', '#6a4a58', '#d8c068',
+  '#c8a8e0', '#9ccab8', '#f0c8c8', '#4a4048'];
+export const FLOOR_STYLES = ['planks', 'tiles', 'carpet', 'herringbone', 'marble', 'parquet', 'stone', 'checker', 'terrazzo', 'woven', 'harlequin'];
 export const SKINS = ['#ffe0c8', '#f5c9a5', '#d9a07a', '#a8714f', '#6e4630', '#f8d4b4', '#e8b48a', '#c08a60', '#8a5a3a', '#4e3020'];
 export const HAIRS = ['#3a2a35', '#7a4a32', '#f2c46a', '#e8735a', '#8a7ad8', '#f4b6c8', '#7ec8c0', '#a8714f', '#f4e2b0', '#c8c0c8', '#c0483a', '#5a7ad0', '#6cae6a'];
 export const SHIRTS = ['#f48a8a', '#7fb2e8', '#8fd0a8', '#ffd27a', '#b89af0', '#f4b6d0', '#3a3448', '#f4f2ee', '#e8d2b0', '#5a8a5a', '#a0704a', '#4a5a90'];

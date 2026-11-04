@@ -1224,7 +1224,7 @@ function render(t: number, dt: number) {
     ctx.beginPath();
     ctx.rect(0, 0, grid.w * T, grid.h * T);
     ctx.clip();
-    for (const l of lights) if (onScreen(l.x / T - 6, l.y / T - 6, 12, 12)) drawGlow(ctx, l.x, l.y, l.rad, (sky === 'night' ? l.alpha : l.alpha * 0.5) + flicker);
+    for (const l of lights) if (onScreen(l.x / T - 12, l.y / T - 12, 24, 24)) drawGlow(ctx, l.x, l.y, l.rad, (sky === 'night' ? l.alpha : l.alpha * 0.5) + flicker);
     ctx.restore();
   }
 

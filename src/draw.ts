@@ -537,6 +537,19 @@ export function drawFloor(c: Ctx, x: number, y: number, color: string, tx: numbe
       r(g, v ? 5 : 10, 0, 1, 7, line);
       r(g, v ? 12 : 3, 8, 1, 7, line);
       for (const [a, b] of [[2, 2], [8, 4], [13, 10], [6, 12]]) r(g, (a + v * 4) % 16, b, 1, 1, shade(color, (a + b) % 2 ? 0.08 : -0.08));
+    } else if (style === 'terrazzo') {
+      // Polished cream-ish slab with little pastel chips set in it.
+      r(g, 0, 0, T, T, shade(color, 0.08));
+      const chips = ['#f4a6b8', '#9db4ee', '#8fd0a8', '#ffd27a', shade(color, -0.15)];
+      for (const [i, [a, b]] of [[2, 3], [9, 1], [13, 7], [5, 9], [11, 13], [1, 14], [7, 5]].entries()) r(g, (a + v * 5) % 15, b, i % 3 ? 1 : 2, 1, chips[(i + v) % chips.length]);
+      r(g, 0, 15, T, 1, line);
+      r(g, 15, 0, 1, T, line);
+    } else if (style === 'woven') {
+      // A soft woven mat: little stitches offset row by row.
+      for (let yy = 0; yy < T; yy += 4) for (let xx = 0; xx < T; xx += 4) r(g, xx + ((yy / 4) % 2) * 2, yy + 1, 2, 2, shade(color, -0.06));
+    } else if (style === 'harlequin') {
+      // One diamond per tile, darker than the corners, so they meet point to point.
+      for (let yy = 0; yy < T; yy++) { const w = yy < 8 ? yy + 1 : T - yy; r(g, 8 - w, yy, w * 2, 1, shade(color, -0.12)); }
     } else if (style === 'checker') {
       // Bold two-colour squares, a tile each.
       if ((tx + ty) % 2) r(g, 0, 0, T, T, shade(color, -0.22));
@@ -593,6 +606,19 @@ function paintPattern(g: Ctx, paper: string, pattern: string, h: number) {
       r(g, 0, k * 4 + 3, T, 1, ink);
       for (const bx of [0, 8]) r(g, (k % 2) * 4 + bx, k * 4, 1, Math.min(3, h - k * 4), ink);
     }
+  }
+  else if (pattern === 'gingham') { // picnic cloth: light bands both ways, a little darker where they cross
+    for (const xx of [0, 8]) r(g, xx, 0, 4, h, light);
+    for (const yy of [0, 8]) if (yy < h) { const hh = Math.min(4, h - yy); r(g, 0, yy, T, hh, light); r(g, 0, yy, 4, hh, ink); r(g, 8, yy, 4, hh, ink); }
+  }
+  else if (pattern === 'scallops') { // rows of little arches
+    for (const yy of [4, 12]) if (yy + 2 < h) for (const x0 of [0, 8]) {
+      r(g, x0, yy, 1, 1, ink); r(g, x0 + 1, yy + 1, 1, 1, ink); r(g, x0 + 2, yy + 2, 4, 1, ink); r(g, x0 + 6, yy + 1, 1, 1, ink); r(g, x0 + 7, yy, 1, 1, ink);
+    }
+  }
+  else if (pattern === 'paws') { // paw prints: a pad and three toes
+    const paw = shade(paper, -0.14);
+    for (const [a, b] of [[4, 4], [12, 11]]) if (b + 2 < h) { r(g, a - 1, b + 1, 3, 2, paw); r(g, a - 2, b - 1, 1, 1, paw); r(g, a, b - 2, 1, 1, paw); r(g, a + 2, b - 1, 1, 1, paw); }
   }
   else if (pattern === 'grid') { for (let yy = 7; yy < h; yy += 8) r(g, 0, yy, T, 1, ink); r(g, 7, 0, 1, h, ink); r(g, 15, 0, 1, h, ink); }
 }
@@ -760,7 +786,7 @@ export const NIGHT_TINT: Record<Sky, string> = { day: '', dusk: 'rgba(90,60,120,
 
 // Warm light added on top of the night tint ('lighter' blending brightens what is underneath).
 // Light spreads well past its source (GLOW_REACH times the listed radius): bright near it, then a long soft falloff.
-export const GLOW_REACH = 1.8;
+export const GLOW_REACH = 4;
 export function drawGlow(c: Ctx, x: number, y: number, rad: number, alpha: number) {
   rad *= GLOW_REACH;
   const g = c.createRadialGradient(x, y, 1, x, y, rad);
