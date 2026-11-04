@@ -140,7 +140,7 @@
     </header>
     <dialog id="todoModal" aria-labelledby="todoModalTitle">
       <form id="todoNew">
-        <h2 id="todoModalTitle"><img data-icon="todo" alt="" /> New to-do</h2>
+        <h2><img data-icon="todo" alt="" /> <span id="todoModalTitle">New to-do</span></h2>
         <textarea id="todoText" rows="2" maxlength="120" placeholder="What needs doing?" aria-label="To-do" required></textarea>
         <h3>When <small>(optional, for a reminder)</small></h3>
         <div class="when">
@@ -150,7 +150,7 @@
         <p id="todoBell" class="bell"></p>
         <h3>Who's it for? <small>(only they can see it)</small></h3>
         <div id="todoWho" class="who" role="group" aria-label="Who it's for"></div>
-        <div class="end"><button type="button" class="off" id="todoCancel">Cancel</button><button>Add to-do</button></div>
+        <div class="end"><button type="button" class="off" id="todoCancel">Cancel</button><button id="todoSave">Add to-do</button></div>
       </form>
     </dialog>
     <div id="toast" hidden></div>
@@ -165,8 +165,9 @@
       </section>
 
       <section class="side-card chat">
-        <header class="side-head"><img data-icon="chat" alt="" /><h2>Chat</h2><select id="chatPeer" aria-label="Who to chat with"></select><button class="fold" id="fold-chat" aria-expanded="true" aria-controls="chatLog" aria-label="Collapse chat">▾</button></header>
-        <div id="chatLog" aria-live="polite"></div>
+        <header class="side-head"><button type="button" class="back" id="chatBack" hidden aria-label="Back to chats">‹</button><img data-icon="chat" alt="" /><h2 id="chatTitle">Chats</h2><button class="fold" id="fold-chat" aria-expanded="true" aria-controls="chatLog" aria-label="Collapse chat">▾</button></header>
+        <ul id="chatList" aria-label="Conversations"></ul>
+        <div id="chatLog" aria-live="polite" hidden></div>
         <form id="chatForm" class="row"><button type="button" class="off" id="chatPic" title="Send a picture" aria-label="Send a picture">📷</button><input type="file" id="chatFile" accept="image/*" hidden><textarea id="chatInput" rows="1" maxlength="200" placeholder="Say something…" aria-label="Chat message"></textarea><button>Send</button></form>
       </section>
     </aside>

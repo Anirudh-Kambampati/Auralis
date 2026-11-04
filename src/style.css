@@ -482,7 +482,6 @@ body[data-side="todos"] #side .side-card.chat, body[data-side="chat"] #side .sid
 .side-card.todos .side-head { background: #cfdcf5; }
 .side-head img { width: 24px; height: 24px; }
 .side-head h2 { margin: 0; font-size: 18px; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-#chatPeer { flex: 0 1 auto; min-width: 0; max-width: 44%; height: 32px; padding: 0 4px; font: inherit; font-size: 14px; font-weight: 600; color: var(--ink); background: var(--paper); border: 2px solid var(--ink); border-radius: 8px; }
 .side-head .close { width: 32px; height: 32px; padding: 0; background: var(--paper); color: var(--ink); box-shadow: 0 3px 0 var(--ink); }
 .side-head .fold { position: relative; width: 32px; height: 32px; padding: 0; font-size: 18px; line-height: 1; background: var(--paper); color: var(--ink); box-shadow: 0 3px 0 var(--ink); }
 .side-head .fold.dot::after {
@@ -933,3 +932,19 @@ body.signed-out #deck, body.signed-out #game, body.signed-out #zoom { display: n
 .who.everyone .who-chip.person { opacity: 0.35; pointer-events: none; }
 #todoModal .bell { margin: 8px 0 0; font-size: 12px; font-weight: 700; color: var(--muted); }
 #todoModal .bell button { margin-right: 4px; }
+
+/* Chat: the list of conversations, one row each (house chat + housemates), newest first */
+#chatList { list-style: none; margin: 0; padding: 6px; overflow-y: auto; flex: 1; }
+#chatList[hidden], #chatLog[hidden], #chatForm[hidden] { display: none; }
+.chat-row { width: 100%; display: flex; align-items: center; gap: 10px; padding: 8px; text-align: left; font: inherit; color: var(--ink); background: none; border: none; border-radius: 12px; box-shadow: none; }
+.chat-row:hover { background: var(--soft); }
+.chat-face { width: 44px; height: 44px; flex: none; box-sizing: border-box; object-fit: cover; image-rendering: pixelated; background: #f6dcc0; border: 2px solid var(--ink); border-radius: 50%; }
+.chat-face.house { padding: 8px; background: #cfdcf5; }
+.chat-mid { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.chat-mid b { font-size: 15px; }
+.chat-mid small { overflow: hidden; font-size: 13px; color: var(--muted); white-space: nowrap; text-overflow: ellipsis; }
+.chat-row.unread .chat-mid small { color: var(--ink); font-weight: 700; }
+.chat-end { display: flex; flex: none; flex-direction: column; align-items: flex-end; gap: 4px; }
+.chat-end small { font-size: 11px; color: var(--muted); }
+.chat-end i { min-width: 20px; padding: 2px 6px; font-size: 11px; font-weight: 700; font-style: normal; text-align: center; color: #fff; background: var(--coral); border-radius: 999px; }
+.side-head .back { width: 30px; height: 30px; flex: none; padding: 0; font-size: 20px; line-height: 1; }

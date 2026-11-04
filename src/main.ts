@@ -292,7 +292,7 @@ function receiveChat(list: Chat[]) {
       if (c.from !== myId) {
         if (chatHidden()) pingOrHold();
         countUnseen();
-        if (ui.body.dataset.side !== 'chat' || dmPeer) unread = true;
+        if (!viewing(null)) { houseUnread++; unread = true; }
         noteUnreadChat();
       }
     }
@@ -578,11 +578,46 @@ function interact(si: number, fi: number) {
   return true;
 }
 
-// Which top-row room has a window at this tile (one every 6 tiles along the back wall), or -1.
+// Light pouring in through the windows, widening as it falls ( / \ ): sunny white by day, golden at dusk, faint
+// moonlight at night, dimmer when it isn't clear, none behind closed curtains. Top-row rooms have their windows on
+// the back wall; any room whose front wall faces outside gets the same light coming up from the front.
+const BEAM: Record<string, [string, number]> = { day: ['255,246,220', 0.2], dusk: ['255,190,120', 0.18], night: ['175,195,255', 0.09] };
+function drawWindowLight(sky: string, weather: string, onScreen: (x: number, y: number, w: number, h: number) => boolean) {
+  const [rgb, a0] = BEAM[sky], a = weather === 'clear' ? a0 : a0 * 0.5;
+  const beam = (xl: number, xr: number, y: number, dir: 1 | -1, len: number) => {
+    const end = y + dir * len, spread = len * 0.4, g = ctx.createLinearGradient(0, y, 0, end);
+    g.addColorStop(0, `rgba(${rgb},${a})`);
+    g.addColorStop(1, `rgba(${rgb},0)`);
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.moveTo(xl, y); ctx.lineTo(xr, y); ctx.lineTo(xr + spread, end); ctx.lineTo(xl - spread, end);
+    ctx.closePath();
+    ctx.fill();
+  };
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  slots.forEach(({ room }, i) => {
+    const o = grid.origins[i], s = grid.sizes[i];
+    if (room.curtains || !onScreen(o.x, o.y, s.w, s.h)) return;
+    const front = o.y + s.h; // the wall row in front of the room
+    for (let lx = 1; lx + 2 <= s.w - 1; lx += 6) { // same spacing as the windows drawn on the back wall
+      const xl = (o.x + lx) * T + 7, xr = (o.x + lx) * T + 25; // the glass
+      if (i < grid.cols) beam(xl, xr, o.y * T, 1, Math.min(5, s.h) * T);
+      if (frontWindow(o.x + lx, front)) beam(xl, xr, front * T, -1, Math.min(3, s.h) * T);
+    }
+  });
+  ctx.restore();
+}
+
+// A room's front wall has a (hidden) window at x when that stretch of wall faces outside.
+const frontWindow = (x: number, front: number) => grid.at(x, front) === WALL && !grid.at(x, front + 1) && grid.at(x + 1, front) === WALL;
+// Which room has a window at this tile, or -1: on the back wall of a top-row room, or a hidden one in a front wall
+// facing outside (one every 6 tiles along either). Clicking one opens or closes that room's curtains.
 function windowAt(tx: number, ty: number) {
   return slots.findIndex((_, i) => {
     const o = grid.origins[i], s = grid.sizes[i], lx = tx - o.x, k = (lx - 1) % 6;
-    return i < grid.cols && ty >= o.y - WALL_H && ty < o.y && lx >= 1 && k < 2 && lx - k + 2 <= s.w - 1;
+    if (lx < 1 || k >= 2 || lx - k + 2 > s.w - 1) return false;
+    return (i < grid.cols && ty >= o.y - WALL_H && ty < o.y) || (ty === o.y + s.h && frontWindow(o.x + lx - k, ty));
   });
 }
 
@@ -1098,7 +1133,7 @@ function render(t: number, dt: number) {
     slots.forEach(({ m, ri }, i) => {
       const o = grid.origins[i], s = grid.sizes[i];
       if (!o || !s || !onScreen(o.x, o.y, s.w, s.h)) return;
-      const text = `${m.name}'s room${ri ? ` ${ri + 1}` : ''}`, cx = (o.x + s.w / 2) * T, cy = (o.y + (s.h + WALL_H) / 2) * T;
+      const text = `${m.name}'s room${ri ? ` ${ri + 1}` : ''}`, cx = (o.x + s.w / 2) * T, cy = (o.y + s.h / 2) * T; // the floor's middle
       ctx.strokeText(text, cx, cy);
       ctx.fillText(text, cx, cy);
     });
@@ -1256,6 +1291,7 @@ function render(t: number, dt: number) {
     for (const l of lights) if (onScreen(l.x / T - 12, l.y / T - 12, 24, 24)) drawGlow(ctx, l.x, l.y, l.rad, (sky === 'night' ? l.alpha : l.alpha * 0.5) + flicker);
     ctx.restore();
   }
+  drawWindowLight(sky, weather, onScreen);
 
   const mine = myMember();
   if (openPanel === 'decorate' && mine) {
@@ -2155,7 +2191,7 @@ function setPanel(name: string | null) {
   ui.body.classList.toggle('side-open', isSide(name));
   ui.body.dataset.side = isSide(name) ? name : '';
   if (isSide(name) && folds[name]) toggleFold(name);
-  if (name === 'chat') { unread = false; tickTimers(); scrollChat(); }
+  if (name === 'chat') { chatOpen = false; renderSide(); } // opens on the list of conversations
   renderPanel();
   ui.body.classList.toggle('panel-open', !panel.hidden);
 }
@@ -2187,6 +2223,7 @@ function todoHTML(list: Todo[]) {
     return `<li class="${t.done ? 'done' : ''}">
       <button class="check${ticked && !t.done ? ' mine' : ''}" data-todo="toggle" data-id="${t.id}"${mine} aria-label="${ticked ? 'Untick' : 'Tick'}"${canTick ? '' : ' disabled title="Only the people it\'s for can tick it"'}>${ticked ? '✓' : ''}</button>
       <span class="todo-text">${esc(t.text)}${from}${pills ? `<span class="todo-meta">${pills}</span>` : ''}</span>
+      ${t.byId === myId ? `<button class="del" data-todo="edit" data-id="${t.id}" aria-label="Edit" title="Edit">✎</button>` : ''}
       ${t.mine || !t.byId || t.byId === myId ? `<button class="del" data-todo="del" data-id="${t.id}"${mine} aria-label="Delete">✕</button>` : ''}</li>`;
   }).join('');
 }
@@ -2208,11 +2245,11 @@ function noteNewDms() {
     if (last.id <= seen) continue;
     const fresh = list.filter((c) => c.id > seen && c.from !== myId).length;
     // Unread unless that thread is open on screen right now.
-    const onScreen = dmPeer === peer && ui.body.dataset.side === 'chat';
+    const onScreen = viewing(peer);
     if (dmReady) countUnseen(fresh);
     if (dmReady && fresh && !onScreen) {
       pingOrHold();
-      if (dmPeer !== peer) dmUnread[peer] = (dmUnread[peer] ?? 0) + fresh;
+      dmUnread[peer] = (dmUnread[peer] ?? 0) + fresh;
       unread = true;
       noteUnreadChat();
     }
@@ -2220,23 +2257,47 @@ function noteNewDms() {
   dmReady = true;
 }
 
-// The chat card's recipient picker: the whole house, or one housemate.
-function syncChatPeer() {
-  const sel = $<HTMLSelectElement>('#chatPeer');
+// The chat card: a list of conversations (the house, and one per housemate), WhatsApp style, or one open thread.
+let chatOpen = false, houseUnread = 0;
+const syncUnread = () => { unread = houseUnread > 0 || Object.values(dmUnread).some(Boolean); tickTimers(); };
+// Is this thread (null = the house) on screen right now?
+const viewing = (peer: string | null) => chatOpen && dmPeer === peer && ui.body.dataset.side === 'chat' && !ui.hidden;
+function openThread(peer: string | null) {
+  dmPeer = peer;
+  chatOpen = true;
+  if (peer) dmUnread[peer] = 0; else houseUnread = 0;
+  syncUnread();
+  renderSide();
+  scrollChat();
+}
+const faces = new Map<string, string>(); // a housemate's pixel face, by look
+const faceURL = (look: Look) => { const k = JSON.stringify(look); if (!faces.has(k)) faces.set(k, crispAvatar(look, 3, true, 0).url); return faces.get(k)!; };
+const ago = (at: number) => { const s = (Date.now() - at) / 1000; return s < 60 ? 'now' : s < 3600 ? `${Math.floor(s / 60)}m` : s < 86_400 ? `${Math.floor(s / 3600)}h` : `${Math.floor(s / 86_400)}d`; };
+let chatListHTML = '';
+function syncChatList() {
   const others = members.filter((m) => m.id !== myId);
-  if (dmPeer && !others.some((m) => m.id === dmPeer)) dmPeer = null;
+  if (dmPeer && !others.some((m) => m.id === dmPeer)) { dmPeer = null; chatOpen = false; } // they moved out
   // Pending unread counts for people who moved out would be unreachable otherwise.
   for (const peer of Object.keys(dmUnread)) if (!others.some((m) => m.id === peer)) delete dmUnread[peer];
-  // Only rebuild when the list or an unread count really changed, so an open
-  // picker isn't torn down in the middle of a choice by an unrelated update.
-  const sig = others.map((m) => `${m.id}:${m.name}:${dmUnread[m.id] ?? 0}:${dmPeer === m.id ? 1 : 0}`).join('|');
-  if (sel.dataset.sig !== sig) {
-    sel.dataset.sig = sig;
-    sel.innerHTML = ['<option value="">Everyone</option>']
-      .concat(others.map((m) => `<option value="${m.id}"${dmPeer === m.id ? ' selected' : ''}>${esc(m.name)}${dmUnread[m.id] ? ` (${dmUnread[m.id]})` : ''}</option>`))
-      .join('');
-  }
-  sel.hidden = others.length === 0;
+  $('#chatTitle').textContent = !chatOpen ? 'Chats' : dmPeer ? members.find((m) => m.id === dmPeer)!.name : 'House chat';
+  $('#chatBack').hidden = !chatOpen;
+  $('#chatList').hidden = chatOpen;
+  $('#chatLog').hidden = !chatOpen;
+  $('#chatForm').hidden = !chatOpen;
+  if (chatOpen) return;
+  const lastAt = (l: Chat[]) => l[l.length - 1]?.at ?? 0;
+  const rows = [{ id: '', name: 'House chat', pic: uiIconURL('house'), list: chat, n: houseUnread },
+    ...others.map((m) => ({ id: m.id, name: m.name, pic: faceURL(m.look), list: me.dm?.[m.id] ?? [], n: dmUnread[m.id] ?? 0 }))]
+    .sort((x, y) => lastAt(y.list) - lastAt(x.list)); // newest first; nobody-said-anything-yet at the bottom
+  const html = rows.map((r) => {
+    const c = r.list[r.list.length - 1];
+    const who = !c ? '' : c.from === myId ? 'You: ' : r.id ? '' : `${esc(c.by)}: `;
+    const preview = c ? `${who}${c.img ? '📷 Photo' : esc(c.text)}` : r.id ? 'Say hi 👋' : 'Talk to the whole house';
+    return `<li><button class="chat-row${r.n ? ' unread' : ''}" data-peer="${r.id}"><img class="chat-face${r.id ? '' : ' house'}" src="${r.pic}" alt="">
+      <span class="chat-mid"><b>${esc(r.name)}</b><small>${preview}</small></span>
+      <span class="chat-end">${c ? `<small>${ago(c.at)}</small>` : ''}${r.n ? `<i>${r.n > 99 ? '99+' : r.n}</i>` : ''}</span></button></li>`;
+  }).join('');
+  if (html !== chatListHTML) { chatListHTML = html; $('#chatList').innerHTML = html; }
 }
 
 // The to-dos and the chat log are only rebuilt when what they show really changed: a house state arrives on
@@ -2251,7 +2312,7 @@ function renderSide() {
     todoSig = tSig;
     $('#todoList').innerHTML = todoHTML(list);
   }
-  syncChatPeer();
+  syncChatList();
   const log = $('#chatLog');
   const msgs = dmPeer ? me.dm?.[dmPeer] ?? [] : chat;
   const peerName = members.find((m) => m.id === dmPeer)?.name ?? 'them';
@@ -2269,7 +2330,7 @@ function renderSide() {
   }
   const box = $<HTMLTextAreaElement>('#chatInput'), ph = dmPeer ? `Message ${peerName}…` : 'Say something…';
   if (box.placeholder !== ph) box.placeholder = ph;
-  if (dmPeer) dmUnread[dmPeer] = 0;
+  if (viewing(dmPeer)) { if (dmPeer) dmUnread[dmPeer] = 0; else houseUnread = 0; }
 }
 const scrollChat = () => { const log = $('#chatLog'); log.scrollTop = log.scrollHeight; };
 // Picture links are short-lived, so each is asked for when shown and reused for 50 minutes.
@@ -2331,16 +2392,30 @@ async function sendPicture(file: File) {
 // To-dos: one list of what I can see (assigned to me, made by me, or for everyone) plus my older private ones.
 $('#todoList').addEventListener('click', (e) => {
   const b = (e.target as HTMLElement).closest<HTMLButtonElement>('button[data-todo]');
+  if (b?.dataset.todo === 'edit') return openTodoModal(todos.find((t) => t.id === Number(b.dataset.id)));
   if (b) send({ t: `${b.dataset.mine ? 'ptodo' : 'todo'}_${b.dataset.todo}`, id: Number(b.dataset.id) });
 });
 // The new to-do modal: what, when (for a reminder), and who it's for.
 const todoModal = $<HTMLDialogElement>('#todoModal');
-function openTodoModal() {
+let editing: Todo | undefined; // the to-do the modal is changing, or none for a new one
+function openTodoModal(t?: Todo) {
+  editing = t;
   $<HTMLFormElement>('#todoNew').reset();
+  $('#todoModalTitle').textContent = t ? 'Edit to-do' : 'New to-do';
+  $('#todoSave').textContent = t ? 'Save' : 'Add to-do';
+  const picked = t ? new Set(t.all ? [] : t.to ?? []) : new Set([myId]);
   const people = [...members].sort((a, b) => Number(b.id === myId) - Number(a.id === myId)); // me first
-  $('#todoWho').innerHTML = '<label class="who-chip all"><input type="checkbox" id="todoEveryone"><span>👥 Everyone</span></label>'
-    + people.map((m) => `<label class="who-chip person"><input type="checkbox" value="${m.id}"${m.id === myId ? ' checked' : ''}><span>${m.id === myId ? 'You' : esc(m.name)}</span></label>`).join('');
-  $('#todoWho').classList.remove('everyone');
+  $('#todoWho').innerHTML = `<label class="who-chip all"><input type="checkbox" id="todoEveryone"${t?.all ? ' checked' : ''}><span>👥 Everyone</span></label>`
+    + people.map((m) => `<label class="who-chip person"><input type="checkbox" value="${m.id}"${picked.has(m.id) ? ' checked' : ''}><span>${m.id === myId ? 'You' : esc(m.name)}</span></label>`).join('');
+  $('#todoWho').classList.toggle('everyone', !!t?.all);
+  if (t) {
+    $<HTMLTextAreaElement>('#todoText').value = t.text;
+    if (t.at) {
+      const d = new Date(t.at), pad = (n: number) => String(n).padStart(2, '0');
+      $<HTMLInputElement>('#todoDate').value = d.toLocaleDateString('en-CA');
+      $<HTMLInputElement>('#todoTime').value = `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    }
+  }
   syncBell();
   todoModal.showModal();
 }
@@ -2358,7 +2433,7 @@ $('#todoBell').addEventListener('click', (e) => {
   if (!(e.target as HTMLElement).closest('#todoAllow')) return;
   Notification.requestPermission().then(() => { subscribePush(); syncBell(); });
 });
-$('#todoNewBtn').addEventListener('click', openTodoModal);
+$('#todoNewBtn').addEventListener('click', () => openTodoModal());
 $('#todoCancel').addEventListener('click', () => todoModal.close());
 $('#todoWho').addEventListener('change', (e) => { // "Everyone" greys out the individual picks
   const box = e.target as HTMLInputElement;
@@ -2370,10 +2445,11 @@ $('#todoNew').addEventListener('submit', (e) => {
   if (!text) return;
   // A time alone means today; a date alone means 9 in the morning.
   const at = date || time ? new Date(`${date || new Date().toLocaleDateString('en-CA')}T${time || '09:00'}`).getTime() : undefined;
-  if (at && at < Date.now()) return toast('That time has already passed. Pick a later one.', 'error');
+  const sameTime = !!editing?.at && at !== undefined && Math.abs(at - editing.at) < 60_000; // unchanged (inputs drop the seconds)
+  if (at && at < Date.now() && !sameTime) return toast('That time has already passed. Pick a later one.', 'error');
   const all = $<HTMLInputElement>('#todoEveryone').checked;
   const to = Array.from($('#todoWho').querySelectorAll<HTMLInputElement>('.person input:checked')).map((i) => i.value);
-  send({ t: 'todo_add', text, at, all, to });
+  send(editing ? { t: 'todo_edit', id: editing.id, text, at: sameTime ? editing.at : at, all, to } : { t: 'todo_add', text, at, all, to });
   if (at && window.Notification?.permission === 'default') Notification.requestPermission().then(subscribePush); // so reminders reach me anywhere
   todoModal.close();
 });
@@ -2401,13 +2477,13 @@ for (const box of [$<HTMLTextAreaElement>('#chatInput')]) {
   });
   box.form!.addEventListener('submit', () => requestAnimationFrame(fit)); // shrink back once it's been cleared
 }
-$('#chatPeer').addEventListener('change', () => {
-  dmPeer = $<HTMLSelectElement>('#chatPeer').value || null;
-  if (dmPeer) dmUnread[dmPeer] = 0;
-  if (!Object.values(dmUnread).some(Boolean)) { unread = false; tickTimers(); } // caught up on everything
-  renderSide();
-  scrollChat();
+$('#chatList').addEventListener('click', (e) => {
+  const b = (e.target as HTMLElement).closest<HTMLButtonElement>('.chat-row');
+  if (!b) return;
+  openThread(b.dataset.peer || null);
+  $('#chatInput').focus();
 });
+$('#chatBack').addEventListener('click', () => { chatOpen = false; renderSide(); });
 $('#closeSide').addEventListener('click', () => setPanel(null));
 $<HTMLImageElement>('#todoIcon').src = uiIconURL('todo');
 
@@ -2443,13 +2519,13 @@ function toggleFold(card: SideCard) {
 function openSide(card: SideCard, input: string, text = '') {
   if (folds[card]) toggleFold(card);
   setPanel(card);
-  if (card === 'chat') { unread = false; tickTimers(); scrollChat(); }
+  if (card === 'chat') openThread(null); // straight into the house chat, to type
   const el = $<HTMLInputElement>(input);
   if (text) el.value = text;
   el.focus();
 }
 // Group chat you can't see right now: worth a ping.
-const chatHidden = () => ui.hidden || ui.body.dataset.side !== 'chat';
+const chatHidden = () => !viewing(null);
 for (const card of ['todos', 'chat'] as SideCard[]) {
   applyFold(card);
   $(`#fold-${card}`).addEventListener('click', () => toggleFold(card));

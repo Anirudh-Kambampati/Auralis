@@ -66,6 +66,18 @@ await sleep(500);
 const ab3 = A.todos().find((t) => t.text === 'SECRET-ab');
 ok('B ticking leaves it open for A', ab3.ticks.includes(B.id) && !ab3.done);
 
+// A edits the task to add C: now C sees it, B keeps their tick; B (not the maker) can't edit it.
+A.send({ t: 'todo_edit', id: ab.id, text: 'SECRET-ab', at: ab.at, to: [A.id, B.id, C.id] });
+B.send({ t: 'todo_edit', id: ab.id, text: 'hijacked', to: [B.id] });
+await sleep(600);
+const ab4 = A.todos().find((t) => t.id === ab.id);
+ok('maker can add someone: C now sees it', has(C, 'SECRET-ab') && ab4.to.includes(C.id));
+ok("B's tick survives the edit, and B couldn't edit it", ab4.ticks.includes(B.id) && ab4.text === 'SECRET-ab');
+A.send({ t: 'todo_edit', id: ab.id, text: 'SECRET-ab', at: ab.at, to: [A.id, B.id] }); // and back, for the checks below
+await sleep(600);
+ok('removing C hides it from C again', !has(C, 'SECRET-ab'));
+C.msgs = []; // C saw it while assigned; from here on C should hear nothing more about it
+
 // D goes offline before the reminders fire.
 D.ws.close();
 console.log('…waiting for the reminder sweep (up to 35 s)');
@@ -74,7 +86,7 @@ while (Date.now() < deadline && !A.msgs.some((m) => m.t === 'remind')) await sle
 const reminded = (q, text) => q.msgs.some((m) => m.t === 'remind' && m.text === text);
 ok('A (assignee, not ticked) gets the reminder', reminded(A, 'SECRET-ab'));
 ok('B (already ticked) gets no reminder', !reminded(B, 'SECRET-ab'));
-ok('C never hears about the A+B task at all', !C.heard('SECRET-ab'));
+ok('C hears nothing more about the A+B task once removed', !C.heard('SECRET-ab'));
 ok('B and C never hear about the task for D', !B.heard('DAN-only') && !C.heard('DAN-only'));
 ok('A gets no reminder for the task made for D', !reminded(A, 'DAN-only'));
 

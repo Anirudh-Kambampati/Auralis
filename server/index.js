@@ -633,6 +633,24 @@ function handle(p, m) {
       save();
       return;
     }
+    case 'todo_edit': { // only whoever made it: new words, time, or people (people who stay on keep their ticks)
+      const h = db.houses[p.house], t = h.todos?.find((x) => x.id === m.id), text = cleanText(m.text, 120);
+      if (!t || t.byId !== p.id || !text) return;
+      const at = m.at === t.at || (Number.isFinite(m.at) && m.at > Date.now() - 60_000 && m.at < Date.now() + 2 * 365 * 86_400_000) ? m.at : undefined;
+      if (at !== t.at) delete t.reminded; // a new time gets its own reminder
+      t.text = text;
+      if (at) t.at = at; else delete t.at;
+      if (m.all) { t.all = true; delete t.to; }
+      else {
+        const to = [...new Set(Array.isArray(m.to) ? m.to : [])].filter((id) => h.members.includes(id));
+        t.to = to.length ? to : [p.id];
+        delete t.all;
+      }
+      t.ticks = (t.ticks ?? []).filter((id) => todoFor(t, h).includes(id));
+      if (t.all) settleTodos(h);
+      else t.done = todoFor(t, h).every((id) => t.ticks.includes(id));
+      break;
+    }
     case 'todo_toggle': { // each person it's for ticks their own part; it's done once they all have
       const h = db.houses[p.house], t = h.todos?.find((x) => x.id === m.id);
       if (!t || !canSee(t, h, p.id)) return;
