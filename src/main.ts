@@ -2678,8 +2678,9 @@ if (sessionStorage.getItem('auralis.sessionEnded')) {
 }
 startLoop();
 
-// Picture in picture: the whole app (room, timer, chat, buttons) moves into a small always-on-top window and back.
-// Only Chrome and Edge (116+) have Document Picture-in-Picture; elsewhere the button stays hidden.
+// Picture in picture: the whole app (room, timer, chat, buttons) moves into a small window and back.
+// Chrome and Edge (116+) float it always-on-top (Document Picture-in-Picture). Every other browser (Opera, Firefox,
+// Safari...) has no such API, so there it's a small pop-up window instead: same live app, just not pinned on top.
 {
   const pipBtn = $<HTMLButtonElement>('#pip');
   const dpip = (window as unknown as { documentPictureInPicture?: { requestWindow(o: object): Promise<Window> } }).documentPictureInPicture;
@@ -2696,15 +2697,23 @@ startLoop();
     chromeDirty();
     startLoop();
   };
-  pipBtn.hidden = !dpip;
+  pipBtn.hidden = false;
   pipBtn.addEventListener('click', async () => {
     if (win !== window) return win.close();
     try {
-      const pw = await dpip!.requestWindow({ width: 420, height: 560 });
+      const pw = dpip ? await dpip.requestWindow({ width: 420, height: 560 }) : window.open('', 'auralis-pip', 'popup,width=420,height=560');
+      if (!pw) return toast('Your browser blocked the pop-up. Allow pop-ups for Auralis, then try again.', 'error');
+      pw.document.title = 'Auralis';
+      const base = pw.document.createElement('base'); // so relative links, images and cursors resolve like in the tab
+      base.href = location.href;
+      pw.document.head.append(base);
       for (const n of Array.from(document.head.querySelectorAll('link[rel=stylesheet], style'))) pw.document.head.append(n.cloneNode(true));
       for (const fn of keyFns) pw.addEventListener('keydown', fn);
-      pw.addEventListener('pagehide', () => moveTo(window), { once: true });
+      const back = () => { clearInterval(watch); if (win === pw) moveTo(window); };
+      pw.addEventListener('pagehide', back, { once: true });
+      const watch = setInterval(() => pw.closed && back(), 500); // pop-ups don't always say goodbye when closed
       moveTo(pw);
+      if (!dpip) toast('Opened Auralis in a small window. Drag it beside your work. (Only Chrome and Edge can pin it on top.)');
     } catch { toast("Couldn't open picture in picture.", 'error'); }
   });
 }
