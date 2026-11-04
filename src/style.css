@@ -480,9 +480,6 @@ body[data-side="todos"] #side .side-card.chat, body[data-side="chat"] #side .sid
 .side-card.chat { flex: 1 1 45%; }
 .side-head { display: flex; align-items: center; gap: 8px; padding: 8px 10px 8px 12px; border-bottom: 3px solid var(--ink); background: #ddd3ef; }
 .side-card.todos .side-head { background: #cfdcf5; }
-.side-card.todos.personal .side-head { background: #d8ebcf; } /* green while showing my own list */
-#todoScope { flex: none; }
-#todoScope button { padding: 4px 10px; font-size: 14px; }
 .side-head img { width: 24px; height: 24px; }
 .side-head h2 { margin: 0; font-size: 18px; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #chatPeer { flex: 0 1 auto; min-width: 0; max-width: 44%; height: 32px; padding: 0 4px; font: inherit; font-size: 14px; font-weight: 600; color: var(--ink); background: var(--paper); border: 2px solid var(--ink); border-radius: 8px; }
@@ -896,3 +893,32 @@ body.signed-out #deck, body.signed-out #game, body.signed-out #zoom { display: n
 :root[data-theme="dark"] { --bg: #3b3442; --dot: #4d4555; --on-bg: #f3ebe0; }
 :root[data-theme="dark"] .tagline mark { background: linear-gradient(transparent 55%, rgba(242, 193, 78, 0.45) 55%); }
 
+
+/* To-dos: who it's for and when, as little pills under each one */
+.todo-meta { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+.todo-meta .pill { font-size: 11px; font-weight: 700; padding: 1px 8px; border: 2px solid var(--ink); border-radius: 999px; background: #e6dcf5; color: #3a2633; }
+.todo-meta .pill.ticked { background: #bfe8cc; }
+.todo-meta .pill.all { background: #ffe3a3; }
+.todo-meta .due { font-size: 11px; font-weight: 700; color: var(--muted); align-self: center; }
+.todo-meta .due.late { color: var(--coral); }
+#todoList .check:disabled { opacity: 0.35; cursor: not-allowed; }
+.new-todo { margin: 0 10px 10px; }
+
+/* The new to-do modal */
+#todoModal { width: min(380px, calc(100vw - 32px)); padding: 16px 18px; color: var(--ink); background: var(--paper); border: 3px solid var(--ink); border-radius: 16px; box-shadow: 0 6px 0 var(--ink); }
+#todoModal::backdrop { background: rgba(58, 38, 51, 0.35); }
+#todoModal h2 { margin: 0 0 10px; font-size: 18px; }
+#todoModal h3 { margin: 14px 0 6px; font-size: 13px; color: var(--muted); }
+#todoModal .hint { margin: 6px 0 0; font-size: 12px; }
+#todoModal textarea, #todoModal input[type='date'], #todoModal input[type='time'] { width: 100%; box-sizing: border-box; padding: 8px; font: inherit; color: #3a2633; background: #fff; border: 2px solid var(--ink); border-radius: 10px; }
+#todoModal .when { display: flex; gap: 8px; margin-top: 8px; }
+#todoModal .when label { flex: 1; display: flex; align-items: center; gap: 4px; }
+#todoModal .everyone { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; font-weight: 700; }
+#todoModal .end { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
+.who { display: flex; flex-wrap: wrap; gap: 6px; }
+.who.off { opacity: 0.4; pointer-events: none; }
+.who-chip input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.who-chip span { display: inline-block; padding: 4px 12px; font-size: 13px; font-weight: 700; color: #3a2633; background: #fff; border: 2px solid var(--ink); border-radius: 999px; cursor: pointer; }
+.who-chip input:checked + span { background: #f4b6d0; }
+.who-chip input:checked + span::before { content: '♥ '; }
+.who-chip input:focus-visible + span { outline: 3px solid var(--point); outline-offset: 2px; }

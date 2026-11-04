@@ -4,6 +4,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { WebSocketServer } from 'ws';
+import webpush from 'web-push';
 import { openStore, checkPassword } from './store.js';
 import { openPgStore } from './store-pg.js';
 import { files, isPng, isJpeg } from './files.js';
@@ -40,6 +41,25 @@ setInterval(async () => {
   const changed = await store.syncCoins();
   for (const code of new Set(changed.map((id) => db.players[id].house))) broadcastHouse(code);
 }, 3000);
+
+// Web Push: reminders reach people with Auralis closed. Off unless the VAPID keys are set (npx web-push generate-vapid-keys).
+const PUSH_KEY = process.env.VAPID_PUBLIC_KEY ?? '', pushOn = !!(PUSH_KEY && process.env.VAPID_PRIVATE_KEY);
+if (pushOn) webpush.setVapidDetails(process.env.VAPID_SUBJECT || 'mailto:hello@auralis.app', PUSH_KEY, process.env.VAPID_PRIVATE_KEY);
+// The server POSTs to a subscription's URL, so only the browsers' own push services are accepted.
+const PUSH_HOSTS = ['.googleapis.com', '.mozilla.com', '.push.apple.com', '.notify.windows.com'];
+function okPushSub(s) {
+  try {
+    const u = new URL(s?.endpoint);
+    return u.protocol === 'https:' && PUSH_HOSTS.some((h) => u.hostname.endsWith(h)) && s.endpoint.length < 1000
+      && typeof s.keys?.p256dh === 'string' && s.keys.p256dh.length < 200 && typeof s.keys?.auth === 'string' && s.keys.auth.length < 100;
+  } catch { return false; }
+}
+function push(p, body) {
+  if (!pushOn) return;
+  for (const sub of p.pushSubs ?? []) webpush.sendNotification(sub, JSON.stringify(body), { TTL: 6 * 3600 }).catch((err) => {
+    if (err.statusCode === 404 || err.statusCode === 410) { p.pushSubs = p.pushSubs.filter((x) => x.endpoint !== sub.endpoint); save(); } // unsubscribed or expired
+  });
+}
 
 const sockets = new Map(); // playerId -> ws
 const positions = new Map(); // playerId -> { x, y }
@@ -107,6 +127,11 @@ function leaveHouse(p) {
 
 // "Everyone" to-dos are done once everybody in the house right now has ticked them. The first time one is finished
 // with two or more people, each of them gets coins and money off their next shop buy (capped per day, so it can't be farmed).
+// Who a to-do is for: everyone (an "everyone" one, or one made before assigning existed), or its assignees still in the house.
+// Only they and whoever made it can see it.
+const todoFor = (t, h) => (t.all || !t.to ? h.members : t.to.filter((id) => h.members.includes(id)));
+const canSee = (t, h, id) => t.byId === id || todoFor(t, h).includes(id);
+
 function settleTodos(h) {
   for (const t of h.todos ?? []) {
     if (!t.all) continue;
@@ -168,7 +193,7 @@ function broadcastHouse(code) {
   for (const id of h.members) {
     const p = db.players[id];
     // Personal to-dos ride along in `me`, which only this player receives.
-    send(sockets.get(id), { t: 'state', house, me: { id: p.id, home: p.home, ...houseLists(p), coins: p.coins, discount: !!p.discount, notes: p.notes ?? [], events: p.events ?? [], inventory: p.inventory, petAccs: p.petAccs ?? [], sessions: p.sessions ?? [], subjects: p.subjects ?? [], hiddenSubjects: p.hiddenSubjects ?? [], todos: p.todos ?? [], dm: p.dm ?? {} } });
+    send(sockets.get(id), { t: 'state', house: { ...house, todos: house.todos.filter((t) => canSee(t, h, id)) }, me: { id: p.id, home: p.home, ...houseLists(p), coins: p.coins, discount: !!p.discount, notes: p.notes ?? [], events: p.events ?? [], inventory: p.inventory, petAccs: p.petAccs ?? [], sessions: p.sessions ?? [], subjects: p.subjects ?? [], hiddenSubjects: p.hiddenSubjects ?? [], todos: p.todos ?? [], dm: p.dm ?? {}, pushKey: pushOn ? PUSH_KEY : undefined } });
   }
 }
 
@@ -594,20 +619,33 @@ function handle(p, m) {
       h.todos ??= [];
       if (!text) return;
       if (h.todos.length >= 60) return send(sockets.get(p.id), { t: 'error', text: 'The house list is full (60). Clear some done ones first.' });
-      h.todos.push({ id: nextId++, text, done: false, by: p.name, ...(m.all ? { all: true, ticks: [] } : {}) });
+      // Optional reminder time (ms), and who it's for: everyone, or picked housemates (just me if nobody was picked).
+      const at = Number.isFinite(m.at) && m.at > Date.now() - 60_000 && m.at < Date.now() + 2 * 365 * 86_400_000 ? m.at : undefined;
+      const to = m.all ? undefined : [...new Set(Array.isArray(m.to) ? m.to : [])].filter((id) => h.members.includes(id));
+      if (to && !to.length) to.push(p.id);
+      h.todos.push({ id: nextId++, text, done: false, by: p.name, byId: p.id, ticks: [], ...(m.all ? { all: true } : { to }), ...(at ? { at } : {}) });
       break;
     }
-    case 'todo_toggle': {
+    case 'push_sub': { // this device wants reminders while Auralis is closed (a few devices per player)
+      if (!okPushSub(m.sub)) return;
+      const sub = { endpoint: m.sub.endpoint, keys: { p256dh: m.sub.keys.p256dh, auth: m.sub.keys.auth } };
+      p.pushSubs = [...(p.pushSubs ?? []).filter((x) => x.endpoint !== sub.endpoint), sub].slice(-5);
+      save();
+      return;
+    }
+    case 'todo_toggle': { // each person it's for ticks their own part; it's done once they all have
       const h = db.houses[p.house], t = h.todos?.find((x) => x.id === m.id);
-      if (!t) return;
-      if (!t.all) { t.done = !t.done; break; }
+      if (!t || !canSee(t, h, p.id)) return;
+      if (!t.all && !t.to) { t.done = !t.done; break; } // older shared to-dos: one tick for everyone
+      if (!todoFor(t, h).includes(p.id)) return;
       t.ticks = t.ticks.includes(p.id) ? t.ticks.filter((id) => id !== p.id) : [...t.ticks, p.id];
-      settleTodos(h);
+      if (t.all) settleTodos(h);
+      else t.done = todoFor(t, h).every((id) => t.ticks.includes(id));
       break;
     }
-    case 'todo_del': {
+    case 'todo_del': { // only whoever made it (older ones without a maker: anyone)
       const h = db.houses[p.house];
-      h.todos = (h.todos ?? []).filter((x) => x.id !== m.id);
+      h.todos = (h.todos ?? []).filter((x) => x.id !== m.id || (x.byId && x.byId !== p.id));
       break;
     }
     // Personal to-dos: private to one player, never shared with the house.
@@ -792,6 +830,26 @@ async function chatImage(req, res) {
   save();
   return reply(200, { key });
 }
+// Reminders: when a to-do's time comes, everyone it's for who hasn't ticked it yet and is online gets a nudge.
+setInterval(() => {
+  const now = Date.now();
+  let changed = false;
+  for (const h of Object.values(db.houses)) for (const t of h.todos ?? []) {
+    if (!t.at || t.reminded || t.done || t.at > now) continue;
+    t.reminded = true;
+    changed = true;
+    for (const id of todoFor(t, h)) {
+      if (t.ticks?.includes(id)) continue;
+      const q = db.players[id];
+      if (sockets.has(id)) { send(sockets.get(id), { t: 'remind', text: t.text, by: t.by }); continue; }
+      // Away: a push notification now, and the reminder waits for them in the app next time they log in.
+      q.missed = [...(q.missed ?? []), { text: t.text, by: t.by }].slice(-10);
+      push(q, { title: '⏰ Auralis reminder', body: t.text, tag: `todo-${t.id}` });
+    }
+  }
+  if (changed) save();
+}, 30_000).unref();
+
 // Pictures nobody can scroll back to any more (the message fell out of the last 50, or was never sent) are deleted.
 setInterval(() => {
   if (!files) return;
@@ -932,6 +990,8 @@ wss.on('connection', (ws) => {
       sockets.set(p.id, ws);
       save();
       broadcastHouse(p.house);
+      for (const r of p.missed ?? []) send(ws, { t: 'remind', ...r, missed: true }); // reminders that came due while away
+      delete p.missed;
       return;
     }
     handle(p, m);

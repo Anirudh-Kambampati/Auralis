@@ -22,12 +22,13 @@ type Member = {
   totalMinutes: number; online: boolean; pos: { x: number; y: number } | null; pets: { kind: string; name?: string; coat?: number; acc?: string; away?: boolean; follow?: boolean; bond?: number }[]; fedAt?: number;
   exams?: { subject: string; date: string }[]; // YYYY-MM-DD, soonest first
 };
-type Todo = { id: number; text: string; done: boolean; by: string; all?: boolean; ticks?: string[] }; // all: everyone has to tick it
+// all: everyone has to tick it. to: who it's for (older ones have neither). at: reminder time. mine: one of my older private to-dos.
+type Todo = { id: number; text: string; done: boolean; by: string; byId?: string; all?: boolean; to?: string[]; ticks?: string[]; at?: number; mine?: boolean };
 type Chat = { id: number; from: string; by: string; text: string; at: number; img?: string }; // img: key of a picture
 type CalEvent = { id: number; date: string; time?: string; text: string; by?: string }; // date YYYY-MM-DD, time HH:MM
 type Focus = { minutes: number; endsAt: number; tag?: string; pausedAt?: number | null };
 type Session = { at: number; minutes: number; tag: string; early?: boolean };
-type Me = { id: string; home?: string; visited?: { code: string; ownerName: string | null; online: number }[]; banned?: { id: string; name: string }[]; coins: number; discount?: boolean; notes?: { from: string; text: string; at: number }[]; events?: CalEvent[]; inventory: Record<string, number>; sessions: Session[]; subjects: string[]; hiddenSubjects: string[]; todos: Todo[]; dm: Record<string, Chat[]>; petAccs?: string[] };
+type Me = { id: string; home?: string; visited?: { code: string; ownerName: string | null; online: number }[]; banned?: { id: string; name: string }[]; coins: number; discount?: boolean; notes?: { from: string; text: string; at: number }[]; events?: CalEvent[]; pushKey?: string; inventory: Record<string, number>; sessions: Session[]; subjects: string[]; hiddenSubjects: string[]; todos: Todo[]; dm: Record<string, Chat[]>; petAccs?: string[] };
 type Board = { scope: string; period: string; rows: { name: string; me: boolean; minutes: number }[] };
 type Avatar = { x: number; y: number; tx: number; ty: number; up: boolean; dist: number; use?: string };
 type ItemKey = keyof typeof ITEMS;
@@ -130,6 +131,7 @@ function onMessage(m: any) {
     todos = m.house.todos;
     houseEvents = m.house.events ?? [];
     me = m.me;
+    subscribePush();
     const started = joinable().filter((o) => focusSeen && !focusSeen.has(o.id));
     if (started.length && !myMember()?.focus) {
       notify(chime);
@@ -250,6 +252,10 @@ function onMessage(m: any) {
     toast(`📚 <b>${esc(m.by)}</b> invites you to study <b>${esc(m.tag)}</b> together. <u>Tap to join</u> (or open Focus)`, 'reward', {
       ms: 10_000, onClick: () => send({ t: 'focus_join', id: m.from, tz: new Date().getTimezoneOffset() }),
     });
+  } else if (m.t === 'remind') { // a to-do I'm on just came due (missed: it came due while I was away)
+    notify(chime);
+    toast(`⏰ ${m.missed ? 'While you were away' : 'Reminder'}: <b>${esc(m.text)}</b>`, 'reward', { ms: 12_000, onClick: () => setPanel('todos') });
+    if (!m.missed && document.hidden && window.Notification?.permission === 'granted') new Notification('Auralis reminder', { body: m.text });
   } else if (m.t === 'pat') {
     patAt.set(`${m.owner}:${m.slot}`, Date.now());
     const pet = m.owner === myId && m.by !== myId ? myMember()?.pets[m.slot] : undefined;
@@ -423,7 +429,7 @@ function afterUse(f: Furniture, owner: Member, ri: number, fi: number): (() => v
   if (isPlant(f.item)) return () => { send({ t: 'water', owner: owner.id, r: ri, index: fi }); toast(`💧 Watered the ${it.name.toLowerCase()}.`); };
   if (f.item === 'foodBowl') return () => (owner.pets.some((p) => !p.away) ? send({ t: 'feed', owner: owner.id, r: ri, index: fi }) : toast('No pets here to feed yet.'));
   if (f.item === 'giftBox') return () => { setPanel('house'); toast('Pick a housemate to send a gift.'); };
-  if (f.item === 'whiteboard') return () => openSide('todos', '#todoInput');
+  if (f.item === 'whiteboard') return () => { setPanel('todos'); openTodoModal(); };
   if (TVS.has(f.item)) return () => { openSide('chat', '#chatInput', '/watch '); toast('Paste a YouTube, Vimeo or Twitch link after <b>/watch</b> to watch it together.'); };
   if (it.use === 'read') return () => { if (!myMember()?.focus) setPanel('focus'); };
   if (it.use === 'snack' || it.use === 'tea') return () => startBreak(SNACK_MS, '🍪 Snack break: 2 minutes.');
@@ -2139,18 +2145,27 @@ ui.querySelectorAll<HTMLButtonElement>('#dock button').forEach((b) =>
 
 // ---------- shared to-dos, private to-dos and chat ----------
 // "Everyone" to-dos show my own tick, and are crossed off only once the whole house has ticked them.
-function todoHTML(list: Todo[], empty: string) {
-  return list.length
-    ? list.map((t) => {
-      const ticked = t.all ? !!t.ticks?.includes(myId) : t.done;
-      const waiting = t.all ? members.filter((m) => !t.ticks?.includes(m.id)) : [];
-      const all = t.all ? ` · 👥 ${members.length - waiting.length}/${members.length}${waiting.length && !t.done ? `, waiting on ${waiting.map((m) => esc(m.name)).join(', ')}` : ''}` : '';
-      return `<li class="${t.done ? 'done' : ''}">
-        <button class="check${ticked && !t.done ? ' mine' : ''}" data-todo="toggle" data-id="${t.id}" aria-label="${ticked ? 'Untick' : 'Tick'}">${ticked ? '✓' : ''}</button>
-        <span class="todo-text">${esc(t.text)}${t.by || all ? `<small>${esc(t.by ?? '')}${all}</small>` : ''}</span>
-        <button class="del" data-todo="del" data-id="${t.id}" aria-label="Delete">✕</button></li>`;
-    }).join('')
-    : `<li class="empty">${empty}</li>`;
+const fmtDue = (at: number) => new Date(at).toLocaleString([], { weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' });
+function todoHTML(list: Todo[]) {
+  if (!list.length) return '<li class="empty">Nothing yet. Tap <b>＋ New to-do</b> to add one.</li>';
+  return list.map((t) => {
+    const shared = !t.mine && !t.all && !t.to; // older house to-dos: one tick for everyone
+    const who = t.all ? members : members.filter((m) => t.to?.includes(m.id));
+    const ticked = t.mine || shared ? t.done : !!t.ticks?.includes(myId);
+    const canTick = t.mine || shared || who.some((m) => m.id === myId);
+    const late = t.at && !t.done && t.at < Date.now();
+    const pills = [
+      t.at ? `<span class="due${late ? ' late' : ''}">⏰ ${fmtDue(t.at)}</span>` : '',
+      t.mine ? '<span class="pill">🔒 just you</span>' : t.all ? '<span class="pill all">👥 everyone</span>' : '',
+      ...who.map((m) => { const done = t.ticks?.includes(m.id); return `<span class="pill${done ? ' ticked' : ''}">${done ? '✓ ' : ''}${esc(m.name)}</span>`; }),
+    ].join('');
+    const from = t.byId && t.byId !== myId ? `<small>from ${esc(t.by)}</small>` : shared && t.by ? `<small>${esc(t.by)}</small>` : '';
+    const mine = t.mine ? ' data-mine="1"' : '';
+    return `<li class="${t.done ? 'done' : ''}">
+      <button class="check${ticked && !t.done ? ' mine' : ''}" data-todo="toggle" data-id="${t.id}"${mine} aria-label="${ticked ? 'Untick' : 'Tick'}"${canTick ? '' : ' disabled title="Only the people it\'s for can tick it"'}>${ticked ? '✓' : ''}</button>
+      <span class="todo-text">${esc(t.text)}${from}${pills ? `<span class="todo-meta">${pills}</span>` : ''}</span>
+      ${t.mine || !t.byId || t.byId === myId ? `<button class="del" data-todo="del" data-id="${t.id}"${mine} aria-label="Delete">✕</button>` : ''}</li>`;
+  }).join('');
 }
 
 // Private threads: unread counts per housemate, and the highest message id seen.
@@ -2206,12 +2221,12 @@ function syncChatPeer() {
 let todoSig = '', chatSig = '';
 function renderSide() {
   chromeDirty();
-  const list = todoScope === 'house' ? todos : me.todos ?? [];
-  const tSig = `${todoScope}|${myId}|${members.map((m) => `${m.id}${m.name}`).join()}|`
-    + list.map((t) => `${t.id}:${t.done ? 1 : 0}:${t.all ? 1 : 0}:${t.by ?? ''}:${(t.ticks ?? []).join('.')}:${t.text}`).join('|');
+  const list: Todo[] = [...todos, ...(me.todos ?? []).map((t) => ({ ...t, mine: true }))];
+  const tSig = `${myId}|${Math.floor(Date.now() / 60_000)}|${members.map((m) => `${m.id}${m.name}`).join()}|` // the minute: so "overdue" turns on
+    + list.map((t) => `${t.mine ? 'p' : ''}${t.id}:${t.done ? 1 : 0}:${t.all ? 1 : 0}:${t.at ?? ''}:${(t.to ?? []).join('.')}:${(t.ticks ?? []).join('.')}:${t.text}`).join('|');
   if (tSig !== todoSig) {
     todoSig = tSig;
-    $('#todoList').innerHTML = todoHTML(list, todoScope === 'house' ? 'Nothing yet. Add something to study!' : 'Just for you — nobody else can see this.');
+    $('#todoList').innerHTML = todoHTML(list);
   }
   syncChatPeer();
   const log = $('#chatLog');
@@ -2290,42 +2305,34 @@ async function sendPicture(file: File) {
   }
 }
 
-// One to-do card, switched between the house's list and my private one.
-let todoScope = localStorage.getItem('auralis.todoScope') === 'me' ? 'me' : 'house';
-const todoKinds = () => (todoScope === 'house' ? { add: 'todo_add', toggle: 'todo_toggle', del: 'todo_del' } : { add: 'ptodo_add', toggle: 'ptodo_toggle', del: 'ptodo_del' });
-function setTodoScope(scope: string) {
-  todoScope = scope;
-  localStorage.setItem('auralis.todoScope', scope);
-  $('#todoScope').querySelectorAll<HTMLButtonElement>('button').forEach((b) => {
-    b.className = b.dataset.scope === scope ? 'on' : 'off';
-    b.setAttribute('aria-pressed', String(b.dataset.scope === scope));
-  });
-  sideCard.todos.classList.toggle('personal', scope === 'me');
-  todoAll.hidden = scope === 'me'; // "everyone ticks it" only makes sense for the house
-  $<HTMLTextAreaElement>('#todoInput').placeholder = scope === 'me' ? 'Add a private to-do…' : todoAll.getAttribute('aria-pressed') === 'true' ? 'Everyone ticks this…' : 'Add a to-do…';
-  renderSide();
-}
-$('#todoScope').addEventListener('click', (e) => {
-  const b = (e.target as HTMLElement).closest<HTMLButtonElement>('button[data-scope]');
-  if (b) setTodoScope(b.dataset.scope!);
-});
+// To-dos: one list of what I can see (assigned to me, made by me, or for everyone) plus my older private ones.
 $('#todoList').addEventListener('click', (e) => {
   const b = (e.target as HTMLElement).closest<HTMLButtonElement>('button[data-todo]');
-  if (b) send({ t: b.dataset.todo === 'toggle' ? todoKinds().toggle : todoKinds().del, id: Number(b.dataset.id) });
+  if (b) send({ t: `${b.dataset.mine ? 'ptodo' : 'todo'}_${b.dataset.todo}`, id: Number(b.dataset.id) });
 });
-$('#todoForm').addEventListener('submit', (e) => {
+// The new to-do modal: what, when (for a reminder), and who it's for.
+const todoModal = $<HTMLDialogElement>('#todoModal');
+function openTodoModal() {
+  $<HTMLFormElement>('#todoNew').reset();
+  $('#todoWho').innerHTML = members.map((m) => `<label class="who-chip"><input type="checkbox" value="${m.id}"${m.id === myId ? ' checked' : ''}><span>${esc(m.name)}${m.id === myId ? ' (you)' : ''}</span></label>`).join('');
+  $('#todoWho').classList.remove('off');
+  todoModal.showModal();
+}
+$('#todoNewBtn').addEventListener('click', openTodoModal);
+$('#todoCancel').addEventListener('click', () => todoModal.close());
+$('#todoEveryone').addEventListener('change', (e) => $('#todoWho').classList.toggle('off', (e.target as HTMLInputElement).checked));
+$('#todoNew').addEventListener('submit', (e) => {
   e.preventDefault();
-  const el = $<HTMLTextAreaElement>('#todoInput');
-  if (el.value.trim()) send({ t: todoKinds().add, text: el.value, ...(todoScope === 'house' ? { all: todoAll.getAttribute('aria-pressed') === 'true' } : {}) });
-  el.value = '';
-});
-// The 👥 button makes the next house to-do one that everyone has to tick.
-const todoAll = $<HTMLButtonElement>('#todoAll');
-todoAll.addEventListener('click', () => {
-  const on = todoAll.getAttribute('aria-pressed') !== 'true';
-  todoAll.setAttribute('aria-pressed', String(on));
-  todoAll.className = on ? 'on' : 'off';
-  $<HTMLTextAreaElement>('#todoInput').placeholder = on ? 'Everyone ticks this…' : 'Add a to-do…';
+  const text = $<HTMLTextAreaElement>('#todoText').value.trim(), date = $<HTMLInputElement>('#todoDate').value, time = $<HTMLInputElement>('#todoTime').value;
+  if (!text) return;
+  // A time alone means today; a date alone means 9 in the morning.
+  const at = date || time ? new Date(`${date || new Date().toLocaleDateString('en-CA')}T${time || '09:00'}`).getTime() : undefined;
+  if (at && at < Date.now()) return toast('That time has already passed. Pick a later one.', 'error');
+  const all = $<HTMLInputElement>('#todoEveryone').checked;
+  const to = Array.from($('#todoWho').querySelectorAll<HTMLInputElement>('input:checked')).map((i) => i.value);
+  send({ t: 'todo_add', text, at, all, to });
+  if (at && window.Notification?.permission === 'default') Notification.requestPermission().then(subscribePush); // so reminders reach me anywhere
+  todoModal.close();
 });
 
 $('#chatForm').addEventListener('submit', (e) => {
@@ -2343,7 +2350,7 @@ $('#chatForm').addEventListener('submit', (e) => {
   input.value = '';
 });
 // The to-do and chat boxes grow with what's typed (CSS caps them at a few lines). Enter still sends: messages are one line.
-for (const box of [$<HTMLTextAreaElement>('#todoInput'), $<HTMLTextAreaElement>('#chatInput')]) {
+for (const box of [$<HTMLTextAreaElement>('#chatInput')]) {
   const fit = () => { box.style.height = 'auto'; box.style.height = `${box.scrollHeight + 6}px`; }; // + its borders
   box.addEventListener('input', fit);
   box.addEventListener('keydown', (e) => {
@@ -2408,7 +2415,6 @@ for (const card of ['todos', 'chat'] as SideCard[]) {
     if (folds[card] && !(e.target as HTMLElement).closest('button')) toggleFold(card);
   });
 }
-setTodoScope(todoScope); // the list picked last time
 // Landing on a new chat message should not stay hidden behind a folded card.
 function noteUnreadChat() {
   if (folds.chat) $('#fold-chat').classList.add('dot');
@@ -2466,7 +2472,20 @@ function signOut(tellServer: boolean) {
   localStorage.removeItem('auralis.token');
   // The server rejected our token: remember it, so the landing page says why instead of just appearing.
   if (!tellServer) sessionStorage.setItem('auralis.sessionEnded', '1');
-  location.reload(); // simplest way to drop all in-memory game state
+  // This device stops getting my reminders, then reload: the simplest way to drop all in-memory game state.
+  navigator.serviceWorker?.getRegistration().then((r) => r?.pushManager.getSubscription()).then((s) => s?.unsubscribe())
+    .catch(() => {}).finally(() => location.reload());
+}
+// Web Push: lets reminders arrive with Auralis closed. Needs notification permission and the service worker (production builds).
+let pushAsked = false;
+async function subscribePush() {
+  if (pushAsked || !me?.pushKey || window.Notification?.permission !== 'granted' || !('PushManager' in window) || !navigator.serviceWorker) return;
+  pushAsked = true;
+  try {
+    const reg = await navigator.serviceWorker.ready;
+    const sub = (await reg.pushManager.getSubscription()) ?? (await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: me.pushKey }));
+    send({ t: 'push_sub', sub: sub.toJSON() });
+  } catch { pushAsked = false; }
 }
 
 ui.querySelectorAll<HTMLButtonElement>('#authForm [data-mode]').forEach((b) =>

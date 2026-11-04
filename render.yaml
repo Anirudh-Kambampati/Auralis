@@ -22,5 +22,11 @@ services:
         sync: false
       - key: AWS_REGION
         sync: false
+      - key: VAPID_PUBLIC_KEY # to-do reminders by Web Push: npx web-push generate-vapid-keys
+        sync: false
+      - key: VAPID_PRIVATE_KEY
+        sync: false
+      - key: VAPID_SUBJECT
+        sync: false # e.g. mailto:you@example.com
       - key: ALLOWED_ORIGINS
         sync: false # e.g. https://auralis.vercel.app
