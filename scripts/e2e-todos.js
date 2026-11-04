@@ -13,7 +13,7 @@ async function player(name) {
   const username = `t_${name}_${crypto.randomBytes(3).toString('hex')}`, password = crypto.randomBytes(12).toString('base64url');
   const res = await fetch(`${base}/api/signup`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ username, password, email: `${username}@example.test` }) });
   const { token } = await res.json();
-  const p = { name, token, msgs: [], state: null };
+  const p = { name, username, token, msgs: [], state: null };
   p.connect = async () => {
     p.ws = new WebSocket(base.replace(/^http/, 'ws') + '/ws');
     await new Promise((r, j) => { p.ws.on('open', r); p.ws.on('error', j); });
@@ -103,4 +103,60 @@ A.send({ t: 'push_sub', sub: { endpoint: 'https://evil.example.com/push', keys: 
 await sleep(300);
 ok('server still up after bad push subscriptions', A.ws.readyState === WebSocket.OPEN);
 
-for (const q of [A, B, C, D]) q.ws.close();
+// Group chats: A makes "study crew" with B and D; C isn't in it and must never hear a word.
+C.msgs = [];
+A.send({ t: 'group_new', name: 'study crew', members: [B.id, D.id] });
+await sleep(600);
+const gid = Object.keys(A.state.me.groups ?? {})[0];
+ok('group made: A, B and D have it', !!gid && !!B.state.me.groups?.[gid] && !!D.state.me.groups?.[gid]);
+ok('C is not in the group', !C.state.me.groups?.[gid]);
+B.send({ t: 'gmsg', g: gid, text: 'GROUP-hello' });
+await sleep(600);
+ok('A and D get the group message', A.state.me.groups[gid].msgs.some((c) => c.text === 'GROUP-hello') && D.state.me.groups[gid].msgs.some((c) => c.text === 'GROUP-hello'));
+C.send({ t: 'gmsg', g: gid, text: 'GROUP-intruder' });
+await sleep(600);
+ok("C can't post into a group they're not in", !A.state.me.groups[gid].msgs.some((c) => c.text === 'GROUP-intruder'));
+ok('C never hears the group name or its messages', !C.heard('GROUP-hello') && !C.heard('study crew'));
+D.send({ t: 'group_leave', g: gid });
+await sleep(600);
+ok('D left: gone for D, others see the note', !D.state.me.groups?.[gid] && A.state.me.groups[gid].msgs.some((c) => c.text.includes('left the group')) && !A.state.me.groups[gid].members.includes(D.id));
+D.msgs = [];
+A.send({ t: 'gmsg', g: gid, text: 'GROUP-after' });
+await sleep(600);
+ok('D hears nothing after leaving', !D.heard('GROUP-after'));
+
+// Friends: E lives in another house. No DMs until friends; then both ways, and the history is in the database.
+const E = await player('eve');
+E.send({ t: 'dm', to: A.id, text: 'DM-stranger' });
+await sleep(600);
+ok("a stranger from another house can't message A", !A.heard('DM-stranger'));
+E.send({ t: 'friend_request', name: 'nobody-at-all-xyz' });
+await sleep(400);
+ok('asking for an unknown username fails', E.msgs.some((m) => m.t === 'error' && /No one is called/.test(m.text)));
+E.send({ t: 'friend_request', name: A.username });
+await sleep(600);
+ok('A sees an incoming request, E an outgoing one', A.state.me.friends?.some((f) => f.id === E.id && f.status === 'incoming') && E.state.me.friends?.some((f) => f.id === A.id && f.status === 'outgoing'));
+ok('B never hears about it', !B.state.me.friends?.length);
+A.send({ t: 'friend_accept', id: E.id });
+await sleep(600);
+ok('accepted: friends on both sides', A.state.me.friends.some((f) => f.id === E.id && f.status === 'friend') && E.state.me.friends.some((f) => f.id === A.id && f.status === 'friend'));
+E.send({ t: 'dm', to: A.id, text: 'DM-friend-1' });
+await sleep(700);
+A.send({ t: 'dm', to: E.id, text: 'DM-friend-2' });
+await sleep(700);
+ok('friends message each other across houses', A.state.me.dm?.[E.id]?.some((c) => c.text === 'DM-friend-1') && E.state.me.dm?.[A.id]?.some((c) => c.text === 'DM-friend-2'));
+A.msgs = [];
+A.send({ t: 'history', k: 'd', id: E.id, before: Number.MAX_SAFE_INTEGER });
+B.send({ t: 'history', k: 'd', id: E.id, before: Number.MAX_SAFE_INTEGER });
+A.send({ t: 'history', k: 'h', before: Number.MAX_SAFE_INTEGER });
+await sleep(600);
+const hist = A.msgs.filter((m) => m.t === 'history');
+ok('the DM thread is in the database', hist.some((m) => m.k === 'd' && m.msgs.map((c) => c.text).join() === 'DM-friend-1,DM-friend-2'));
+ok("B's history of a thread they're not in is empty", !B.heard('DM-friend'));
+E.send({ t: 'friend_remove', id: A.id });
+await sleep(600);
+E.send({ t: 'dm', to: A.id, text: 'DM-after-unfriend' });
+await sleep(600);
+ok('unfriended: gone on both sides, and no more DMs', !A.state.me.friends.length && !E.state.me.friends.length && !A.heard('DM-after-unfriend'));
+
+for (const q of [A, B, C, D, E]) q.ws.close();

@@ -3,7 +3,7 @@
 import pg from 'pg';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
-import { hashPassword } from './store.js';
+import { hashPassword, savedMessages, rowMessage } from './store.js';
 
 const TOKEN_DAYS = 30;
 const sha = (s) => crypto.createHash('sha256').update(s).digest('hex');
@@ -20,6 +20,10 @@ export async function openPgStore(url, legacyJsonFile) {
     alter table accounts add column if not exists email text;
     create unique index if not exists accounts_email on accounts (lower(email)) where email is not null;
     alter table accounts add column if not exists coins integer;
+    create table if not exists messages (id bigint primary key, thread text not null, from_id text not null, by_name text not null, body text not null, img text, at bigint not null);
+    create index if not exists messages_thread on messages (thread, id);
+    create index if not exists messages_img on messages (img) where img is not null;
+    create table if not exists friends (a text not null, b text not null, status text not null, asked_by text not null, at bigint not null, primary key (a, b));
   `);
 
   const db = { players: {}, houses: {} };
@@ -87,11 +91,30 @@ export async function openPgStore(url, legacyJsonFile) {
     fs.renameSync(legacyJsonFile, `${legacyJsonFile}.imported`);
   }
 
+  const addMessage = (thread, m) => pool.query('insert into messages (id, thread, from_id, by_name, body, img, at) values ($1, $2, $3, $4, $5, $6, $7) on conflict (id) do nothing',
+    [m.id, thread, m.from ?? '', m.by ?? '', m.text ?? '', m.img ?? null, m.at ?? 0]).catch((err) => console.error('message save failed', err));
+  // First run with the messages table: copy in the chat history the rows already hold.
+  if (!(await pool.query('select 1 from messages limit 1')).rows.length) {
+    const rows = [...savedMessages(db)];
+    await pool.query(`insert into messages (id, thread, from_id, by_name, body, img, at)
+      select * from unnest($1::bigint[], $2::text[], $3::text[], $4::text[], $5::text[], $6::text[], $7::bigint[]) on conflict (id) do nothing`,
+    [rows.map(([, m]) => m.id), rows.map(([t]) => t), rows.map(([, m]) => m.from ?? ''), rows.map(([, m]) => m.by ?? ''), rows.map(([, m]) => m.text ?? ''), rows.map(([, m]) => m.img ?? null), rows.map(([, m]) => m.at ?? 0)]);
+  }
+
   const one = async (q, args) => (await pool.query(q, args)).rows[0];
   return {
     db,
     saveAll,
     syncCoins,
+    addMessage,
+    history: async (thread, before, limit = 50) =>
+      (await pool.query('select * from messages where thread = $1 and id < $2 order by id desc limit $3', [thread, before, limit])).rows.reverse().map(rowMessage),
+    threadsWithImg: async (key) => (await pool.query('select distinct thread from messages where img = $1', [String(key)])).rows.map((r) => r.thread),
+    friends: async () => (await pool.query('select a, b, status, asked_by, at from friends')).rows.map((r) => ({ ...r, at: Number(r.at) })),
+    setFriend: (f) => pool.query(`insert into friends (a, b, status, asked_by, at) values ($1, $2, $3, $4, $5)
+      on conflict (a, b) do update set status = excluded.status, asked_by = excluded.asked_by, at = excluded.at`, [f.a, f.b, f.status, f.asked_by, f.at]),
+    deleteFriend: (a, b) => pool.query('delete from friends where a = $1 and b = $2', [a, b]),
+    playerByUsername: async (name) => (await one('select player_id from accounts where lower(username) = lower($1)', [String(name)]))?.player_id ?? null,
     deleteHouse: (code) => pool.query('delete from houses where code = $1', [code]),
     // Log in with either the username or the email.
     findAccount: (login) => one('select player_id, username, pass from accounts where lower(username) = lower($1) or lower(email) = lower($1)', [login]),

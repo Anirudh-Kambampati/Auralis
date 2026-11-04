@@ -188,3 +188,15 @@ test('a focus length is a multiple of 5 from 10 minutes to 3 hours', () => {
 test('pet bond levels up with focus minutes and caps at 5', () => {
   assert.deepEqual([undefined, 24, 25, 100, 624, 625, 99999].map(bondLevel), [0, 0, 1, 2, 4, 5, 5]);
 });
+
+test('chat documents: safe names, keys and labels', async () => {
+  const { safeDocName, CHAT_KEY, docName, attachLabel } = await import('./game.js');
+  assert.equal(safeDocName('Week 3 notes (final).PDF'), 'Week_3_notes_final.pdf');
+  assert.equal(safeDocName('../../evil.html'), null);
+  assert.equal(safeDocName('noext'), null);
+  assert.equal(safeDocName('.docx'), 'file.docx');
+  assert.ok(CHAT_KEY.test('chat/p1/123-abcd/Week_3.pdf') && CHAT_KEY.test('chat/p1/123-abcd.jpg'));
+  assert.ok(!CHAT_KEY.test('chat/p1/123-abcd/x.html') && !CHAT_KEY.test('chat/p1/123-abcd/../x.pdf'));
+  assert.equal(docName('chat/p1/1-ab/a.xlsx'), 'a.xlsx');
+  assert.equal(attachLabel('chat/p1/1-ab.jpg'), '📷 Photo');
+});

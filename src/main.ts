@@ -1,7 +1,8 @@
 import {
-  SHELVES, buildGrid, walkable, canPlace, placeSwaps,roomSize, MAX_ROOMS, ROOM_COST, colorsFor, ITEMS, PETS, PET_ACCS, MAX_PETS, bondLevel, EXPAND_COST, ROOM_SIZES,
+  SHELVES, buildGrid, walkable, canPlace, placeSwaps,roomSize, MAX_ROOMS, ROOM_COST, colorsFor, ITEMS, PETS, PET_ACCS, MAX_PETS, bondLevel, NOTIFY, wantsNotify, EXPAND_COST, ROOM_SIZES,
   WALLPAPERS, WALL_PATTERNS, FLOORS, FLOOR_STYLES, SKINS, HAIRS, SHIRTS, STYLES, FACES, OUTFITS, BODIES, ACCESSORIES, FOCUS_LENGTHS, isFocusLength,
   WALL_H, WALL, FLOOR, DOOR, BLOCKED, VOID, buddyMultiplier, focusEnd, streakDays, streakBonus, sellPrice, footprint, lying, THIRSTY_MS, isPlant, discounted, GIFT_COINS, activeEvents, nextEvent,
+  docName, attachLabel, DOC_TYPES,
 } from '../shared/game.js';
 import {
   T, OVERHANG, SURFACE, drawSeated, drawActing, drawSeam, drawFloor, drawWall, drawWallFace, drawWallTop, drawDoor, drawWindow, drawPainting, drawFurniture, drawAvatar, drawDeskLamp, drawGlow, drawUsing, skyNow, weatherNow, NIGHT_TINT,
@@ -28,7 +29,8 @@ type Chat = { id: number; from: string; by: string; text: string; at: number; im
 type CalEvent = { id: number; date: string; time?: string; text: string; by?: string }; // date YYYY-MM-DD, time HH:MM
 type Focus = { minutes: number; endsAt: number; tag?: string; pausedAt?: number | null };
 type Session = { at: number; minutes: number; tag: string; early?: boolean };
-type Me = { id: string; home?: string; visited?: { code: string; ownerName: string | null; online: number }[]; banned?: { id: string; name: string }[]; coins: number; discount?: boolean; notes?: { from: string; text: string; at: number }[]; events?: CalEvent[]; pushKey?: string; inventory: Record<string, number>; sessions: Session[]; subjects: string[]; hiddenSubjects: string[]; todos: Todo[]; dm: Record<string, Chat[]>; petAccs?: string[] };
+type Friend = { id: string; name: string; look: Look; online: boolean; focus: boolean; status: 'friend' | 'incoming' | 'outgoing' };
+type Me = { id: string; home?: string; visited?: { code: string; ownerName: string | null; online: number }[]; banned?: { id: string; name: string }[]; coins: number; discount?: boolean; notes?: { from: string; text: string; at: number }[]; events?: CalEvent[]; pushKey?: string; notify?: Record<string, boolean>; groups?: Record<string, { name: string; members: string[]; msgs: Chat[] }>; friends?: Friend[]; inventory: Record<string, number>; sessions: Session[]; subjects: string[]; hiddenSubjects: string[]; todos: Todo[]; dm: Record<string, Chat[]>; petAccs?: string[] };
 type Board = { scope: string; period: string; rows: { name: string; me: boolean; minutes: number }[] };
 type Avatar = { x: number; y: number; tx: number; ty: number; up: boolean; dist: number; use?: string };
 type ItemKey = keyof typeof ITEMS;
@@ -132,10 +134,14 @@ function onMessage(m: any) {
     houseEvents = m.house.events ?? [];
     me = m.me;
     subscribePush();
+    renderNotifyPrefs();
     const started = joinable().filter((o) => focusSeen && !focusSeen.has(o.id));
     if (started.length && !myMember()?.focus) {
       notify(chime);
-      for (const o of started) toast(`📚 <b>${esc(o.name)}</b> started studying <b>${esc(o.focus!.tag ?? 'Study')}</b>. Open Focus to join in!`, 'reward');
+      for (const o of started) {
+        toast(`📚 <b>${esc(o.name)}</b> started studying <b>${esc(o.focus!.tag ?? 'Study')}</b>. Open Focus to join in!`, 'reward');
+        sysNotify('study', '📚 Study time', `${o.name} started studying ${o.focus!.tag ?? 'Study'}`);
+      }
     }
     for (const o of members) { // pets greet owners who just came online, and do a happy spin when a session ends
       if (focusSeen?.has(o.id) && !o.focus) petDone.set(o.id, Date.now());
@@ -252,10 +258,16 @@ function onMessage(m: any) {
     toast(`📚 <b>${esc(m.by)}</b> invites you to study <b>${esc(m.tag)}</b> together. <u>Tap to join</u> (or open Focus)`, 'reward', {
       ms: 10_000, onClick: () => send({ t: 'focus_join', id: m.from, tz: new Date().getTimezoneOffset() }),
     });
+  } else if (m.t === 'history') { // older messages of a thread, asked for by scrolling to the top
+    const key = m.k === 'h' ? `h:${houseCode}` : m.k === 'g' ? `g:${m.id}` : m.id;
+    olderMsgs[key] = [...m.msgs, ...threadMsgs(key === `h:${houseCode}` ? null : key)];
+    if (m.msgs.length < 50) historyDone.add(key);
+    historyBusy = false;
+    renderSide();
   } else if (m.t === 'remind') { // a to-do I'm on just came due (missed: it came due while I was away)
     notify(chime);
     toast(`⏰ ${m.missed ? 'While you were away' : 'Reminder'}: <b>${esc(m.text)}</b>`, 'reward', { ms: 12_000, onClick: () => setPanel('todos') });
-    if (!m.missed && document.hidden && window.Notification?.permission === 'granted') new Notification('Auralis reminder', { body: m.text });
+    if (!m.missed) sysNotify('todo', 'Auralis reminder', m.text);
   } else if (m.t === 'pat') {
     patAt.set(`${m.owner}:${m.slot}`, Date.now());
     const pet = m.owner === myId && m.by !== myId ? myMember()?.pets[m.slot] : undefined;
@@ -271,7 +283,7 @@ function onMessage(m: any) {
     notify(chime);
     if (!m.text) {
       finishedSession = true; // a focus session paid out
-      if (document.hidden && window.Notification?.permission === 'granted') new Notification('Auralis', { body: `Session complete! +${m.coins} coins` });
+      sysNotify('focus', 'Auralis', `Session complete! +${m.coins} coins`);
     }
     if (m.text) toast(esc(m.text), 'reward');
     else toast(`Session complete! +${m.coins} ${coin()}${m.buddies ? ` (×${buddyMultiplier(m.buddies)} for studying together!)` : ''}${streakBonus(m.streak) ? ` 🔥 ${m.streak}-day streak +${streakBonus(m.streak) * 100}%` : ''}`, 'reward');
@@ -288,11 +300,11 @@ function receiveChat(list: Chat[]) {
   for (const c of list) {
     if (c.id <= lastChatId) continue;
     if (!first) {
-      bubbles.set(c.from, { text: c.img ? `📷 ${c.text}`.trim() : c.text, until: Date.now() + 6000 });
+      bubbles.set(c.from, { text: c.img ? `${attachLabel(c.img)} ${c.text}`.trim() : c.text, until: Date.now() + 6000 });
       if (c.from !== myId) {
         if (chatHidden()) pingOrHold();
         countUnseen();
-        if (!viewing(null)) { houseUnread++; unread = true; }
+        if (!viewing(null)) { houseUnread++; unread = true; sysNotify('house', `${c.by} · house chat`, c.img ? attachLabel(c.img) : c.text); }
         noteUnreadChat();
       }
     }
@@ -596,9 +608,9 @@ function drawWindowLight(sky: string, weather: string, onScreen: (x: number, y: 
   };
   ctx.save();
   ctx.globalCompositeOperation = 'lighter';
-  slots.forEach(({ room }, i) => {
+  slots.forEach(({ m, ri, room }, i) => {
     const o = grid.origins[i], s = grid.sizes[i];
-    if (room.curtains || !onScreen(o.x, o.y, s.w, s.h)) return;
+    if (curtainsOf(m, ri, room) || !onScreen(o.x, o.y, s.w, s.h)) return;
     const front = o.y + s.h; // the wall row in front of the room
     for (let lx = 1; lx + 2 <= s.w - 1; lx += 6) { // same spacing as the windows drawn on the back wall
       const xl = (o.x + lx) * T + 7, xr = (o.x + lx) * T + 25; // the glass
@@ -609,6 +621,9 @@ function drawWindowLight(sky: string, weather: string, onScreen: (x: number, y: 
   ctx.restore();
 }
 
+// Curtains I closed (or opened) in other people's rooms: only on my screen, remembered in this browser.
+const myCurtains: Record<string, boolean> = (() => { try { return JSON.parse(localStorage.getItem('auralis.curtains') ?? '{}'); } catch { return {}; } })();
+const curtainsOf = (m: Member, ri: number, room: Room) => myCurtains[`${m.id}:${ri}`] ?? !!room.curtains;
 // A room's front wall has a (hidden) window at x when that stretch of wall faces outside.
 const frontWindow = (x: number, front: number) => grid.at(x, front) === WALL && !grid.at(x, front + 1) && grid.at(x + 1, front) === WALL;
 // Which room has a window at this tile, or -1: on the back wall of a top-row room, or a hidden one in a front wall
@@ -818,7 +833,12 @@ function tapAt(e: PointerEvent) {
   }
   // Clicking a window in one of your rooms opens or closes its curtains, for everyone.
   const wi = windowAt(tx, ty);
-  if (wi >= 0 && slots[wi].m.id === myId) { send({ t: 'curtains', r: slots[wi].ri }); return; }
+  if (wi >= 0) { // mine: for everyone; someone else's: only on my screen
+    const { m, ri, room } = slots[wi];
+    if (m.id === myId) send({ t: 'curtains', r: ri });
+    else { myCurtains[`${m.id}:${ri}`] = !curtainsOf(m, ri, room); localStorage.setItem('auralis.curtains', JSON.stringify(myCurtains)); }
+    return;
+  }
   const si = grid.owner[ty * grid.w + tx], hit = slots[si];
   const fi = hit ? furnitureAt(hit.room, tx - grid.origins[si].x, ty - grid.origins[si].y) : -1;
   const clicked = fi >= 0 ? hit.room.furniture[fi] : undefined;
@@ -1111,11 +1131,11 @@ function render(t: number, dt: number) {
   const sky = skyNow(), weather = weatherNow();
   const dark = sky !== 'day';
   // Top-row rooms get windows to the outside (more as the room grows); lower rooms a painting on the corner wall left by the opening above.
-  slots.forEach(({ room }, i) => {
+  slots.forEach(({ m, ri, room }, i) => {
     const o = grid.origins[i], s = grid.sizes[i];
     const wy = (o.y - WALL_H) * T;
     if (!onScreen(o.x, o.y - WALL_H, s.w, WALL_H)) return;
-    if (i < grid.cols) for (let lx = 1; lx + 2 <= s.w - 1; lx += 6) drawWindow(ctx, (o.x + lx) * T, wy, sky, !!room.curtains, weather, t);
+    if (i < grid.cols) for (let lx = 1; lx + 2 <= s.w - 1; lx += 6) drawWindow(ctx, (o.x + lx) * T, wy, sky, curtainsOf(m, ri, room), weather, t);
     else if (grid.at(o.x, o.y - 1) === WALL && grid.at(o.x + 1, o.y - 1) === WALL) drawPainting(ctx, o.x * T + 6, wy + 8);
   });
 
@@ -1286,7 +1306,12 @@ function render(t: number, dt: number) {
     const flicker = 0.03 * Math.sin(t / 700);
     ctx.save(); // light stays inside the house, not on the paper around it
     ctx.beginPath();
-    ctx.rect(0, 0, grid.w * T, grid.h * T);
+    for (let y = 0; y < grid.h; y++) for (let x = 0; x < grid.w;) { // one rect per run of house tiles in each row
+      if (!grid.at(x, y)) { x++; continue; }
+      const x0 = x;
+      while (x < grid.w && grid.at(x, y)) x++;
+      ctx.rect(x0 * T, y * T, (x - x0) * T, T);
+    }
     ctx.clip();
     for (const l of lights) if (onScreen(l.x / T - 12, l.y / T - 12, 24, 24)) drawGlow(ctx, l.x, l.y, l.rad, (sky === 'night' ? l.alpha : l.alpha * 0.5) + flicker);
     ctx.restore();
@@ -2055,7 +2080,7 @@ function clickLabel(tx: number, ty: number): string | null {
   const friend = friendAt(tx, ty), mine = myMember()?.focus;
   if (friend) return friend.focus ? `Cheer ${friend.name} on 👏` : mine ? `Invite ${friend.name} to study with you 📚` : `High five ${friend.name} ✋`;
   const wi = windowAt(tx, ty);
-  if (wi >= 0 && slots[wi].m.id === myId) return slots[wi].room.curtains ? 'Open curtains' : 'Close curtains';
+  if (wi >= 0) return `${curtainsOf(slots[wi].m, slots[wi].ri, slots[wi].room) ? 'Open' : 'Close'} curtains${slots[wi].m.id === myId ? '' : ' (just for you)'}`;
   const si = grid.owner[ty * grid.w + tx] ?? -1, hit = slots[si];
   const fi = hit ? furnitureAt(hit.room, tx - grid.origins[si].x, ty - grid.origins[si].y) : -1;
   if (fi < 0) return null;
@@ -2234,7 +2259,8 @@ const dmSeen: Record<string, number> = {};
 let dmReady = false;
 
 function noteNewDms() {
-  for (const [peer, list] of Object.entries(me.dm ?? {})) {
+  const threads: [string, Chat[]][] = [...Object.entries(me.dm ?? {}), ...Object.entries(me.groups ?? {}).map(([id, g]) => [`g:${id}`, g.msgs] as [string, Chat[]])];
+  for (const [peer, list] of threads) {
     const last = list[list.length - 1];
     if (!last) continue;
     // A brand new thread after the first load is genuinely new, so count it.
@@ -2249,6 +2275,8 @@ function noteNewDms() {
     if (dmReady) countUnseen(fresh);
     if (dmReady && fresh && !onScreen) {
       pingOrHold();
+      const g = groupOf(peer), name = g?.name ?? person(peer)?.name ?? 'New message';
+      sysNotify('dm', name, `${g ? `${last.by}: ` : ''}${last.img ? attachLabel(last.img) : last.text}`);
       dmUnread[peer] = (dmUnread[peer] ?? 0) + fresh;
       unread = true;
       noteUnreadChat();
@@ -2259,6 +2287,23 @@ function noteNewDms() {
 
 // The chat card: a list of conversations (the house, and one per housemate), WhatsApp style, or one open thread.
 let chatOpen = false, houseUnread = 0;
+const groupOf = (peer: string | null) => (peer?.startsWith('g:') ? me.groups?.[peer.slice(2)] : undefined);
+const recentMsgs = (peer: string | null): Chat[] => (!peer ? chat : groupOf(peer)?.msgs ?? (peer.startsWith('g:') ? [] : me.dm?.[peer] ?? []));
+// Older messages fetched by scrolling up (with what was showing then, so nothing falls in a gap), by thread.
+const olderMsgs: Record<string, Chat[]> = {}, historyDone = new Set<string>();
+let historyBusy = false;
+const threadKey = (peer: string | null) => peer ?? `h:${houseCode}`;
+function threadMsgs(peer: string | null): Chat[] {
+  const recent = recentMsgs(peer), old = olderMsgs[threadKey(peer)];
+  if (!old?.length) return recent;
+  const last = old[old.length - 1].id;
+  return [...old, ...recent.filter((c) => c.id > last)];
+}
+// Someone I can message: a housemate or a friend.
+const friendsOnly = () => (me.friends ?? []).filter((f) => f.status === 'friend');
+const person = (id: string | null) => members.find((m) => m.id === id) ?? friendsOnly().find((f) => f.id === id);
+// The message to send in the open thread: the house, a group, or one person.
+const chatMsg = (x: { text: string; img?: string }) => (groupOf(dmPeer) ? { t: 'gmsg', g: dmPeer!.slice(2), ...x } : dmPeer ? { t: 'dm', to: dmPeer, ...x } : { t: 'chat', ...x });
 const syncUnread = () => { unread = houseUnread > 0 || Object.values(dmUnread).some(Boolean); tickTimers(); };
 // Is this thread (null = the house) on screen right now?
 const viewing = (peer: string | null) => chatOpen && dmPeer === peer && ui.body.dataset.side === 'chat' && !ui.hidden;
@@ -2276,27 +2321,40 @@ const ago = (at: number) => { const s = (Date.now() - at) / 1000; return s < 60 
 let chatListHTML = '';
 function syncChatList() {
   const others = members.filter((m) => m.id !== myId);
-  if (dmPeer && !others.some((m) => m.id === dmPeer)) { dmPeer = null; chatOpen = false; } // they moved out
-  // Pending unread counts for people who moved out would be unreachable otherwise.
-  for (const peer of Object.keys(dmUnread)) if (!others.some((m) => m.id === peer)) delete dmUnread[peer];
-  $('#chatTitle').textContent = !chatOpen ? 'Chats' : dmPeer ? members.find((m) => m.id === dmPeer)!.name : 'House chat';
+  const pals = friendsOnly().filter((f) => !others.some((m) => m.id === f.id)); // friends who aren't housemates
+  const live = (peer: string) => (peer.startsWith('g:') ? !!groupOf(peer) : !!person(peer));
+  if (dmPeer && !live(dmPeer)) { dmPeer = null; chatOpen = false; } // they moved out, we unfriended, or I left the group
+  // Pending unread counts for threads that are gone would be unreachable otherwise.
+  for (const peer of Object.keys(dmUnread)) if (!live(peer)) delete dmUnread[peer];
+  $('#chatTitle').textContent = !chatOpen ? 'Chats' : groupOf(dmPeer)?.name ?? (dmPeer ? person(dmPeer)!.name : 'House chat');
   $('#chatBack').hidden = !chatOpen;
+  const friendThread = !!dmPeer && friendsOnly().some((f) => f.id === dmPeer);
+  $('#chatLeave').hidden = !chatOpen || !(groupOf(dmPeer) || friendThread);
+  $('#chatLeave').textContent = groupOf(dmPeer) ? 'Leave' : 'Unfriend';
   $('#chatList').hidden = chatOpen;
   $('#chatLog').hidden = !chatOpen;
   $('#chatForm').hidden = !chatOpen;
   if (chatOpen) return;
   const lastAt = (l: Chat[]) => l[l.length - 1]?.at ?? 0;
-  const rows = [{ id: '', name: 'House chat', pic: uiIconURL('house'), list: chat, n: houseUnread },
-    ...others.map((m) => ({ id: m.id, name: m.name, pic: faceURL(m.look), list: me.dm?.[m.id] ?? [], n: dmUnread[m.id] ?? 0 }))]
+  const rows = [{ id: '', name: 'House chat', pic: uiIconURL('house'), list: chat, n: houseUnread, dm: false },
+    ...Object.entries(me.groups ?? {}).map(([gid, g]) => ({ id: `g:${gid}`, name: g.name, pic: uiIconURL('chat'), list: g.msgs, n: dmUnread[`g:${gid}`] ?? 0, dm: false })),
+    ...[...others, ...pals].map((m) => ({ id: m.id, name: m.name, pic: faceURL(m.look), list: me.dm?.[m.id] ?? [], n: dmUnread[m.id] ?? 0, dm: true, on: pals.includes(m as Friend) && m.online }))]
     .sort((x, y) => lastAt(y.list) - lastAt(x.list)); // newest first; nobody-said-anything-yet at the bottom
-  const html = rows.map((r) => {
+  const rowsHTML = rows.map((r) => {
     const c = r.list[r.list.length - 1];
-    const who = !c ? '' : c.from === myId ? 'You: ' : r.id ? '' : `${esc(c.by)}: `;
-    const preview = c ? `${who}${c.img ? '📷 Photo' : esc(c.text)}` : r.id ? 'Say hi 👋' : 'Talk to the whole house';
-    return `<li><button class="chat-row${r.n ? ' unread' : ''}" data-peer="${r.id}"><img class="chat-face${r.id ? '' : ' house'}" src="${r.pic}" alt="">
+    const who = !c ? '' : c.from === myId ? 'You: ' : r.dm || !c.by ? '' : `${esc(c.by)}: `; // group notes ("made the group") have no speaker
+    const preview = c ? `${who}${c.img ? esc(attachLabel(c.img)) : esc(c.text)}` : r.dm ? 'Say hi 👋' : 'Talk to the whole house';
+    return `<li><button class="chat-row${r.n ? ' unread' : ''}" data-peer="${r.id}"><span class="chat-face-wrap${'on' in r && r.on ? ' on' : ''}"><img class="chat-face${r.dm ? '' : ' house'}" src="${r.pic}" alt=""></span>
       <span class="chat-mid"><b>${esc(r.name)}</b><small>${preview}</small></span>
       <span class="chat-end">${c ? `<small>${ago(c.at)}</small>` : ''}${r.n ? `<i>${r.n > 99 ? '99+' : r.n}</i>` : ''}</span></button></li>`;
   }).join('');
+  // Friend requests on top: theirs to answer, mine waiting.
+  const reqs = (me.friends ?? []).filter((f) => f.status !== 'friend').map((f) => `<li><div class="chat-row req"><img class="chat-face" src="${faceURL(f.look)}" alt="">
+      <span class="chat-mid"><b>${esc(f.name)}</b><small>${f.status === 'incoming' ? 'wants to be friends' : 'Friend request sent'}</small></span>
+      <span class="chat-end">${f.status === 'incoming' ? `<button data-accept="${f.id}">Accept</button>` : ''}<button class="off" data-unfriend="${f.id}">${f.status === 'incoming' ? 'Decline' : 'Cancel'}</button></span></div></li>`).join('');
+  const html = reqs + rowsHTML
+    + (others.length ? `<li><button class="chat-row new" data-new="1"><img class="chat-face" src="${uiIconURL('chat')}" alt=""><span class="chat-mid"><b>＋ New group</b><small>Chat with a few housemates</small></span></button></li>` : '')
+    + `<li><button class="chat-row new" data-friend="1"><img class="chat-face" src="${uiIconURL('chat')}" alt=""><span class="chat-mid"><b>＋ Add friend</b><small>Message friends from any house</small></span></button></li>`;
   if (html !== chatListHTML) { chatListHTML = html; $('#chatList').innerHTML = html; }
 }
 
@@ -2314,18 +2372,20 @@ function renderSide() {
   }
   syncChatList();
   const log = $('#chatLog');
-  const msgs = dmPeer ? me.dm?.[dmPeer] ?? [] : chat;
-  const peerName = members.find((m) => m.id === dmPeer)?.name ?? 'them';
+  const msgs = threadMsgs(dmPeer), group = groupOf(dmPeer);
+  const peerName = group?.name ?? person(dmPeer)?.name ?? 'them';
   const cSig = `${dmPeer}|${peerName}|${msgs.length}|${msgs[0]?.id ?? 0}|${msgs[msgs.length - 1]?.id ?? 0}`;
   if (cSig !== chatSig) {
     chatSig = cSig;
-    const atBottom = log.scrollHeight - log.scrollTop - log.clientHeight < 40;
+    const atBottom = log.scrollHeight - log.scrollTop - log.clientHeight < 40, fromBottom = log.scrollHeight - log.scrollTop;
+    const more = msgs.length >= 50 && !historyDone.has(threadKey(dmPeer)) ? '<p class="more">Scroll up for older messages</p>' : '';
     log.innerHTML = msgs.length
-      ? msgs.map((c) => `<p class="${c.from === myId ? 'mine' : ''}"><b>${esc(c.by)}</b>${esc(c.text)}${c.img ? `<img class="chat-img" data-key="${esc(c.img)}" alt="Picture from ${esc(c.by)}">` : ''}</p>`).join('')
+      ? more + msgs.map((c) => !c.from ? `<p class="note">${esc(c.text)}</p>` : `<p class="${c.from === myId ? 'mine' : ''}"><b>${esc(c.by)}</b>${esc(c.text)}${c.img ? (docName(c.img) ? `<button type="button" class="chat-doc" data-key="${esc(c.img)}">📎 <span>${esc(docName(c.img)!)}</span></button>` : `<img class="chat-img" data-key="${esc(c.img)}" alt="Picture from ${esc(c.by)}">`) : ''}</p>`).join('')
       : dmPeer
-        ? `<p class="empty">Just you and ${esc(peerName)} — nobody else can see this.</p>`
+        ? `<p class="empty">${group ? `Just the people in ${esc(peerName)}.` : `Just you and ${esc(peerName)} — nobody else can see this.`}</p>`
         : '<p class="empty">Say hi to your housemates 👋</p>';
     if (atBottom) scrollChat();
+    else log.scrollTop = log.scrollHeight - fromBottom; // older messages added above: stay on what I was reading
     loadChatImages(log, atBottom);
   }
   const box = $<HTMLTextAreaElement>('#chatInput'), ph = dmPeer ? `Message ${peerName}…` : 'Say something…';
@@ -2349,7 +2409,18 @@ function loadChatImages(root: HTMLElement, stickToBottom: boolean) {
     img.src = link.url;
   });
 }
+// Scrolled to the top of a long thread: fetch the 50 before the oldest shown.
+$('#chatLog').addEventListener('scroll', () => {
+  const log = $('#chatLog'), key = threadKey(dmPeer), msgs = threadMsgs(dmPeer);
+  if (log.scrollTop > 40 || historyBusy || historyDone.has(key) || msgs.length < 50) return;
+  historyBusy = true;
+  setTimeout(() => { historyBusy = false; }, 5000); // in case the answer never comes
+  const g = groupOf(dmPeer);
+  send({ t: 'history', k: g ? 'g' : dmPeer ? 'd' : 'h', id: g ? dmPeer!.slice(2) : dmPeer ?? undefined, before: msgs[0].id });
+});
 $('#chatLog').addEventListener('click', (e) => {
+  const doc = (e.target as HTMLElement).closest<HTMLButtonElement>('.chat-doc');
+  if (doc) return openDoc(doc.dataset.key!);
   const img = (e.target as HTMLElement).closest<HTMLImageElement>('img.chat-img');
   if (img?.src) open(img.src, '_blank', 'noopener');
 });
@@ -2368,8 +2439,36 @@ $('#chatInput').addEventListener('paste', (e) => {
   e.preventDefault();
   sendPicture(file);
 });
+// Documents open from a fresh short-lived link (a tab is opened first so pop-up blockers allow it).
+async function openDoc(key: string) {
+  const tab = open('', '_blank');
+  const res = await fetch(`${apiBase}/api/chatimg?key=${encodeURIComponent(key)}`, { headers: { authorization: `Bearer ${token}` } }).catch(() => null);
+  const data = res?.ok ? await res.json() : null;
+  if (data?.url && tab) { tab.opener = null; tab.location.href = data.url; return; }
+  tab?.close();
+  toast(data?.url ? 'Allow pop-ups to open files.' : 'That file is no longer available.', 'error');
+}
+// PDFs, Office files, CSV and text go up as they are, with their name.
+async function sendDoc(file: File) {
+  if (!token) return;
+  try {
+    const ext = file.name.split('.').pop()?.toLowerCase() ?? '';
+    if (!(ext in DOC_TYPES)) throw new Error('You can send pictures, PDFs, Word, PowerPoint, Excel, CSV and text files.');
+    if (file.size > 10_000_000) throw new Error('That file is too big (10 MB max).');
+    toast(`Sending <b>${esc(file.name)}</b>…`);
+    const res = await fetch(`${apiBase}/api/chatimg`, { method: 'POST', headers: { authorization: `Bearer ${token}`, 'x-file-name': encodeURIComponent(file.name) }, body: file });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error ?? "Couldn't send that file.");
+    const box = $<HTMLTextAreaElement>('#chatInput');
+    send(chatMsg({ text: box.value, img: data.key }));
+    box.value = '';
+  } catch (err) {
+    toast(esc((err as Error).message), 'error');
+  }
+}
 async function sendPicture(file: File) {
   if (!token) return;
+  if (!file.type.startsWith('image/')) return sendDoc(file);
   try {
     const bmp = await createImageBitmap(file).catch(() => { throw new Error("That file isn't a picture we can read."); });
     const k = Math.min(1, 1024 / Math.max(bmp.width, bmp.height));
@@ -2382,7 +2481,7 @@ async function sendPicture(file: File) {
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.error ?? "Couldn't send that picture.");
     const box = $<HTMLTextAreaElement>('#chatInput');
-    send(dmPeer ? { t: 'dm', to: dmPeer, text: box.value, img: data.key } : { t: 'chat', text: box.value, img: data.key });
+    send(chatMsg({ text: box.value, img: data.key }));
     box.value = '';
   } catch (err) {
     toast(esc((err as Error).message), 'error');
@@ -2428,7 +2527,7 @@ function syncBell() {
     : "🔕 This browser can't show notifications, so reminders only pop up while Auralis is open.";
 }
 // Flipping notifications on in the browser's site settings takes effect at once: no reload, no reopening.
-navigator.permissions?.query({ name: 'notifications' }).then((st) => { st.onchange = () => { syncBell(); subscribePush(); }; }).catch(() => {});
+navigator.permissions?.query({ name: 'notifications' }).then((st) => { st.onchange = () => { syncBell(); renderNotifyPrefs(); subscribePush(); }; }).catch(() => {});
 $('#todoBell').addEventListener('click', (e) => {
   if (!(e.target as HTMLElement).closest('#todoAllow')) return;
   Notification.requestPermission().then(() => { subscribePush(); syncBell(); });
@@ -2465,7 +2564,7 @@ $('#chatForm').addEventListener('submit', (e) => {
     else { send({ t: 'watch', url }); input.value = ''; }
     return;
   }
-  if (input.value.trim()) send(dmPeer ? { t: 'dm', to: dmPeer, text: input.value } : { t: 'chat', text: input.value });
+  if (input.value.trim()) send(chatMsg({ text: input.value }));
   input.value = '';
 });
 // The to-do and chat boxes grow with what's typed (CSS caps them at a few lines). Enter still sends: messages are one line.
@@ -2478,12 +2577,54 @@ for (const box of [$<HTMLTextAreaElement>('#chatInput')]) {
   box.form!.addEventListener('submit', () => requestAnimationFrame(fit)); // shrink back once it's been cleared
 }
 $('#chatList').addEventListener('click', (e) => {
-  const b = (e.target as HTMLElement).closest<HTMLButtonElement>('.chat-row');
+  const t = e.target as HTMLElement, acc = t.closest<HTMLButtonElement>('[data-accept]'), rm = t.closest<HTMLButtonElement>('[data-unfriend]');
+  if (acc) return send({ t: 'friend_accept', id: acc.dataset.accept });
+  if (rm) return send({ t: 'friend_remove', id: rm.dataset.unfriend });
+  const b = t.closest<HTMLButtonElement>('button.chat-row');
   if (!b) return;
+  if (b.dataset.new) return openGroupModal();
+  if (b.dataset.friend) { $<HTMLFormElement>('#friendNew').reset(); return friendModal.showModal(); }
   openThread(b.dataset.peer || null);
   $('#chatInput').focus();
 });
 $('#chatBack').addEventListener('click', () => { chatOpen = false; renderSide(); });
+$('#chatLeave').addEventListener('click', () => {
+  const g = groupOf(dmPeer), f = !g && friendsOnly().find((x) => x.id === dmPeer);
+  if (f) {
+    if (confirm(`Unfriend ${f.name}? ${members.some((m) => m.id === f.id) ? '' : "You won't be able to message each other any more."}`)) { send({ t: 'friend_remove', id: f.id }); chatOpen = false; }
+    return;
+  }
+  if (!g || !confirm(`Leave "${g.name}"? You won't see its messages any more.`)) return;
+  send({ t: 'group_leave', g: dmPeer!.slice(2) });
+  chatOpen = false;
+});
+// Add a friend by username.
+const friendModal = $<HTMLDialogElement>('#friendModal');
+$('#friendCancel').addEventListener('click', () => friendModal.close());
+$('#friendNew').addEventListener('submit', (e) => {
+  e.preventDefault();
+  const name = $<HTMLInputElement>('#friendName').value.trim();
+  if (!name) return;
+  send({ t: 'friend_request', name });
+  friendModal.close();
+});
+// New group: a name and some housemates.
+const groupModal = $<HTMLDialogElement>('#groupModal');
+function openGroupModal() {
+  $<HTMLFormElement>('#groupNew').reset();
+  $('#groupWho').innerHTML = members.filter((m) => m.id !== myId)
+    .map((m) => `<label class="who-chip person"><input type="checkbox" value="${m.id}"><span>${esc(m.name)}</span></label>`).join('');
+  groupModal.showModal();
+}
+$('#groupCancel').addEventListener('click', () => groupModal.close());
+$('#groupNew').addEventListener('submit', (e) => {
+  e.preventDefault();
+  const name = $<HTMLInputElement>('#groupName').value.trim();
+  const ids = Array.from($('#groupWho').querySelectorAll<HTMLInputElement>('input:checked')).map((i) => i.value);
+  if (!name || !ids.length) return toast('Give the group a name and pick at least one person.', 'error');
+  send({ t: 'group_new', name, members: ids });
+  groupModal.close();
+});
 $('#closeSide').addEventListener('click', () => setPanel(null));
 $<HTMLImageElement>('#todoIcon').src = uiIconURL('todo');
 
@@ -2595,6 +2736,31 @@ function signOut(tellServer: boolean) {
   navigator.serviceWorker?.getRegistration().then((r) => r?.pushManager.getSubscription()).then((s) => s?.unsubscribe())
     .catch(() => {}).finally(() => location.reload());
 }
+// A system notification while Auralis is in a background tab, if I want that kind (chosen in the sound menu).
+function sysNotify(kind: keyof typeof NOTIFY, title: string, body: string) {
+  if (document.hidden && window.Notification?.permission === 'granted' && wantsNotify(me.notify, kind)) new Notification(title, { body, icon: '/icon-192.png', tag: kind });
+}
+// The "Notify me about" switches, and whether this browser can show notifications at all.
+function renderNotifyPrefs() {
+  const box = $('#notifyPrefs');
+  const sig = JSON.stringify(me.notify ?? {});
+  if (box.dataset.sig !== sig) {
+    box.dataset.sig = sig;
+    box.innerHTML = Object.entries(NOTIFY).map(([k, n]) => `<label>${n.label} <input type="checkbox" data-notify="${k}"${wantsNotify(me.notify, k) ? ' checked' : ''}></label>`).join('');
+  }
+  const perm = window.Notification?.permission;
+  $('#notifyPerm').innerHTML = perm === 'granted' ? '' : perm === 'default'
+    ? '<button type="button" id="notifyAllow">🔔 Allow notifications</button>'
+    : perm === 'denied' ? '🔕 Blocked in this browser: icon left of the address bar → Notifications → Allow.' : "🔕 This browser can't show notifications.";
+}
+$('#notifyPrefs').addEventListener('change', (e) => {
+  const box = (e.target as HTMLInputElement).closest<HTMLInputElement>('input[data-notify]');
+  if (box) send({ t: 'notify_prefs', prefs: { ...me.notify, [box.dataset.notify!]: box.checked } });
+});
+$('#notifyPerm').addEventListener('click', (e) => {
+  if ((e.target as HTMLElement).closest('#notifyAllow')) Notification.requestPermission().then(() => { subscribePush(); renderNotifyPrefs(); syncBell(); });
+});
+
 // Web Push: lets reminders arrive with Auralis closed. Needs notification permission and the service worker (production builds).
 let pushAsked = false;
 async function subscribePush() {

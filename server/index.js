@@ -5,15 +5,16 @@ import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { WebSocketServer } from 'ws';
 import webpush from 'web-push';
-import { openStore, checkPassword } from './store.js';
+import { openStore, checkPassword, dmThread } from './store.js';
 import { openPgStore } from './store-pg.js';
 import { files, isPng, isJpeg } from './files.js';
 import {
   ITEMS, WALLPAPERS, FLOORS, SKINS, HAIRS, SHIRTS, STYLES, FACES, OUTFITS, BODIES, ACCESSORIES, isFocusLength, canPlace, placeSwaps, focusReward, quitReward, quitMinutes, focusEnd, streakDays, streakBonus,
-  WALL_PATTERNS, FLOOR_STYLES, PETS, MAX_PETS, bondLevel, EXPAND_COST, colorsFor, USES, PET_ACCS, MAX_ROOMS, ROOM_COST,
+  WALL_PATTERNS, FLOOR_STYLES, PETS, MAX_PETS, bondLevel, NOTIFY, wantsNotify, EXPAND_COST, colorsFor, USES, PET_ACCS, MAX_ROOMS, ROOM_COST,
   isPlant, TASK_COINS, TASK_REWARDS_PER_DAY, discounted, GIFT_COINS, GIFTS_PER_DAY, nextRot, sellPrice,
 } from '../shared/game.js';
 import { parseVideo } from '../shared/watch.js';
+import { CHAT_KEY, DOC_TYPES, safeDocName, attachLabel } from '../shared/game.js';
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const DIST = path.join(root, 'dist');
@@ -25,6 +26,10 @@ const store = process.env.DATABASE_URL
   : openStore(process.env.DB_FILE || path.join(root, 'auralis.db'), legacy);
 console.log(`Storage: ${process.env.DATABASE_URL ? 'Postgres (DATABASE_URL)' : 'local SQLite'}; files: ${files ? 'Neon Object Storage' : 'off'}`);
 const { db } = store;
+// Friends, by pair key "a|b" (sorted ids). Saved straight to the friends table on every change.
+const friends = new Map((await store.friends()).map((f) => [`${f.a}|${f.b}`, f]));
+const pairKey = (x, y) => [x, y].sort().join('|');
+const isFriend = (x, y) => friends.get(pairKey(x, y))?.status === 'accepted';
 // Players used to have one `room`; now they have `rooms`, the first being the original.
 for (const p of Object.values(db.players)) if (!p.rooms) { p.rooms = [p.room ?? newRoom()]; delete p.room; }
 // Plants placed before watering existed start out freshly watered.
@@ -54,8 +59,8 @@ function okPushSub(s) {
       && typeof s.keys?.p256dh === 'string' && s.keys.p256dh.length < 200 && typeof s.keys?.auth === 'string' && s.keys.auth.length < 100;
   } catch { return false; }
 }
-function push(p, body) {
-  if (!pushOn) return;
+function push(p, body, kind) {
+  if (!pushOn || (kind && !wantsNotify(p.notify, kind))) return;
   for (const sub of p.pushSubs ?? []) webpush.sendNotification(sub, JSON.stringify(body), { TTL: 6 * 3600 }).catch((err) => {
     if (err.statusCode === 404 || err.statusCode === 410) { p.pushSubs = p.pushSubs.filter((x) => x.endpoint !== sub.endpoint); save(); } // unsubscribed or expired
   });
@@ -176,6 +181,22 @@ function publicPlayer(p) {
   };
 }
 
+// My friends and friend requests, as the client shows them.
+// shortcut: scans every friendship per state message; index by player if there are ever many thousands.
+function friendList(p) {
+  const out = [];
+  for (const f of friends.values()) {
+    if (f.a !== p.id && f.b !== p.id) continue;
+    const q = db.players[f.a === p.id ? f.b : f.a];
+    if (!q) continue;
+    out.push({ id: q.id, name: q.name, look: q.look, online: sockets.has(q.id), focus: !!q.focus,
+      status: f.status === 'accepted' ? 'friend' : f.asked_by === p.id ? 'outgoing' : 'incoming' });
+  }
+  return out;
+}
+// Re-send state to each of these players' houses (friends and DMs reach across houses).
+const refresh = (...ids) => { for (const code of new Set(ids.map((id) => db.players[id]?.house))) if (code) broadcastHouse(code); };
+
 function send(ws, msg) {
   if (ws?.readyState === 1) ws.send(JSON.stringify(msg));
 }
@@ -193,7 +214,7 @@ function broadcastHouse(code) {
   for (const id of h.members) {
     const p = db.players[id];
     // Personal to-dos ride along in `me`, which only this player receives.
-    send(sockets.get(id), { t: 'state', house: { ...house, todos: house.todos.filter((t) => canSee(t, h, id)) }, me: { id: p.id, home: p.home, ...houseLists(p), coins: p.coins, discount: !!p.discount, notes: p.notes ?? [], events: p.events ?? [], inventory: p.inventory, petAccs: p.petAccs ?? [], sessions: p.sessions ?? [], subjects: p.subjects ?? [], hiddenSubjects: p.hiddenSubjects ?? [], todos: p.todos ?? [], dm: p.dm ?? {}, pushKey: pushOn ? PUSH_KEY : undefined } });
+    send(sockets.get(id), { t: 'state', house: { ...house, todos: house.todos.filter((t) => canSee(t, h, id)) }, me: { id: p.id, home: p.home, ...houseLists(p), coins: p.coins, discount: !!p.discount, notes: p.notes ?? [], events: p.events ?? [], inventory: p.inventory, petAccs: p.petAccs ?? [], sessions: p.sessions ?? [], subjects: p.subjects ?? [], hiddenSubjects: p.hiddenSubjects ?? [], todos: p.todos ?? [], dm: p.dm ?? {}, groups: p.groups ?? {}, friends: friendList(p), notify: p.notify ?? {}, pushKey: pushOn ? PUSH_KEY : undefined } });
   }
 }
 
@@ -315,6 +336,7 @@ function handle(p, m) {
       setTz(p, m.tz);
       p.focus = { minutes: m.minutes, endsAt: Date.now() + m.minutes * 60_000, tag: cleanText(m.tag, 24) || 'Study' };
       p.hiddenSubjects = (p.hiddenSubjects ?? []).filter((t) => t !== p.focus.tag); // using a subject again brings it back
+      for (const id of db.houses[p.house].members) if (id !== p.id && !sockets.has(id)) push(db.players[id], { title: '📚 Study time', body: `${p.name} started studying ${p.focus.tag}`, tag: `study-${p.id}` }, 'study');
       break;
     case 'focus_join': { // join a housemate's running session: same subject, and the timer ends when theirs does
       const o = db.houses[p.house].members.includes(m.id) ? db.players[m.id] : null;
@@ -626,6 +648,10 @@ function handle(p, m) {
       h.todos.push({ id: nextId++, text, done: false, by: p.name, byId: p.id, ticks: [], ...(m.all ? { all: true } : { to }), ...(at ? { at } : {}) });
       break;
     }
+    case 'notify_prefs': { // which notifications I want (only the kinds we know, as true/false)
+      p.notify = Object.fromEntries(Object.keys(NOTIFY).map((k) => [k, typeof m.prefs?.[k] === 'boolean' ? m.prefs[k] : wantsNotify(p.notify, k)]));
+      break;
+    }
     case 'push_sub': { // this device wants reminders while Auralis is closed (a few devices per player)
       if (!okPushSub(m.sub)) return;
       const sub = { endpoint: m.sub.endpoint, keys: { p256dh: m.sub.keys.p256dh, auth: m.sub.keys.auth } };
@@ -685,13 +711,13 @@ function handle(p, m) {
       p.todos = (p.todos ?? []).filter((x) => x.id !== m.id);
       break;
     }
-    // Private messages: stored on both players' records, so each keeps the thread
-    // even after leaving the house. Only housemates can be messaged.
+    // Private messages: the newest 50 ride on both players' records; every one is kept in the messages table.
+    // You can message housemates and friends.
     case 'dm': {
       const to = db.players[m.to];
       const text = cleanText(m.text, 200);
       const img = chatImg(p, m.img);
-      if (!to || !(text || img) || to.id === p.id || !db.houses[p.house]?.members.includes(to.id)) return;
+      if (!to || !(text || img) || to.id === p.id || !(db.houses[p.house]?.members.includes(to.id) || isFriend(p.id, to.id))) return;
       const now = Date.now();
       if (now - (lastDm.get(p.id) ?? 0) < 600) return send(sockets.get(p.id), { t: 'error', text: 'Slow down a little — that message was not sent.' });
       lastDm.set(p.id, now);
@@ -702,6 +728,101 @@ function handle(p, m) {
       to.dm[p.id] = [...(to.dm[p.id] ?? []), msg].slice(-50);
       trimDmThreads(p.dm);
       trimDmThreads(to.dm);
+      store.addMessage(dmThread(p.id, to.id), msg);
+      if (to.house !== p.house) broadcastHouse(to.house);
+      if (!sockets.has(to.id)) push(to, { title: p.name, body: text || attachLabel(img), tag: `dm-${p.id}` }, 'dm');
+      break;
+    }
+    // Older messages of one of my conversations (k: 'h' my house, 'd' a private thread with `id`, 'g' my group `id`).
+    case 'history': {
+      const thread = m.k === 'h' ? `h:${p.house}` : m.k === 'd' && typeof m.id === 'string' ? dmThread(p.id, m.id) : m.k === 'g' && p.groups?.[m.id] ? `g:${m.id}` : null;
+      if (!thread || !Number.isFinite(m.before)) return;
+      Promise.resolve(store.history(thread, m.before, 50))
+        .then((msgs) => send(sockets.get(p.id), { t: 'history', k: m.k, id: m.id ?? null, msgs }))
+        .catch((err) => console.error('history failed', err));
+      return;
+    }
+    // Friends: ask by username; they accept or decline. Friends can message each other from any house.
+    case 'friend_request': {
+      const name = cleanText(m.name, 40);
+      if (!name) return;
+      const fail = (text) => send(sockets.get(p.id), { t: 'error', text });
+      if ([...friends.values()].filter((f) => f.asked_by === p.id && f.status === 'pending').length >= 20) return fail('You have 20 friend requests waiting already.');
+      Promise.resolve(store.playerByUsername(name)).then((id) => {
+        const q = id && db.players[id];
+        if (!q) return fail(`No one is called "${name}".`);
+        if (q.id === p.id) return fail("That's you!");
+        const key = pairKey(p.id, q.id), f = friends.get(key);
+        if (f?.status === 'accepted') return fail(`You and ${q.name} are already friends.`);
+        if (f?.asked_by === p.id) return fail(`You already asked ${q.name}.`);
+        const [a, b] = key.split('|');
+        // They had already asked me: asking back is a yes.
+        const row = { a, b, status: f ? 'accepted' : 'pending', asked_by: f ? f.asked_by : p.id, at: Date.now() };
+        friends.set(key, row);
+        store.setFriend(row);
+        if (!f && !sockets.has(q.id)) push(q, { title: 'Friend request', body: `${p.name} wants to be friends`, tag: `friend-${p.id}` }, 'dm');
+        refresh(p.id, q.id);
+      }).catch((err) => console.error('friend request failed', err));
+      return;
+    }
+    case 'friend_accept': {
+      const key = pairKey(p.id, String(m.id)), f = friends.get(key);
+      if (f?.status !== 'pending' || f.asked_by === p.id) return;
+      f.status = 'accepted';
+      f.at = Date.now();
+      store.setFriend(f);
+      refresh(p.id, m.id);
+      return;
+    }
+    case 'friend_remove': { // decline a request, cancel mine, or unfriend
+      const key = pairKey(p.id, String(m.id)), f = friends.get(key);
+      if (!f) return;
+      friends.delete(key);
+      store.deleteFriend(f.a, f.b);
+      refresh(p.id, m.id);
+      return;
+    }
+    // Group chats: a name and some people, each keeping their own copy (like private threads), so a group
+    // lives on after people move house. Made from housemates; anyone in it can leave.
+    case 'group_new': {
+      const h = db.houses[p.house], name = cleanText(m.name, 30);
+      const ids = [...new Set([p.id, ...(Array.isArray(m.members) ? m.members : [])])].filter((id) => h.members.includes(id));
+      if (!name || ids.length < 2) return send(sockets.get(p.id), { t: 'error', text: 'Give the group a name and pick at least one person.' });
+      if (Object.keys(p.groups ?? {}).length >= 20) return send(sockets.get(p.id), { t: 'error', text: "You're in 20 groups already. Leave one first." });
+      const gid = crypto.randomBytes(6).toString('hex'), msg = { id: nextId++, from: '', by: '', text: `${p.name} made the group`, at: Date.now() };
+      for (const id of ids) { const q = db.players[id]; q.groups ??= {}; q.groups[gid] = { name, members: ids, msgs: [msg] }; }
+      store.addMessage(`g:${gid}`, msg);
+      break;
+    }
+    case 'gmsg': {
+      const g = p.groups?.[m.g], text = cleanText(m.text, 200), img = chatImg(p, m.img), now = Date.now();
+      if (!g || !(text || img)) return;
+      if (now - (lastDm.get(p.id) ?? 0) < 600) return send(sockets.get(p.id), { t: 'error', text: 'Slow down a little — that message was not sent.' });
+      lastDm.set(p.id, now);
+      const msg = { id: nextId++, from: p.id, by: p.name, text, at: now, ...(img && { img }) };
+      store.addMessage(`g:${m.g}`, msg);
+      for (const id of g.members) {
+        const q = db.players[id], qg = q?.groups?.[m.g];
+        if (!qg) continue;
+        qg.msgs = [...qg.msgs, msg].slice(-50);
+        if (id !== p.id && !sockets.has(id)) push(q, { title: g.name, body: `${p.name}: ${text || attachLabel(img)}`, tag: `g-${m.g}` }, 'dm');
+      }
+      for (const code of new Set(g.members.map((id) => db.players[id]?.house))) if (code && code !== p.house) broadcastHouse(code);
+      break;
+    }
+    case 'group_leave': {
+      const g = p.groups?.[m.g];
+      if (!g) return;
+      const msg = { id: nextId++, from: '', by: '', text: `${p.name} left the group`, at: Date.now() };
+      store.addMessage(`g:${m.g}`, msg);
+      for (const id of g.members) {
+        const qg = db.players[id]?.groups?.[m.g];
+        if (!qg || id === p.id) continue;
+        qg.members = qg.members.filter((x) => x !== p.id);
+        qg.msgs = [...qg.msgs, msg].slice(-50);
+      }
+      delete p.groups[m.g];
+      for (const code of new Set(g.members.map((id) => db.players[id]?.house))) if (code && code !== p.house) broadcastHouse(code);
       break;
     }
     case 'chat': {
@@ -713,7 +834,9 @@ function handle(p, m) {
       lastChat.set(p.id, now);
       h.chat ??= [];
       h.chat.push({ id: nextId++, from: p.id, by: p.name, text, at: now, ...(img && { img }) });
+      store.addMessage(`h:${h.code}`, h.chat.at(-1));
       h.chat = h.chat.slice(-50);
+      for (const id of h.members) if (id !== p.id && !sockets.has(id)) push(db.players[id], { title: `${p.name} · house chat`, body: text || attachLabel(img), tag: `house-${h.code}` }, 'house');
       break;
     }
     case 'watch': { // /watch <link> starts a watch party for the whole house; /watch stop ends it
@@ -726,6 +849,7 @@ function handle(p, m) {
       else watches.set(p.house, { src, by: p.id, byName: p.name, playing: true, pos: src.start, at: Date.now() });
       h.chat ??= [];
       h.chat.push({ id: nextId++, from: p.id, by: p.name, text: stop ? '⏹ ended the watch party' : '🎬 started a watch party', at: Date.now() });
+      store.addMessage(`h:${h.code}`, h.chat.at(-1));
       h.chat = h.chat.slice(-50);
       break;
     }
@@ -821,8 +945,15 @@ async function snapshots(req, res) {
 // Pictures in chat. The client shrinks and re-encodes them as JPEG first (which also drops camera metadata such as
 // location), uploads here, then sends the returned key with a chat message or DM. A link to a picture is only handed
 // to someone who can see a message carrying it, and it expires within the hour.
-const CHAT_IMG = /^chat\/[\w-]+\/\d+-[a-f0-9]+\.jpg$/;
 const chatImg = (p, key) => (typeof key === 'string' && (p.chatImgs ?? []).some((x) => x.key === key) ? key : undefined); // only your own uploads
+// The bytes must match the extension: PDF header, zip (docx/pptx/xlsx), old Office (doc/ppt/xls), or plain UTF-8 text.
+function looksLike(name, buf) {
+  const ext = name.split('.').pop(), head = (sig) => sig.every((b, i) => buf[i] === b);
+  if (ext === 'pdf') return head([0x25, 0x50, 0x44, 0x46]);
+  if (['docx', 'pptx', 'xlsx'].includes(ext)) return head([0x50, 0x4b, 0x03, 0x04]);
+  if (['doc', 'ppt', 'xls'].includes(ext)) return head([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1]);
+  try { new TextDecoder('utf-8', { fatal: true }).decode(buf); return !buf.includes(0); } catch { return false; }
+}
 async function chatImage(req, res) {
   const reply = (status, data) => res.writeHead(status, { 'content-type': 'application/json' }).end(JSON.stringify(data));
   if (!files) return reply(503, { error: 'Pictures need file storage, which is not set up on this server.' });
@@ -831,19 +962,24 @@ async function chatImage(req, res) {
   if (!p) return reply(401, { error: 'Please log in again.' });
   if (req.method === 'GET') {
     const key = new URL(req.url, 'http://x').searchParams.get('key') ?? '';
-    const visible = (db.houses[p.house]?.chat ?? []).some((c) => c.img === key) || Object.values(p.dm ?? {}).some((t) => t.some((c) => c.img === key));
-    if (!CHAT_IMG.test(key) || !visible) return reply(404, { error: 'Picture not found.' });
+    // Visible if it was sent in any conversation I can read the history of, however long ago.
+    const mine = (th) => th === `h:${p.house}` || (th.startsWith('d:') && th.slice(2).split('|').includes(p.id)) || (th.startsWith('g:') && !!p.groups?.[th.slice(2)]);
+    if (!CHAT_KEY.test(key) || !(await store.threadsWithImg(key)).some(mine)) return reply(404, { error: 'File not found.' });
     return reply(200, { url: await files.url(key, { expiresIn: 3600 }) });
   }
   if (req.method !== 'POST') return reply(405, { error: 'GET or POST' });
   const now = Date.now();
   p.chatImgs ??= [];
-  if (p.chatImgs.filter((x) => now - x.at < 3_600_000).length >= 30) return reply(429, { error: "That's a lot of pictures. Try again in a little while." });
+  if (p.chatImgs.filter((x) => now - x.at < 3_600_000).length >= 30) return reply(429, { error: "That's a lot of files. Try again in a little while." });
+  // A document comes with its name in x-file-name; without one it's a picture.
+  const rawName = req.headers['x-file-name'] ? decodeURIComponent(String(req.headers['x-file-name'])) : null;
+  const name = rawName && safeDocName(rawName);
+  if (rawName && !name) return reply(400, { error: 'You can send PDFs, Word, PowerPoint, Excel, CSV and text files.' });
   let body;
-  try { body = await readBytes(req, 1_500_000); } catch { return reply(413, { error: 'That picture is too big.' }); }
-  if (!isJpeg(body)) return reply(400, { error: 'Expected a JPEG picture.' });
-  const key = `chat/${p.id}/${now}-${crypto.randomBytes(4).toString('hex')}.jpg`;
-  await files.upload(key, body, { contentType: 'image/jpeg' });
+  try { body = await readBytes(req, name ? 10_000_000 : 1_500_000); } catch { return reply(413, { error: name ? 'That file is too big (10 MB max).' : 'That picture is too big.' }); }
+  if (name ? !looksLike(name, body) : !isJpeg(body)) return reply(400, { error: name ? "That file doesn't look like what its name says." : 'Expected a JPEG picture.' });
+  const key = `chat/${p.id}/${now}-${crypto.randomBytes(4).toString('hex')}${name ? `/${name}` : '.jpg'}`;
+  await files.upload(key, body, { contentType: name ? DOC_TYPES[name.split('.').pop()] : 'image/jpeg' });
   p.chatImgs.push({ key, at: now });
   save();
   return reply(200, { key });
@@ -862,25 +998,26 @@ setInterval(() => {
       if (sockets.has(id)) { send(sockets.get(id), { t: 'remind', text: t.text, by: t.by }); continue; }
       // Away: a push notification now, and the reminder waits for them in the app next time they log in.
       q.missed = [...(q.missed ?? []), { text: t.text, by: t.by }].slice(-10);
-      push(q, { title: '⏰ Auralis reminder', body: t.text, tag: `todo-${t.id}` });
+      push(q, { title: '⏰ Auralis reminder', body: t.text, tag: `todo-${t.id}` }, 'todo');
     }
   }
   if (changed) save();
 }, 30_000).unref();
 
-// Pictures nobody can scroll back to any more (the message fell out of the last 50, or was never sent) are deleted.
-setInterval(() => {
+// Uploads are kept as long as a message carries them. An hour after upload (the window for sending it, and for the
+// upload rate limit) each one is settled: sent → kept, and dropped from my pending list; never sent → deleted.
+setInterval(async () => {
   if (!files) return;
-  const live = new Set(), now = Date.now();
-  for (const h of Object.values(db.houses)) for (const c of h.chat ?? []) if (c.img) live.add(c.img);
-  for (const p of Object.values(db.players)) for (const t of Object.values(p.dm ?? {})) for (const c of t) if (c.img) live.add(c.img);
+  const now = Date.now();
   let changed = false;
   for (const p of Object.values(db.players)) {
-    const gone = (p.chatImgs ?? []).filter((x) => !live.has(x.key) && now - x.at > 600_000);
-    if (!gone.length) continue;
-    p.chatImgs = p.chatImgs.filter((x) => !gone.includes(x));
-    for (const x of gone) files.delete(x.key).catch(() => {});
-    changed = true;
+    for (const x of (p.chatImgs ?? []).filter((x) => now - x.at > 3_600_000)) {
+      try {
+        if (!(await store.threadsWithImg(x.key)).length) await files.delete(x.key);
+        p.chatImgs = p.chatImgs.filter((y) => y !== x);
+        changed = true;
+      } catch (err) { console.error('upload cleanup failed', x.key, err); } // try again next round
+    }
   }
   if (changed) save();
 }, 600_000).unref();

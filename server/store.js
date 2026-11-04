@@ -20,6 +20,19 @@ export function checkPassword(password, stored) {
   return got.length === want.length && crypto.timingSafeEqual(got, want);
 }
 
+// Every chat message lives in the messages table, keyed by its conversation ("thread"):
+// h:<house code>, d:<player id>|<player id> (sorted, so both sides share it), or g:<group id>.
+export const dmThread = (a, b) => `d:${[a, b].sort().join('|')}`;
+// Messages already kept in the player and house rows (the newest 50 of each), for the first move into the table.
+export function* savedMessages(db) {
+  for (const h of Object.values(db.houses)) for (const m of h.chat ?? []) yield [`h:${h.code}`, m];
+  for (const p of Object.values(db.players)) {
+    for (const [peer, list] of Object.entries(p.dm ?? {})) for (const m of list) yield [dmThread(p.id, peer), m];
+    for (const [gid, g] of Object.entries(p.groups ?? {})) for (const m of g.msgs ?? []) yield [`g:${gid}`, m];
+  }
+}
+export const rowMessage = (r) => ({ id: Number(r.id), from: r.from_id, by: r.by_name, text: r.body, at: Number(r.at), ...(r.img && { img: r.img }) });
+
 export function openStore(file, legacyJsonFile) {
   const sql = new DatabaseSync(file);
   sql.exec(`
@@ -33,6 +46,11 @@ export function openStore(file, legacyJsonFile) {
       created integer not null
     );
     create table if not exists auth (token text primary key, player_id text not null, expires integer not null);
+    create table if not exists messages (id integer primary key, thread text not null, from_id text not null, by_name text not null, body text not null, img text, at integer not null);
+    create index if not exists messages_thread on messages (thread, id);
+    create index if not exists messages_img on messages (img) where img is not null;
+    -- One row per pair of players (a < b): 'pending' (asked_by sent the request) or 'accepted'.
+    create table if not exists friends (a text not null, b text not null, status text not null, asked_by text not null, at integer not null, primary key (a, b));
   `);
   // Email arrived after the first accounts, so add it to older databases too.
   if (!sql.prepare("select 1 from pragma_table_info('accounts') where name = 'email'").get()) sql.exec('alter table accounts add column email text');
@@ -95,10 +113,30 @@ export function openStore(file, legacyJsonFile) {
     fs.renameSync(legacyJsonFile, `${legacyJsonFile}.imported`);
   }
 
+  const addMsg = sql.prepare('insert or ignore into messages (id, thread, from_id, by_name, body, img, at) values (?, ?, ?, ?, ?, ?, ?)');
+  const addMessage = (thread, m) => addMsg.run(m.id, thread, m.from ?? '', m.by ?? '', m.text ?? '', m.img ?? null, m.at ?? 0);
+  // First run with the messages table: copy in the chat history the rows already hold.
+  if (!sql.prepare('select 1 from messages limit 1').get()) {
+    sql.exec('begin');
+    for (const [thread, m] of savedMessages(db)) addMessage(thread, m);
+    sql.exec('commit');
+  }
+  const olderMsgs = sql.prepare('select * from messages where thread = ? and id < ? order by id desc limit ?');
+
   return {
     db,
     saveAll,
     syncCoins,
+    addMessage,
+    // Up to `limit` messages of a thread from before message `before`, oldest first.
+    history: (thread, before, limit = 50) => olderMsgs.all(thread, before, limit).reverse().map(rowMessage),
+    // The conversations a picture or file was sent in (empty: never sent, so it can go).
+    threadsWithImg: (key) => sql.prepare('select distinct thread from messages where img = ?').all(String(key)).map((r) => r.thread),
+    friends: () => sql.prepare('select a, b, status, asked_by, at from friends').all().map((r) => ({ ...r, at: Number(r.at) })),
+    setFriend: (f) => sql.prepare('insert into friends (a, b, status, asked_by, at) values (?, ?, ?, ?, ?) on conflict(a, b) do update set status = excluded.status, asked_by = excluded.asked_by, at = excluded.at')
+      .run(f.a, f.b, f.status, f.asked_by, f.at),
+    deleteFriend: (a, b) => sql.prepare('delete from friends where a = ? and b = ?').run(a, b),
+    playerByUsername: (name) => sql.prepare('select player_id from accounts where username = ?').get(String(name))?.player_id ?? null,
     deleteHouse: (code) => sql.prepare('delete from houses where code = ?').run(code),
     // Log in with either the username or the email.
     findAccount: (login) => sql.prepare('select player_id, username, pass from accounts where username = ? or lower(email) = lower(?)').get(login, login),

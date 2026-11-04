@@ -89,3 +89,55 @@ test('imports the old data.json once', () => {
   assert.equal(s.db.players.old.name, 'Legacy');
   assert.ok(!fs.existsSync(json) && fs.existsSync(`${json}.imported`));
 });
+
+test('chat history is kept in the messages table and pages back', () => {
+  const dir = tmp(), file = path.join(dir, 'm.db');
+  const s = openStore(file);
+  for (let i = 1; i <= 120; i++) s.addMessage('h:ABCDE', { id: i, from: 'p1', by: 'Mo', text: `m${i}`, at: i });
+  s.addMessage('d:p1|p2', { id: 500, from: 'p2', by: 'Jo', text: 'hi', at: 500 });
+  s.close();
+  const again = openStore(file);
+  const page1 = again.history('h:ABCDE', 1e15, 50), page2 = again.history('h:ABCDE', page1[0].id, 50), last = again.history('h:ABCDE', page2[0].id, 50);
+  assert.deepEqual([page1[0].text, page1.at(-1).text, page2[0].text, last.length, last[0].text], ['m71', 'm120', 'm21', 20, 'm1']);
+  assert.deepEqual(again.history('d:p1|p2', 1e15), [{ id: 500, from: 'p2', by: 'Jo', text: 'hi', at: 500 }]);
+  assert.equal(again.history('h:OTHER', 1e15).length, 0);
+  again.addMessage('g:g1', { id: 600, from: 'p1', by: 'Mo', text: '', img: 'chat/p1/1-ab/a.pdf', at: 600 });
+  assert.deepEqual(again.threadsWithImg('chat/p1/1-ab/a.pdf'), ['g:g1']);
+  assert.deepEqual(again.threadsWithImg('chat/p1/never-sent.jpg'), []);
+  again.close();
+});
+
+test('chat already in player and house rows moves into the messages table once', () => {
+  const dir = tmp(), file = path.join(dir, 'o.db');
+  const s = openStore(file);
+  s.db.houses.ABCDE = { code: 'ABCDE', members: ['p1', 'p2'], chat: [{ id: 1, from: 'p1', by: 'Mo', text: 'house', at: 1 }] };
+  const dm = { id: 2, from: 'p1', by: 'Mo', text: 'private', at: 2 };
+  s.db.players.p1 = { id: 'p1', dm: { p2: [dm] } };
+  s.db.players.p2 = { id: 'p2', dm: { p1: [dm] }, groups: { g1: { name: 'crew', members: ['p1', 'p2'], msgs: [{ id: 3, from: 'p2', by: 'Jo', text: 'group', at: 3 }] } } };
+  s.saveAll();
+  // Drop what the first open already moved in, as if the table were new.
+  new DatabaseSync(file).exec('delete from messages');
+  s.close();
+  const again = openStore(file);
+  assert.deepEqual(again.history('h:ABCDE', 1e15).map((m) => m.text), ['house']);
+  assert.deepEqual(again.history('d:p1|p2', 1e15).map((m) => m.text), ['private']); // on both players' rows, stored once
+  assert.deepEqual(again.history('g:g1', 1e15).map((m) => m.text), ['group']);
+  again.close();
+});
+
+test('friends are saved, changed and removed', () => {
+  const dir = tmp(), file = path.join(dir, 'f.db');
+  const s = openStore(file);
+  s.createAccount('p1', 'Mona', 'secret-password', 'mona@example.test');
+  assert.equal(s.playerByUsername('mona'), 'p1'); // any case
+  assert.equal(s.playerByUsername('nobody'), null);
+  s.setFriend({ a: 'p1', b: 'p2', status: 'pending', asked_by: 'p1', at: 1 });
+  s.setFriend({ a: 'p1', b: 'p2', status: 'accepted', asked_by: 'p1', at: 2 });
+  s.setFriend({ a: 'p1', b: 'p3', status: 'pending', asked_by: 'p3', at: 3 });
+  s.close();
+  const again = openStore(file);
+  assert.deepEqual(again.friends().map((f) => `${f.b}:${f.status}`).sort(), ['p2:accepted', 'p3:pending']);
+  again.deleteFriend('p1', 'p3');
+  assert.deepEqual(again.friends().map((f) => f.b), ['p2']);
+  again.close();
+});

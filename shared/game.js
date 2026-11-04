@@ -496,6 +496,16 @@ export const discounted = (price, discount) => (discount ? Math.ceil(price * 0.9
 export const sellPrice = (item) => Math.floor((ITEMS[item]?.price ?? 0) / 2);
 // Gifts between housemates: a fixed amount, a few a day, so coins can't be shovelled between accounts.
 export const GIFT_COINS = 10, GIFTS_PER_DAY = 5;
+
+// Notifications each player can switch on or off (system ones in a background tab, and pushes with Auralis closed).
+export const NOTIFY = {
+  dm: { label: 'Private & group messages', on: true },
+  house: { label: 'House chat', on: false },
+  todo: { label: 'To-do reminders', on: true },
+  focus: { label: 'Focus session done', on: true },
+  study: { label: 'A housemate starts studying', on: false },
+};
+export const wantsNotify = (prefs, kind) => prefs?.[kind] ?? NOTIFY[kind]?.on ?? false;
 // Extra rooms: everyone starts with one; ROOM_COST[n] buys room number n + 1.
 export const MAX_ROOMS = 3;
 export const ROOM_COST = [0, 1500, 2500];
@@ -631,3 +641,18 @@ export function streakDays(sessions, now, tz = 0) {
 export const streakBonus = (days) => (days >= 30 ? 0.5 : days >= 7 ? 0.25 : days >= 3 ? 0.1 : 0);
 
 export const quitMinutes =(minutes, elapsedMs) => Math.floor((minutes * quitQuarter(minutes, elapsedMs)) / 4);
+
+// Chat attachments: a picture key ends ".jpg"; a document key ends "/<its file name>".
+export const DOC_TYPES = { pdf: 'application/pdf', doc: 'application/msword', docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  ppt: 'application/vnd.ms-powerpoint', pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  xls: 'application/vnd.ms-excel', xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', csv: 'text/csv; charset=utf-8', txt: 'text/plain; charset=utf-8' };
+export const CHAT_KEY = /^chat\/[\w-]+\/\d+-[a-f0-9]+(\.jpg|\/[\w.-]{1,80}\.(pdf|docx?|pptx?|xlsx?|csv|txt))$/;
+export const docName = (key) => (key && !key.endsWith('.jpg') ? key.slice(key.lastIndexOf('/') + 1) : null);
+export const attachLabel = (key) => (docName(key) ? `📎 ${docName(key)}` : '📷 Photo');
+// A file name made safe for a storage key, keeping its extension; null if it isn't a type we take.
+export function safeDocName(name) {
+  const ext = /\.([a-z]+)$/i.exec(String(name))?.[1]?.toLowerCase();
+  if (!ext || !DOC_TYPES[ext]) return null;
+  const base = String(name).slice(0, -ext.length - 1).normalize('NFKD').replace(/[^\w.-]+/g, '_').replace(/^[_.]+|_+$/g, '').slice(0, 60) || 'file';
+  return `${base}.${ext}`;
+}
