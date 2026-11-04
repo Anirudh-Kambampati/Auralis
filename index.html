@@ -123,6 +123,18 @@
         <button id="zoomIn" aria-label="Zoom in" title="Zoom in (+)">+</button>
       </div>
       <div class="hud-right">
+        <div class="bell-wrap">
+          <button class="chip bell" id="bell" aria-expanded="false" aria-controls="bellMenu" aria-label="Notifications" title="Notifications"><img class="coin" data-icon="bell" alt="" /><span id="bellCount" hidden></span></button>
+          <div id="bellMenu" hidden>
+            <div id="bellList"></div>
+            <details class="bell-prefs">
+              <summary>Browser notifications</summary>
+              <p class="hint">Pop-ups and push messages outside Auralis, for:</p>
+              <div id="notifyPrefs"></div>
+              <p id="notifyPerm" class="hint"></p>
+            </details>
+          </div>
+        </div>
         <div class="chip vol">
           <button id="mute"></button><input type="range" data-vol="all" min="0" max="1" step="0.05" aria-label="Volume" />
           <button id="volMore" aria-expanded="false" aria-controls="volMenu" aria-label="More sound controls" title="More sound controls">▾</button>
@@ -131,9 +143,6 @@
             <label>Fire &amp; clocks <input type="range" data-vol="ambient" min="0" max="1" step="0.05" /></label>
             <label>Chimes <input type="range" data-vol="alerts" min="0" max="1" step="0.05" /></label>
             <button id="stopAll">⏹ Stop all sounds</button>
-            <h3>Notify me about</h3>
-            <div id="notifyPrefs"></div>
-            <p id="notifyPerm" class="hint"></p>
           </div>
         </div>
         <button class="chip pip" id="pip" hidden aria-label="Picture in picture" aria-pressed="false" title="Float Auralis over other windows"><img class="coin" data-icon="pip" alt="" /></button>

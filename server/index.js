@@ -200,6 +200,15 @@ function friendList(p) {
 }
 // Re-send state to each of these players' houses (friends and DMs reach across houses).
 const refresh = (...ids) => { for (const code of new Set(ids.map((id) => db.players[id]?.house))) if (code) broadcastHouse(code); };
+// The bell: things that happened to a player, kept (newest 30) so whatever they missed while away is there later.
+// The same thing from the same person within 10 minutes (petting, say) folds into one entry with a count.
+function inbox(q, kind, from, text) {
+  const now = Date.now(), last = q.inbox?.at(-1);
+  if (last?.kind === kind && last.from === from?.id && last.text === text && now - last.at < 600_000) { last.at = now; last.n = (last.n ?? 1) + 1; }
+  else q.inbox = [...(q.inbox ?? []), { kind, from: from?.id, by: from?.name, text, at: now }].slice(-30);
+  send(sockets.get(q.id), { t: 'inbox', inbox: q.inbox });
+  save();
+}
 
 function send(ws, msg) {
   if (ws?.readyState === 1) ws.send(JSON.stringify(msg));
@@ -218,7 +227,7 @@ function broadcastHouse(code) {
   for (const id of h.members) {
     const p = db.players[id];
     // Personal to-dos ride along in `me`, which only this player receives.
-    send(sockets.get(id), { t: 'state', house: { ...house, todos: house.todos.filter((t) => canSee(t, h, id)) }, me: { id: p.id, home: p.home, ...houseLists(p), coins: p.coins, discount: !!p.discount, notes: p.notes ?? [], events: p.events ?? [], inventory: p.inventory, petAccs: p.petAccs ?? [], ...(sentSessions.get(id) !== (p.sessions ?? []).length && { sessions: p.sessions ?? [] }), subjects: p.subjects ?? [], hiddenSubjects: p.hiddenSubjects ?? [], todos: p.todos ?? [], dm: p.dm ?? {}, groups: p.groups ?? {}, friends: friendList(p), notify: p.notify ?? {}, pushKey: pushOn ? PUSH_KEY : undefined } });
+    send(sockets.get(id), { t: 'state', house: { ...house, todos: house.todos.filter((t) => canSee(t, h, id)) }, me: { id: p.id, home: p.home, ...houseLists(p), coins: p.coins, discount: !!p.discount, notes: p.notes ?? [], inbox: p.inbox ?? [], inboxSeen: p.inboxSeen ?? 0, events: p.events ?? [], inventory: p.inventory, petAccs: p.petAccs ?? [], ...(sentSessions.get(id) !== (p.sessions ?? []).length && { sessions: p.sessions ?? [] }), subjects: p.subjects ?? [], hiddenSubjects: p.hiddenSubjects ?? [], todos: p.todos ?? [], dm: p.dm ?? {}, groups: p.groups ?? {}, friends: friendList(p), notify: p.notify ?? {}, pushKey: pushOn ? PUSH_KEY : undefined } });
     if (sockets.has(id)) sentSessions.set(id, (p.sessions ?? []).length);
   }
 }
@@ -355,7 +364,11 @@ function handle(p, m) {
       setTz(p, m.tz);
       p.focus = { minutes: m.minutes, endsAt: Date.now() + m.minutes * 60_000, tag: cleanText(m.tag, 24) || 'Study' };
       p.hiddenSubjects = (p.hiddenSubjects ?? []).filter((t) => t !== p.focus.tag); // using a subject again brings it back
-      for (const id of db.houses[p.house].members) if (id !== p.id && !sockets.has(id)) push(db.players[id], { title: '📚 Study time', body: `${p.name} started studying ${p.focus.tag}`, tag: `study-${p.id}` }, 'study');
+      for (const id of db.houses[p.house].members) {
+        if (id === p.id) continue;
+        inbox(db.players[id], 'study', p, `started studying ${p.focus.tag}`);
+        if (!sockets.has(id)) push(db.players[id], { title: '📚 Study time', body: `${p.name} started studying ${p.focus.tag}`, tag: `study-${p.id}` }, 'study');
+      }
       break;
     case 'focus_join': { // join a housemate's running session: same subject, and the timer ends when theirs does
       const o = db.houses[p.house].members.includes(m.id) ? db.players[m.id] : null;
@@ -473,13 +486,14 @@ function handle(p, m) {
       them.coins += GIFT_COINS;
       send(sockets.get(p.id), { t: 'reward', text: `🎁 Sent ${them.name} ${GIFT_COINS} coins.` });
       send(sockets.get(them.id), { t: 'reward', text: `🎁 ${p.name} sent you ${GIFT_COINS} coins!` });
+      inbox(them, 'gift', p, `sent you ${GIFT_COINS} coins`);
       break;
     }
     case 'feed': { // anyone in the house can fill a pet bowl; it feeds that room owner's pets (hearts float over them)
       const owner = db.houses[p.house].members.includes(m.owner) ? db.players[m.owner] : null;
       if (owner?.rooms[m.r]?.furniture[m.index]?.item !== 'foodBowl' || !owner.pets?.length) return;
       owner.fedAt = Date.now();
-      if (owner.id !== p.id) send(sockets.get(owner.id), { t: 'reward', text: `🐾 ${p.name} fed your pets.` });
+      if (owner.id !== p.id) { send(sockets.get(owner.id), { t: 'reward', text: `🐾 ${p.name} fed your pets.` }); inbox(owner, 'pet', p, 'fed your pets'); }
       break;
     }
     case 'note': { // leave a note on a housemate's desk; they see it now, or next time they log in
@@ -488,6 +502,7 @@ function handle(p, m) {
       if (!them || !text) return;
       them.notes = [...(them.notes ?? []), { from: p.name, text, at: Date.now() }].slice(-10);
       send(sockets.get(p.id), { t: 'reward', text: `📝 Left a note on ${them.name}'s desk.` });
+      inbox(them, 'note', p, `left a note on your desk: “${text}”`);
       break;
     }
     case 'cheer': { // a little 👏 over a housemate who's studying, at most every few seconds
@@ -504,6 +519,7 @@ function handle(p, m) {
       if (now - (lastInvite.get(key) ?? 0) < 30_000) return send(sockets.get(p.id), { t: 'info', text: `You just invited ${them.name}. Give them a moment!` });
       lastInvite.set(key, now);
       send(sockets.get(them.id), { t: 'invite', from: p.id, by: p.name, tag: p.focus.tag ?? 'Study' });
+      inbox(them, 'invite', p, `invited you to study ${p.focus.tag ?? 'Study'} together`);
       send(sockets.get(p.id), { t: 'info', text: `Invited ${them.name} to study with you. 📚` });
       return; // nothing saved
     }
@@ -512,6 +528,7 @@ function handle(p, m) {
       if (!owner?.pets?.[m.slot] || Date.now() - (lastCheer.get(p.id) ?? 0) < 1500) return;
       lastCheer.set(p.id, Date.now());
       for (const id of h.members) send(sockets.get(id), { t: 'pat', owner: owner.id, slot: m.slot, by: p.id, name: p.name });
+      if (owner.id !== p.id) inbox(owner, 'pet', p, `petted ${owner.pets[m.slot].name ?? `your ${owner.pets[m.slot].kind}`}`);
       return;
     }
     case 'fetch': { // threw the pet ball: the thrower's pets (or the room owner's) run for it
@@ -525,6 +542,7 @@ function handle(p, m) {
       if (!them || p.focus || them.focus || Date.now() - (lastCheer.get(p.id) ?? 0) < 3000) return;
       lastCheer.set(p.id, Date.now());
       for (const id of h.members) send(sockets.get(id), { t: 'highfive', from: p.id, to: them.id, by: p.name });
+      inbox(them, 'highfive', p, 'high-fived you');
       return;
     }
     case 'exam_add': { // an exam date to count down to; housemates see it on your desk calendar
@@ -553,6 +571,14 @@ function handle(p, m) {
       else p.events = (p.events ?? []).filter((e) => e.id !== m.id);
       break;
     }
+    case 'inbox_read': // opened the bell: everything up to now is seen (on every device)
+      p.inboxSeen = Date.now();
+      save();
+      return;
+    case 'inbox_clear':
+      p.inbox = [];
+      save();
+      return send(sockets.get(p.id), { t: 'inbox', inbox: [] });
     case 'notes_read':
       p.notes = [];
       break;
@@ -782,6 +808,7 @@ function handle(p, m) {
         const row = { a, b, status: f ? 'accepted' : 'pending', asked_by: f ? f.asked_by : p.id, at: Date.now() };
         friends.set(key, row);
         store.setFriend(row);
+        if (!f) inbox(q, 'friend', p, 'wants to be friends');
         if (!f && !sockets.has(q.id)) push(q, { title: 'Friend request', body: `${p.name} wants to be friends`, tag: `friend-${p.id}` }, 'dm');
         refresh(p.id, q.id);
       }).catch((err) => console.error('friend request failed', err));
@@ -800,6 +827,7 @@ function handle(p, m) {
       const q = db.players[m.id];
       if (!q || !isFriend(p.id, q.id) || !q.house || q.house === p.house) return;
       visitAsks.add(`${q.id}|${p.id}`);
+      inbox(q, 'visit', p, 'wants to visit your house');
       if (!sockets.has(q.id)) push(q, { title: 'Visit request', body: `${p.name} wants to visit your house`, tag: `visit-${p.id}` }, 'dm');
       refresh(p.id, q.id);
       return;
@@ -1041,6 +1069,7 @@ setInterval(() => {
     for (const id of todoFor(t, h)) {
       if (t.ticks?.includes(id)) continue;
       const q = db.players[id];
+      inbox(q, 'remind', null, t.text);
       if (sockets.has(id)) { send(sockets.get(id), { t: 'remind', text: t.text, by: t.by }); continue; }
       // Away: a push notification now, and the reminder waits for them in the app next time they log in.
       q.missed = [...(q.missed ?? []), { text: t.text, by: t.by }].slice(-10);

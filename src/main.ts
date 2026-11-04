@@ -29,8 +29,9 @@ type Chat = { id: number; from: string; by: string; text: string; at: number; im
 type CalEvent = { id: number; date: string; time?: string; text: string; by?: string }; // date YYYY-MM-DD, time HH:MM
 type Focus = { minutes: number; endsAt: number; tag?: string; pausedAt?: number | null };
 type Session = { at: number; minutes: number; tag: string; early?: boolean };
+type Inbox = { kind: string; from?: string; by?: string; text: string; at: number; n?: number };
 type Friend = { id: string; name: string; look: Look; online: boolean; focus: boolean; status: 'friend' | 'incoming' | 'outgoing'; here?: boolean; visit?: boolean; asked?: boolean };
-type Me = { id: string; home?: string; visited?: { code: string; ownerName: string | null; online: number }[]; banned?: { id: string; name: string }[]; coins: number; discount?: boolean; notes?: { from: string; text: string; at: number }[]; events?: CalEvent[]; pushKey?: string; notify?: Record<string, boolean>; groups?: Record<string, { name: string; members: string[]; msgs: Chat[] }>; friends?: Friend[]; inventory: Record<string, number>; sessions: Session[]; subjects: string[]; hiddenSubjects: string[]; todos: Todo[]; dm: Record<string, Chat[]>; petAccs?: string[] };
+type Me = { id: string; home?: string; visited?: { code: string; ownerName: string | null; online: number }[]; banned?: { id: string; name: string }[]; coins: number; discount?: boolean; notes?: { from: string; text: string; at: number }[]; inbox?: Inbox[]; inboxSeen?: number; events?: CalEvent[]; pushKey?: string; notify?: Record<string, boolean>; groups?: Record<string, { name: string; members: string[]; msgs: Chat[] }>; friends?: Friend[]; inventory: Record<string, number>; sessions: Session[]; subjects: string[]; hiddenSubjects: string[]; todos: Todo[]; dm: Record<string, Chat[]>; petAccs?: string[] };
 type Board = { scope: string; period: string; rows: { name: string; me: boolean; minutes: number }[] };
 type Avatar = { x: number; y: number; tx: number; ty: number; up: boolean; dist: number; use?: string };
 type ItemKey = keyof typeof ITEMS;
@@ -158,6 +159,7 @@ function onMessage(m: any) {
     }
     syncWatch(m.house.watch ?? null, myId, send);
     noteNewDms();
+    renderBell();
     slots = members.flatMap((mem) => mem.rooms.map((room, ri) => ({ m: mem, room, ri })));
     if (editRoom >= (myMember()?.rooms.length ?? 1)) editRoom = 0;
     grid = buildGrid(slots.map((x) => x.room));
@@ -289,6 +291,9 @@ function onMessage(m: any) {
     }
     if (m.text) toast(esc(m.text), 'reward');
     else toast(`Session complete! +${m.coins} ${coin()}${m.buddies ? ` (×${buddyMultiplier(m.buddies)} for studying together!)` : ''}${streakBonus(m.streak) ? ` 🔥 ${m.streak}-day streak +${streakBonus(m.streak) * 100}%` : ''}`, 'reward');
+  } else if (m.t === 'inbox') {
+    me.inbox = m.inbox;
+    renderBell();
   } else if (m.t === 'friend_matches') {
     $('#friendSuggest').innerHTML = m.names.map((n: string) => `<option value="${esc(n)}">`).join('');
   } else if (m.t === 'error') {
@@ -2762,6 +2767,64 @@ function signOut(tellServer: boolean) {
   navigator.serviceWorker?.getRegistration().then((r) => r?.pushManager.getSubscription()).then((s) => s?.unsubscribe())
     .catch(() => {}).finally(() => location.reload());
 }
+// ---------- the bell: what happened to me (studying, notes, pets, gifts, reminders...), with a quick action each ----------
+const bellBtn = $<HTMLButtonElement>('#bell'), bellMenu = $<HTMLElement>('#bellMenu');
+const BELL_ICONS: Record<string, string> = { study: '📚', invite: '📚', note: '📝', pet: '💕', gift: '🎁', highfive: '✋', remind: '⏰', friend: '👋', visit: '🏠' };
+let bellOpenSeen = 0; // what was already seen when the menu opened, so new ones stay highlighted while it's open
+// The one thing worth doing about an entry, if it still makes sense now.
+function bellAction(n: Inbox) {
+  const mate = members.find((o) => o.id === n.from && o.id !== myId), fr = me.friends?.find((f) => f.id === n.from);
+  if ((n.kind === 'study' || n.kind === 'invite') && mate?.focus && !mate.focus.pausedAt && !myMember()?.focus) return `<button class="small" data-bell="join" data-v="${mate.id}">Join</button>`;
+  if (n.kind === 'remind') return '<button class="small" data-bell="todos">Open to-dos</button>';
+  if (n.kind === 'visit' && fr?.visit) return `<button class="small" data-bell="letin" data-v="${fr.id}">Let in</button><button class="small off" data-bell="nope" data-v="${fr.id}">No</button>`;
+  if (n.kind === 'friend' && fr?.status === 'incoming') return `<button class="small" data-bell="accept" data-v="${fr.id}">Accept</button>`;
+  if (!mate) return '';
+  if (n.kind === 'gift') return `<button class="small" data-bell="gift" data-v="${mate.id}">🎁 Gift back</button>`;
+  if (n.kind === 'note') return `<button class="small" data-bell="note" data-v="${mate.id}">Reply</button>`;
+  return `<button class="small" data-bell="dm" data-v="${mate.id}">Message</button>`;
+}
+function renderBell() {
+  const list = me.inbox ?? [], seen = me.inboxSeen ?? 0, count = list.filter((n) => n.at > seen).length;
+  $('#bellCount').textContent = count > 9 ? '9+' : String(count);
+  $('#bellCount').hidden = !count;
+  bellBtn.ariaLabel = bellBtn.title = count ? `Notifications (${count} new)` : 'Notifications';
+  if (bellMenu.hidden) return;
+  $('#bellList').innerHTML =`<div class="bell-head"><h3>Notifications</h3>${list.length ? '<button class="small off" data-bell="clear">Clear all</button>' : ''}</div>`
+    + (list.length ? `<ul>${list.slice().reverse().map((n) => `<li${n.at > bellOpenSeen ? ' class="new"' : ''}>
+      <span class="bell-icon" aria-hidden="true">${BELL_ICONS[n.kind] ?? '🔔'}</span>
+      <div class="bell-body"><p>${n.kind === 'remind' ? 'Reminder: ' : ''}${n.by ? `<b>${esc(n.by)}</b> ` : ''}${esc(n.text)}</p>
+      <small>${ago(n.at) === 'now' ? 'just now' : `${ago(n.at)} ago`}${(n.n ?? 1) > 1 ? ` · ×${n.n}` : ''}</small></div>
+      <span class="bell-act">${bellAction(n)}</span></li>`).join('')}</ul>`
+      : '<p class="hint">Nothing yet. Notes, gifts, pets and study sessions show up here.</p>');
+}
+function toggleBell(open = bellMenu.hidden) {
+  bellMenu.hidden = !open;
+  bellBtn.ariaExpanded = String(open);
+  if (!open) return;
+  bellOpenSeen = me.inboxSeen ?? 0;
+  if ((me.inbox ?? []).some((n) => n.at > bellOpenSeen)) { me.inboxSeen = Date.now(); send({ t: 'inbox_read' }); }
+  renderBell();
+}
+bellBtn.addEventListener('click', () => toggleBell());
+addEventListener('pointerdown', (e) => { if (!bellMenu.hidden && !(e.target as HTMLElement).closest('.bell-wrap')) toggleBell(false); });
+onKey((e) => { if (e.key === 'Escape' && !bellMenu.hidden) toggleBell(false); });
+bellMenu.addEventListener('click', (e) => {
+  const b = (e.target as HTMLElement).closest<HTMLButtonElement>('button[data-bell]');
+  if (!b) return;
+  const v = b.dataset.v!;
+  switch (b.dataset.bell) {
+    case 'clear': send({ t: 'inbox_clear' }); return;
+    case 'join': send({ t: 'focus_join', id: v, tz: new Date().getTimezoneOffset() }); break;
+    case 'todos': setPanel('todos'); break;
+    case 'letin': case 'nope': send({ t: 'visit_answer', id: v, yes: b.dataset.bell === 'letin' }); break;
+    case 'accept': send({ t: 'friend_accept', id: v }); break;
+    case 'gift': send({ t: 'gift', to: v }); break;
+    case 'note': writeNote(v); break;
+    case 'dm': openSide('chat', '#chatInput'); openThread(v); break;
+  }
+  toggleBell(false);
+});
+
 // A system notification while Auralis is in a background tab, if I want that kind (chosen in the sound menu).
 function sysNotify(kind: keyof typeof NOTIFY, title: string, body: string) {
   if (document.hidden && window.Notification?.permission === 'granted' && wantsNotify(me.notify, kind)) new Notification(title, { body, icon: '/icon-192.png', tag: kind });

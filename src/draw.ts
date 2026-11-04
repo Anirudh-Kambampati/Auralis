@@ -2948,6 +2948,23 @@ function drawTurned(c: Ctx, draw: Draw, item: string, x: number, y: number, t: n
 
 // ---------- UI icons ----------
 const UI_ICONS: Record<string, { rows: string[]; pal: Record<string, string> }> = {
+  bell: { // a gold bell with a cream shine and a little brown clapper
+    rows: [
+      '.....oo.....',
+      '....oyyo....',
+      '...oyyyyo...',
+      '..oywyyyyo..',
+      '..oywyyyyo..',
+      '..oyyyyyyo..',
+      '..oyyyyyyo..',
+      '.oyyyyyyyyo.',
+      'oyyyyyyyyyyo',
+      'oooooooooooo',
+      '....obbo....',
+      '.....oo.....',
+    ],
+    pal: { o: OUT, y: '#f2c14e', w: '#fff4e6', b: '#c58b5a' },
+  },
   pip: { // picture in picture: a lavender window with a little pink one popping out of its corner, a heart inside
     rows: [
       '............',
