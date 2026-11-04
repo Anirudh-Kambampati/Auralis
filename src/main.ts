@@ -320,7 +320,7 @@ let petToys: { x: number; y: number; act: string }[][] = []; // per room: cat to
 // Pet reactions, keyed by owner id or `${owner}:${slot}`: all from messages and state changes every client sees.
 const petGreet = new Map<string, number>(), petDone = new Map<string, number>(), patAt = new Map<string, number>();
 const fetches = new Map<string, { x: number; y: number; by: string; at: number }>();
-const petFx = new Map<string, { x: number; y: number }>(); // where a pet is drawn while it's off its usual wander
+const petFx = new Map<string, { x: number; y: number; left?: boolean }>(); // where a pet is drawn (and faces) while off its usual wander
 const trails = new Map<string, { pts: { x: number; y: number }[]; movedAt: number }>(); // per person: recent path, newest last
 // The point `dist` tiles back along a trail from its newest end (or its oldest point, if the trail is shorter).
 function trailPoint(pts: { x: number; y: number }[], dist: number) {
@@ -950,7 +950,8 @@ function measureChrome(dpr: number) {
   const sheet = !wide ? (!panel.hidden ? panel : ui.body.classList.contains('side-open') ? sideEl : null) : null;
   const below = !deckEl.hidden ? deckEl.offsetHeight + (wide ? 24 : 0)
     : sheet ? sheet.offsetHeight + dockEl.offsetHeight + 40 : dockEl.offsetHeight + 24;
-  return { below, right: wide && !panel.hidden ? (panel.offsetWidth + 20) * dpr : 0 };
+  const column = !panel.hidden ? panel : ui.body.classList.contains('side-open') ? sideEl : null; // wide screens: a column on the right
+  return { below, right: wide && column ? (column.offsetWidth + 20) * dpr : 0 };
 }
 
 function render(t: number, dt: number) {
@@ -1083,6 +1084,26 @@ function render(t: number, dt: number) {
     else if (grid.at(o.x, o.y - 1) === WALL && grid.at(o.x + 1, o.y - 1) === WALL) drawPainting(ctx, o.x * T + 6, wy + 8);
   });
 
+  // Whose room is whose: a soft name on the floor in the middle of each room (under rugs and furniture),
+  // once the house has more than one person in it.
+  if (members.length > 1) {
+    ctx.save();
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.font = "700 11px 'Fredoka', system-ui, sans-serif";
+    ctx.lineJoin = 'round';
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = 'rgba(43,37,48,0.25)';
+    ctx.fillStyle = 'rgba(255,250,243,0.7)';
+    slots.forEach(({ m, ri }, i) => {
+      const o = grid.origins[i], s = grid.sizes[i];
+      if (!o || !s || !onScreen(o.x, o.y, s.w, s.h)) return;
+      const text = `${m.name}'s room${ri ? ` ${ri + 1}` : ''}`, cx = (o.x + s.w / 2) * T, cy = (o.y + (s.h + WALL_H) / 2) * T;
+      ctx.strokeText(text, cx, cy);
+      ctx.fillText(text, cx, cy);
+    });
+    ctx.restore();
+  }
   // Rugs under everything, then furniture, pets and avatars sorted by their bottom edge.
   const petLabels: { x: number; y: number; name: string }[] = [];
   const sprites: { y: number; draw: () => void }[] = [];
@@ -1173,12 +1194,14 @@ function render(t: number, dt: number) {
     const key = `${m.id}:${slot}`, fx = petFx.get(key);
     let { x: px, y: py, moving, left, act: pact } = pos;
     if (goal || fx) { // ease toward the goal (or back onto the wander) instead of jumping
-      const cur = fx ?? { x: px, y: py }, tx = goal?.x ?? px, ty = goal?.y ?? py;
+      const cur = fx ?? { x: px, y: py, left }, tx = goal?.x ?? px, ty = goal?.y ?? py;
       const dx = tx - cur.x, dy = ty - cur.y, d = Math.hypot(dx, dy), step = d ? Math.min(d, dt * 5) / d : 0;
       cur.x += dx * step; cur.y += dy * step;
       if (!goal && d < 0.05) petFx.delete(key); else petFx.set(key, cur);
       px = cur.x; py = cur.y; moving = d > 0.05; pact = moving ? undefined : goal ? act : pact;
-      if (moving) left = dx < 0;
+      // Face the way it last really walked: tiny steps toward a target that keeps moving mustn't flip it back and forth.
+      if (Math.abs(dx) > 0.02) cur.left = dx < 0;
+      left = cur.left ?? left;
     }
     if (run) { moving = true; if (!goal) left = Math.floor(now / 150) % 2 === 0; } // spin: flip side to side
     petHits.push({ m, slot, x: px, y: py });
@@ -2147,7 +2170,7 @@ ui.querySelectorAll<HTMLButtonElement>('#dock button').forEach((b) =>
 // "Everyone" to-dos show my own tick, and are crossed off only once the whole house has ticked them.
 const fmtDue = (at: number) => new Date(at).toLocaleString([], { weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' });
 function todoHTML(list: Todo[]) {
-  if (!list.length) return '<li class="empty">Nothing yet. Tap <b>＋ New to-do</b> to add one.</li>';
+  if (!list.length) return '<li class="empty">Nothing to do yet ✨</li>';
   return list.map((t) => {
     const shared = !t.mine && !t.all && !t.to; // older house to-dos: one tick for everyone
     const who = t.all ? members : members.filter((m) => t.to?.includes(m.id));
@@ -2314,13 +2337,31 @@ $('#todoList').addEventListener('click', (e) => {
 const todoModal = $<HTMLDialogElement>('#todoModal');
 function openTodoModal() {
   $<HTMLFormElement>('#todoNew').reset();
-  $('#todoWho').innerHTML = members.map((m) => `<label class="who-chip"><input type="checkbox" value="${m.id}"${m.id === myId ? ' checked' : ''}><span>${esc(m.name)}${m.id === myId ? ' (you)' : ''}</span></label>`).join('');
-  $('#todoWho').classList.remove('off');
+  const people = [...members].sort((a, b) => Number(b.id === myId) - Number(a.id === myId)); // me first
+  $('#todoWho').innerHTML = '<label class="who-chip all"><input type="checkbox" id="todoEveryone"><span>👥 Everyone</span></label>'
+    + people.map((m) => `<label class="who-chip person"><input type="checkbox" value="${m.id}"${m.id === myId ? ' checked' : ''}><span>${m.id === myId ? 'You' : esc(m.name)}</span></label>`).join('');
+  $('#todoWho').classList.remove('everyone');
+  syncBell();
   todoModal.showModal();
 }
+// Whether reminders can reach me, and a button to allow them (browsers only ask from a tap like this, and only once).
+function syncBell() {
+  const perm = window.Notification?.permission;
+  $('#todoBell').innerHTML = perm === 'granted' ? '🔔 Reminders are on.'
+    : perm === 'default' ? '<button type="button" class="small" id="todoAllow">🔔 Allow reminders</button> so they reach you outside the app too.'
+    : perm === 'denied' ? '🔕 Notifications are blocked for this site. Allow them from the lock icon next to the address, then reopen this.'
+    : "🔕 This browser can't show notifications, so reminders only pop up while Auralis is open.";
+}
+$('#todoBell').addEventListener('click', (e) => {
+  if (!(e.target as HTMLElement).closest('#todoAllow')) return;
+  Notification.requestPermission().then(() => { subscribePush(); syncBell(); });
+});
 $('#todoNewBtn').addEventListener('click', openTodoModal);
 $('#todoCancel').addEventListener('click', () => todoModal.close());
-$('#todoEveryone').addEventListener('change', (e) => $('#todoWho').classList.toggle('off', (e.target as HTMLInputElement).checked));
+$('#todoWho').addEventListener('change', (e) => { // "Everyone" greys out the individual picks
+  const box = e.target as HTMLInputElement;
+  if (box.id === 'todoEveryone') $('#todoWho').classList.toggle('everyone', box.checked);
+});
 $('#todoNew').addEventListener('submit', (e) => {
   e.preventDefault();
   const text = $<HTMLTextAreaElement>('#todoText').value.trim(), date = $<HTMLInputElement>('#todoDate').value, time = $<HTMLInputElement>('#todoTime').value;
@@ -2329,7 +2370,7 @@ $('#todoNew').addEventListener('submit', (e) => {
   const at = date || time ? new Date(`${date || new Date().toLocaleDateString('en-CA')}T${time || '09:00'}`).getTime() : undefined;
   if (at && at < Date.now()) return toast('That time has already passed. Pick a later one.', 'error');
   const all = $<HTMLInputElement>('#todoEveryone').checked;
-  const to = Array.from($('#todoWho').querySelectorAll<HTMLInputElement>('input:checked')).map((i) => i.value);
+  const to = Array.from($('#todoWho').querySelectorAll<HTMLInputElement>('.person input:checked')).map((i) => i.value);
   send({ t: 'todo_add', text, at, all, to });
   if (at && window.Notification?.permission === 'default') Notification.requestPermission().then(subscribePush); // so reminders reach me anywhere
   todoModal.close();

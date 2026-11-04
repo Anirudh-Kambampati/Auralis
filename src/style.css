@@ -550,7 +550,10 @@ li.done .check { background: #6fcf8a; color: #fff; }
 
 @media (min-width: 900px) {
   #dock, body.panel-open #dock { left: calc((100% - (var(--right, 0px))) / 2); }
-  body.panel-open { --right: 420px; }
+  body.panel-open, body.side-open { --right: 420px; }
+  /* To-dos and chat open in the same right-hand column as Decorate and the shop. */
+  #side { left: auto; right: 20px; top: 84px; bottom: 24px; transform: none; width: 400px; max-height: none; animation: slideIn 0.18s ease-out; }
+  #side .side-card { flex: 1 1 auto; min-height: 0; }
   #deck { left: calc((100% - (var(--right, 0px))) / 2); }
 }
 
@@ -902,23 +905,31 @@ body.signed-out #deck, body.signed-out #game, body.signed-out #zoom { display: n
 .todo-meta .due { font-size: 11px; font-weight: 700; color: var(--muted); align-self: center; }
 .todo-meta .due.late { color: var(--coral); }
 #todoList .check:disabled { opacity: 0.35; cursor: not-allowed; }
-.new-todo { margin: 0 10px 10px; }
+.new-todo { margin: 0 10px 10px; color: var(--ink); background: transparent; border: 2px dashed var(--ink); box-shadow: none; }
+.new-todo:hover { background: var(--soft); }
 
 /* The new to-do modal */
-#todoModal { width: min(380px, calc(100vw - 32px)); padding: 16px 18px; color: var(--ink); background: var(--paper); border: 3px solid var(--ink); border-radius: 16px; box-shadow: 0 6px 0 var(--ink); }
-#todoModal::backdrop { background: rgba(58, 38, 51, 0.35); }
-#todoModal h2 { margin: 0 0 10px; font-size: 18px; }
-#todoModal h3 { margin: 14px 0 6px; font-size: 13px; color: var(--muted); }
-#todoModal .hint { margin: 6px 0 0; font-size: 12px; }
-#todoModal textarea, #todoModal input[type='date'], #todoModal input[type='time'] { width: 100%; box-sizing: border-box; padding: 8px; font: inherit; color: #3a2633; background: #fff; border: 2px solid var(--ink); border-radius: 10px; }
-#todoModal .when { display: flex; gap: 8px; margin-top: 8px; }
-#todoModal .when label { flex: 1; display: flex; align-items: center; gap: 4px; }
-#todoModal .everyone { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; font-weight: 700; }
-#todoModal .end { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
+#todoModal { width: min(400px, calc(100vw - 32px)); padding: 18px 20px; color: var(--ink); background: var(--paper); border: 3px solid var(--ink); border-radius: 18px; box-shadow: 0 6px 0 var(--ink); }
+#todoModal::backdrop { background: rgba(58, 38, 51, 0.4); }
+#todoModal h2 { display: flex; align-items: center; gap: 8px; margin: 0 0 12px; font-size: 20px; }
+#todoModal h2 img { width: 24px; height: 24px; image-rendering: pixelated; }
+#todoModal h3 { margin: 16px 0 8px; font-size: 14px; }
+#todoModal h3 small { font-weight: 500; color: var(--muted); }
+#todoModal textarea { width: 100%; box-sizing: border-box; padding: 10px 12px; font: inherit; color: #3a2633; background: #fff; border: 2px solid var(--ink); border-radius: 12px; resize: none; }
+#todoModal .when { display: flex; gap: 8px; }
+#todoModal .field { flex: 1; flex-direction: row; align-items: center; gap: 6px; min-width: 0; padding: 4px 8px; background: #fff; border: 2px solid var(--ink); border-radius: 12px; }
+#todoModal .field img { width: 20px; height: 20px; flex: none; image-rendering: pixelated; }
+#todoModal .field input { flex: 1; min-width: 0; padding: 4px 0; font: inherit; color: #3a2633; background: none; border: none; outline: none; }
+#todoModal .field:focus-within { outline: 3px solid var(--point); outline-offset: 1px; }
+#todoModal .end { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
 .who { display: flex; flex-wrap: wrap; gap: 6px; }
-.who.off { opacity: 0.4; pointer-events: none; }
+.who-chip { display: inline-flex; }
 .who-chip input { position: absolute; opacity: 0; width: 1px; height: 1px; }
-.who-chip span { display: inline-block; padding: 4px 12px; font-size: 13px; font-weight: 700; color: #3a2633; background: #fff; border: 2px solid var(--ink); border-radius: 999px; cursor: pointer; }
-.who-chip input:checked + span { background: #f4b6d0; }
-.who-chip input:checked + span::before { content: '♥ '; }
+.who-chip span { padding: 5px 12px; font-size: 13px; font-weight: 700; color: #3a2633; background: #fff; border: 2px solid var(--ink); border-radius: 999px; box-shadow: 0 2px 0 var(--ink); cursor: pointer; }
+.who-chip.person input:checked + span { background: #f4b6d0; }
+.who-chip.person input:checked + span::before { content: '♥ '; }
+.who-chip.all input:checked + span { background: var(--gold); }
 .who-chip input:focus-visible + span { outline: 3px solid var(--point); outline-offset: 2px; }
+.who.everyone .who-chip.person { opacity: 0.35; pointer-events: none; }
+#todoModal .bell { margin: 8px 0 0; font-size: 12px; font-weight: 700; color: var(--muted); }
+#todoModal .bell button { margin-right: 4px; }

@@ -140,17 +140,16 @@
     </header>
     <dialog id="todoModal" aria-labelledby="todoModalTitle">
       <form id="todoNew">
-        <h2 id="todoModalTitle">📝 New to-do</h2>
+        <h2 id="todoModalTitle"><img data-icon="todo" alt="" /> New to-do</h2>
         <textarea id="todoText" rows="2" maxlength="120" placeholder="What needs doing?" aria-label="To-do" required></textarea>
+        <h3>When <small>(optional, for a reminder)</small></h3>
         <div class="when">
-          <label>📅 <input type="date" id="todoDate" aria-label="Date" /></label>
-          <label>⏰ <input type="time" id="todoTime" aria-label="Time" /></label>
+          <label class="field"><img data-icon="calendar" alt="" /><input type="date" id="todoDate" aria-label="Date" /></label>
+          <label class="field"><img data-icon="clock" alt="" /><input type="time" id="todoTime" aria-label="Time" /></label>
         </div>
-        <p class="hint">Add a time and everyone it's for gets a reminder then.</p>
-        <h3>Who's it for?</h3>
-        <label class="everyone"><input type="checkbox" id="todoEveryone" /> 👥 Everyone in the house</label>
-        <div id="todoWho" class="who" role="group" aria-label="Assign to"></div>
-        <p class="hint">Only the people picked (and you) can see it.</p>
+        <p id="todoBell" class="bell"></p>
+        <h3>Who's it for? <small>(only they can see it)</small></h3>
+        <div id="todoWho" class="who" role="group" aria-label="Who it's for"></div>
         <div class="end"><button type="button" class="off" id="todoCancel">Cancel</button><button>Add to-do</button></div>
       </form>
     </dialog>
