@@ -6,7 +6,7 @@ Auralis is one Node.js server plus a browser client. The server owns the truth; 
  Browser (phone or desktop)                     Node.js server (server/index.js)              Neon
  ┌───────────────────────────┐   HTTPS /api   ┌──────────────────────────────┐   pg pool   ┌──────────────────┐
  │ index.html + src/*.ts      │ ─────────────▶ │ accounts: signup/login/logout │ ──────────▶ │ Postgres          │
- │  landing page + login      │                │ snapshots: upload/list (PNG)  │             │  players, houses, │
+ │  landing page + login      │                │ snapshots + chat files        │             │  players, houses, │
  │  canvas renderer (draw.ts) │   WebSocket    │ game: rooms, focus, shop,     │             │  accounts, auth   │
  │  game loop + UI (main.ts)  │ ◀────────────▶ │  pets, to-dos, chat           │  Files SDK  ├──────────────────┤
  │  pets.ts, shared/*.js      │      /ws       │ in-memory world (db object)   │ ──────────▶ │ Object Storage    │

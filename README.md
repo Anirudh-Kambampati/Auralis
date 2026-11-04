@@ -30,7 +30,7 @@ A cozy pixel-art study game you play with friends. Start a focus timer and your 
 - **Pets**: 20 pets, from 300 to 2,000 coins, each with several coat colours, plus 20 accessories (bows, hats, crowns, capes…). Pets wander, climb cat towers, nap in beds, chase balls and eat from bowls.
 - **Day and night**: windows follow your local time, the house darkens in the evening, and lamps, candles and fireplaces glow.
 - **Stats**: day, week, month and year charts, a streak, a breakdown by subject, and leaderboards for your house or everyone.
-- **Social**: shared house to-dos, private to-dos, house chat with speech bubbles, private messages, and room snapshots saved to cloud storage with share links.
+- **Social**: shared house to-dos, private to-dos, house chat with speech bubbles, private messages and group chats, pictures and documents (PDF, Office, CSV, text) in any chat, friends you find by username (suggestions appear as you type), and room snapshots saved to cloud storage with share links.
 - **Accounts**: sign up and log in, and your progress follows you to any device.
 - **Phone friendly**: bottom-sheet panels, pinch to zoom, a swipeable shop, and it can be installed with "Add to Home Screen". On desktop, pixel cursors show what a click will do.
 
@@ -44,9 +44,9 @@ npm run build && npm start   # production: one server on :8787 serves the game, 
 ```
 
 **Storage**
-- With `DATABASE_URL` set, the server uses **Neon Postgres**. With `AWS_*` set, it uses **Neon Object Storage** for room snapshots.
+- With `DATABASE_URL` set, the server uses **Neon Postgres**. With `AWS_*` set, it uses **Neon Object Storage** for room snapshots and chat pictures and files.
 - `neon deploy` writes both into `.env.local`, which git ignores. See [.env.example](.env.example).
-- Without them, the game falls back to a local SQLite file (`auralis.db`) and snapshots are turned off.
+- Without them, the game falls back to a local SQLite file (`auralis.db`) and snapshots and chat files are turned off (the server logs `files: off` at startup).
 
 **Testing**
 - `node scripts/seed-dev-accounts.js` creates two local test accounts for trying multiplayer.

@@ -49,6 +49,8 @@ The code is on the `launch` branch.
 2. Set `ALLOWED_ORIGINS` to your Vercel address, exactly, with no trailing slash, e.g. `https://auralis-abc.vercel.app`. To allow more than one address (say a custom domain later), separate them with commas.
 3. Click **Save changes**. Render redeploys by itself.
 
+If sending a picture or document says **"Failed to fetch"**, the browser blocked the request: check that `ALLOWED_ORIGINS` matches the website's address exactly. If it says **"…file storage, which is not set up"**, the four `AWS_*` values are missing on Render.
+
 ## 4. Try it
 
 1. Open your Vercel address, sign up, and start a focus session.

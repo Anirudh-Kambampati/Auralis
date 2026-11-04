@@ -34,6 +34,8 @@ client                         server                                    house m
 | `todo_*`, `chat` | Text cleaned and length-capped; chat flood guard (one message per 0.6 s). |
 | `join`, `leave` | The house code exists. Moving out takes your room with you into a new house. |
 | `leaderboard` | Answered to the asker only, computed from saved sessions. |
+| `friend_search {q}` | At least 2 characters. Answered to the asker only with `friend_matches`: up to 8 usernames starting with `q`, never your own. |
+| `friend_request {name}` | A username, a housemate's name, or a house code (its owner); at most 20 requests waiting. |
 
 ## State sent to clients
 
@@ -48,6 +50,16 @@ client                         server                                    house m
 2. `POST /api/snapshots` with `Authorization: Bearer <token>` and the PNG body (2 MB max; the PNG signature is checked).
 3. The server uploads to bucket `assets` at `snapshots/<playerId>/<timestamp>.png`, keeps the newest 6 keys on the player (deleting older objects), and returns presigned GET URLs that expire after 1 hour.
 4. `GET /api/snapshots` returns fresh presigned URLs. Only object keys are stored; URLs are made on each request.
+
+## Chat pictures and files (Object Storage)
+
+1. A picture is shrunk to 1024 px and re-encoded as JPEG in the browser (which drops camera metadata). A document (PDF, Word, PowerPoint, Excel, CSV, text) goes up as it is.
+2. `POST /api/chatimg` with `Authorization: Bearer <token>` and the bytes. A document also sends its name in the `x-file-name` header. Limits: 1.5 MB per picture, 10 MB per document, 30 uploads an hour. The bytes must match the type (JPEG, PDF, zip or old Office header, or UTF-8 text).
+3. The server stores it at `chat/<playerId>/<time>-<random>.jpg` or `…/<name>` and returns the key. The client sends that key with the chat message, DM or group message.
+4. To show or open it, `GET /api/chatimg?key=…` returns a presigned URL that expires after 1 hour, but only if the key was sent in a conversation you can read.
+5. Uploads never sent with a message are deleted after an hour. Sent ones are kept as long as a message carries them.
+
+When the website and server are on different domains, the server's CORS reply must allow the `x-file-name` header, or the browser blocks every document upload ("Failed to fetch"). Pictures don't send it.
 
 ## Persistence
 

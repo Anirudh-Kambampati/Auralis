@@ -787,6 +787,14 @@ function handle(p, m) {
       }).catch((err) => console.error('friend request failed', err));
       return;
     }
+    // Suggestions while typing a friend's username: up to 8 that start with what's typed.
+    case 'friend_search': { // shortcut: scans every player per lookup, move to an indexed store query if players reach the tens of thousands
+      const q = cleanText(m.q, 40).toLowerCase();
+      if (q.length < 2) return;
+      const names = Object.values(db.players).filter((x) => x.id !== p.id && x.name?.toLowerCase().startsWith(q)).slice(0, 8).map((x) => x.name);
+      send(sockets.get(p.id), { t: 'friend_matches', names });
+      return;
+    }
     // Visiting a friend: ask, and they let you in (you join their house) or say no.
     case 'visit_ask': {
       const q = db.players[m.id];
@@ -1132,7 +1140,7 @@ const server = http.createServer((req, res) => {
   if (origin && ALLOWED.includes(origin)) {
     res.setHeader('access-control-allow-origin', origin);
     res.setHeader('vary', 'origin');
-    res.setHeader('access-control-allow-headers', 'content-type, authorization');
+    res.setHeader('access-control-allow-headers', 'content-type, authorization, x-file-name'); // x-file-name: document uploads
     res.setHeader('access-control-allow-methods', 'GET, POST, OPTIONS');
   }
   if (req.method === 'OPTIONS') return res.writeHead(originOk(origin) ? 204 : 403).end();

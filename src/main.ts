@@ -289,6 +289,8 @@ function onMessage(m: any) {
     }
     if (m.text) toast(esc(m.text), 'reward');
     else toast(`Session complete! +${m.coins} ${coin()}${m.buddies ? ` (×${buddyMultiplier(m.buddies)} for studying together!)` : ''}${streakBonus(m.streak) ? ` 🔥 ${m.streak}-day streak +${streakBonus(m.streak) * 100}%` : ''}`, 'reward');
+  } else if (m.t === 'friend_matches') {
+    $('#friendSuggest').innerHTML = m.names.map((n: string) => `<option value="${esc(n)}">`).join('');
   } else if (m.t === 'error') {
     toast(esc(m.text), 'error');
   } else if (m.t === 'info') { // news that isn't a refusal: a plain toast
@@ -2619,6 +2621,12 @@ $('#chatLeave').addEventListener('click', () => {
 // Add a friend by username.
 const friendModal = $<HTMLDialogElement>('#friendModal');
 $('#friendCancel').addEventListener('click', () => friendModal.close());
+// Usernames that start with what's typed show up as suggestions (asked for after a short pause in typing).
+let friendTyping = 0;
+$('#friendName').addEventListener('input', () => {
+  clearTimeout(friendTyping);
+  friendTyping = window.setTimeout(() => send({ t: 'friend_search', q: $<HTMLInputElement>('#friendName').value.trim() }), 200);
+});
 $('#friendNew').addEventListener('submit', (e) => {
   e.preventDefault();
   const name = $<HTMLInputElement>('#friendName').value.trim();
