@@ -1648,6 +1648,8 @@ const randomLook = (): Look => ({
 });
 
 const esc = (s: string) => s.replace(/[&<>"]/g, (ch) => `&#${ch.charCodeAt(0)};`);
+// Only http(s) links, so a message can't smuggle in a javascript: URL; trailing punctuation stays outside the link.
+const linkify = (s: string) => s.split(/(https?:\/\/\S*[^\s.,!?:;)'"])/).map((p, i) => i % 2 ? `<a href="${esc(p)}" target="_blank" rel="noopener noreferrer">${esc(p)}</a>` : esc(p)).join('');
 
 function festivalNote() {
   const on = activeEvents(), next = nextEvent();
@@ -2400,7 +2402,7 @@ function renderSide() {
     const atBottom = log.scrollHeight - log.scrollTop - log.clientHeight < 40, fromBottom = log.scrollHeight - log.scrollTop;
     const more = msgs.length >= 50 && !historyDone.has(threadKey(dmPeer)) ? '<p class="more">Scroll up for older messages</p>' : '';
     log.innerHTML = msgs.length
-      ? more + msgs.map((c) => !c.from ? `<p class="note">${esc(c.text)}</p>` : `<p class="${c.from === myId ? 'mine' : ''}"><b>${esc(c.by)}</b>${esc(c.text)}${c.img ? (docName(c.img) ? `<button type="button" class="chat-doc" data-key="${esc(c.img)}">📎 <span>${esc(docName(c.img)!)}</span></button>` : `<img class="chat-img" data-key="${esc(c.img)}" alt="Picture from ${esc(c.by)}">`) : ''}</p>`).join('')
+      ? more + msgs.map((c) => !c.from ? `<p class="note">${esc(c.text)}</p>` : `<p class="${c.from === myId ? 'mine' : ''}"><b>${esc(c.by)}</b>${linkify(c.text)}${c.img ? (docName(c.img) ? `<button type="button" class="chat-doc" data-key="${esc(c.img)}">📎 <span>${esc(docName(c.img)!)}</span></button>` : `<img class="chat-img" data-key="${esc(c.img)}" alt="Picture from ${esc(c.by)}">`) : ''}</p>`).join('')
       : dmPeer
         ? `<p class="empty">${group ? `Just the people in ${esc(peerName)}.` : `Just you and ${esc(peerName)} — nobody else can see this.`}</p>`
         : '<p class="empty">Say hi to your housemates 👋</p>';
@@ -2439,6 +2441,8 @@ $('#chatLog').addEventListener('scroll', () => {
   send({ t: 'history', k: g ? 'g' : dmPeer ? 'd' : 'h', id: g ? dmPeer!.slice(2) : dmPeer ?? undefined, before: msgs[0].id });
 });
 $('#chatLog').addEventListener('click', (e) => {
+  const link = (e.target as HTMLElement).closest<HTMLAnchorElement>('a[href]');
+  if (link && !confirm(`Open this external link?\n\n${link.href}\n\nOnly open links from people you trust.`)) return e.preventDefault();
   const doc = (e.target as HTMLElement).closest<HTMLButtonElement>('.chat-doc');
   if (doc) return openDoc(doc.dataset.key!);
   const img = (e.target as HTMLElement).closest<HTMLImageElement>('img.chat-img');
