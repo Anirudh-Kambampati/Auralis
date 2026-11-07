@@ -807,7 +807,10 @@ body.signed-out #deck, body.signed-out #game, body.signed-out #zoom { display: n
 .auth button[type='submit'] { padding: 12px; font-size: 18px; }
 .auth-error { margin: 0; padding: 8px 12px; background: #fde4df; border: 2px solid var(--coral); border-radius: 10px; font-weight: 600; }
 /* A notice rather than an error ("your session ended"): same shape, warm cream instead of coral. */
-.auth-note { margin: 0; padding: 8px 12px; background: #fff3d1; border: 2px solid var(--ink); border-radius: 10px; font-weight: 600; }
+.auth .forgot { margin: -4px 0 0; text-align: right; }
+.auth .forgot button { padding: 0; font: inherit; font-size: 14px; font-weight: 700; color: var(--blue); text-decoration: underline; background: none; border: none; box-shadow: none; cursor: var(--point); }
+.auth label[hidden], .auth .seg[hidden] { display: none; }
+.auth-note {margin: 0; padding: 8px 12px; background: #fff3d1; border: 2px solid var(--ink); border-radius: 10px; font-weight: 600; }
 
 .features { list-style: none; padding: 0; margin: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; }
 .features li {
@@ -990,5 +993,17 @@ body.signed-out #deck, body.signed-out #game, body.signed-out #zoom { display: n
 /* A document sent in chat: a tappable file chip */
 .chat-doc { display: flex; align-items: center; gap: 6px; max-width: 100%; margin-top: 4px; padding: 6px 10px; font: inherit; font-size: 13px; font-weight: 700; color: var(--ink); text-align: left; background: var(--paper, #fff); border: 2px solid var(--ink); border-radius: 10px; box-shadow: none; cursor: var(--point); }
 .chat-doc span { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+/* The attachment waiting above the chat box until Send, with a ✕ to drop it */
+#chatStaged { position: relative; flex-basis: 100%; display: flex; align-items: flex-start; }
+#chatStaged[hidden] { display: none; }
+#chatStaged img { max-width: 120px; max-height: 120px; border: 2px solid var(--ink); border-radius: 10px; }
+#chatStaged span { max-width: calc(100% - 24px); overflow: hidden; padding: 6px 10px; font-size: 13px; font-weight: 700; white-space: nowrap; text-overflow: ellipsis; background: var(--paper); border: 2px solid var(--ink); border-radius: 10px; }
+#chatStaged button { position: relative; left: -12px; top: -8px; width: 26px; height: 26px; padding: 0; font-size: 12px; line-height: 1; border-radius: 50%; }
+#chatStaged.busy { opacity: .5; }
+/* A sent picture or file, with a small download button in its top-right corner */
+.chat-att { position: relative; display: block; width: fit-content; max-width: 100%; }
+.chat-att .chat-doc { padding-right: 30px; }
+.chat-dl { position: absolute; top: 8px; right: 4px; width: 22px; height: 22px; padding: 0; font-size: 12px; line-height: 1; color: var(--ink); background: var(--paper); border: 1.5px solid var(--ink); border-radius: 50%; box-shadow: none; opacity: .75; }
+.chat-dl:hover, .chat-dl:focus-visible { opacity: 1; }
 .chat-sec { padding: 8px 8px 2px; font-size: 12px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); }
 .chat-row.req .chat-end button:disabled { opacity: .5; }

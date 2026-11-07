@@ -200,3 +200,22 @@ test('chat documents: safe names, keys and labels', async () => {
   assert.equal(docName('chat/p1/1-ab/a.xlsx'), 'a.xlsx');
   assert.equal(attachLabel('chat/p1/1-ab.jpg'), '📷 Photo');
 });
+
+test('sign-up checks say exactly what is wrong', async () => {
+  const { usernameProblem, emailProblem, passwordProblem } = await import('./game.js');
+  assert.equal(usernameProblem('study_buddy.2'), null);
+  assert.match(usernameProblem('me@mail.com'), /@/);
+  assert.match(usernameProblem('study buddy'), /spaces/);
+  assert.match(usernameProblem('hi!#'), /! #/);
+  assert.match(usernameProblem('ab'), /at least 3/);
+  assert.match(usernameProblem('a'.repeat(21)), /at most 20/);
+  assert.match(usernameProblem(''), /Pick/);
+  assert.equal(emailProblem('name@example.com'), null);
+  assert.match(emailProblem('name.example.com'), /needs an @/);
+  assert.match(emailProblem('a@b@c.com'), /only one @/);
+  assert.match(emailProblem('@example.com'), /before the @/);
+  assert.match(emailProblem('name@example'), /example\.com/);
+  assert.match(emailProblem('na me@example.com'), /spaces/);
+  assert.equal(passwordProblem('12345678'), null);
+  assert.match(passwordProblem('short'), /at least 8.*has 5/);
+});

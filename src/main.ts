@@ -2,7 +2,7 @@ import {
   SHELVES, buildGrid, walkable, canPlace, placeSwaps,roomSize, MAX_ROOMS, ROOM_COST, colorsFor, ITEMS, PETS, PET_ACCS, MAX_PETS, bondLevel, NOTIFY, wantsNotify, EXPAND_COST, ROOM_SIZES,
   WALLPAPERS, WALL_PATTERNS, FLOORS, FLOOR_STYLES, SKINS, HAIRS, SHIRTS, STYLES, FACES, OUTFITS, BODIES, ACCESSORIES, FOCUS_LENGTHS, isFocusLength,
   WALL_H, WALL, FLOOR, DOOR, BLOCKED, VOID, buddyMultiplier, focusEnd, streakDays, streakBonus, sellPrice, footprint, lying, THIRSTY_MS, isPlant, discounted, GIFT_COINS, activeEvents, nextEvent,
-  docName, attachLabel, DOC_TYPES,
+  docName, attachLabel, DOC_TYPES, usernameProblem, emailProblem, passwordProblem,
 } from '../shared/game.js';
 import {
   T, OVERHANG, SURFACE, drawSeated, drawActing, drawSeam, drawFloor, drawWall, drawWallFace, drawWallTop, drawDoor, drawWindow, drawPainting, drawFurniture, drawAvatar, drawDeskLamp, drawGlow, drawUsing, skyNow, weatherNow, NIGHT_TINT,
@@ -2315,10 +2315,12 @@ const friendsOnly = () => (me.friends ?? []).filter((f) => f.status === 'friend'
 const person = (id: string | null) => members.find((m) => m.id === id) ?? friendsOnly().find((f) => f.id === id);
 // The message to send in the open thread: the house, a group, or one person.
 const chatMsg = (x: { text: string; img?: string }) => (groupOf(dmPeer) ? { t: 'gmsg', g: dmPeer!.slice(2), ...x } : dmPeer ? { t: 'dm', to: dmPeer, ...x } : { t: 'chat', ...x });
+let staged: File | null = null, stagedUrl = '', sending = false; // the chat attachment waiting for Send (see stage())
 const syncUnread = () => { unread = houseUnread > 0 || Object.values(dmUnread).some(Boolean); tickTimers(); };
 // Is this thread (null = the house) on screen right now?
 const viewing = (peer: string | null) => chatOpen && dmPeer === peer && ui.body.dataset.side === 'chat' && !ui.hidden;
 function openThread(peer: string | null) {
+  stage(null); // an attachment waiting in one conversation must never go out in another
   dmPeer = peer;
   chatOpen = true;
   if (peer) dmUnread[peer] = 0; else houseUnread = 0;
@@ -2402,7 +2404,8 @@ function renderSide() {
     const atBottom = log.scrollHeight - log.scrollTop - log.clientHeight < 40, fromBottom = log.scrollHeight - log.scrollTop;
     const more = msgs.length >= 50 && !historyDone.has(threadKey(dmPeer)) ? '<p class="more">Scroll up for older messages</p>' : '';
     log.innerHTML = msgs.length
-      ? more + msgs.map((c) => !c.from ? `<p class="note">${esc(c.text)}</p>` : `<p class="${c.from === myId ? 'mine' : ''}"><b>${esc(c.by)}</b>${linkify(c.text)}${c.img ? (docName(c.img) ? `<button type="button" class="chat-doc" data-key="${esc(c.img)}">📎 <span>${esc(docName(c.img)!)}</span></button>` : `<img class="chat-img" data-key="${esc(c.img)}" alt="Picture from ${esc(c.by)}">`) : ''}</p>`).join('')
+      ? more + msgs.map((c) => !c.from ? `<p class="note">${esc(c.text)}</p>` : `<p class="${c.from === myId ? 'mine' : ''}"><b>${esc(c.by)}</b>${linkify(c.text)}${c.img ? `<span class="chat-att">${docName(c.img) ? `<button type="button" class="chat-doc" data-key="${esc(c.img)}">📎 <span>${esc(docName(c.img)!)}</span></button>` : `<img class="chat-img" data-key="${esc(c.img)}" alt="Picture from ${esc(c.by)}">`}`
+        + `<button type="button" class="chat-dl" data-dl="${esc(c.img)}" title="Download" aria-label="Download ${esc(docName(c.img) ?? 'picture')}">⬇</button></span>` : ''}</p>`).join('')
       : dmPeer
         ? `<p class="empty">${group ? `Just the people in ${esc(peerName)}.` : `Just you and ${esc(peerName)} — nobody else can see this.`}</p>`
         : '<p class="empty">Say hi to your housemates 👋</p>';
@@ -2443,26 +2446,56 @@ $('#chatLog').addEventListener('scroll', () => {
 $('#chatLog').addEventListener('click', (e) => {
   const link = (e.target as HTMLElement).closest<HTMLAnchorElement>('a[href]');
   if (link && !confirm(`Open this external link?\n\n${link.href}\n\nOnly open links from people you trust.`)) return e.preventDefault();
+  const dl = (e.target as HTMLElement).closest<HTMLButtonElement>('.chat-dl');
+  if (dl) return downloadAttachment(dl.dataset.dl!);
   const doc = (e.target as HTMLElement).closest<HTMLButtonElement>('.chat-doc');
   if (doc) return openDoc(doc.dataset.key!);
   const img = (e.target as HTMLElement).closest<HTMLImageElement>('img.chat-img');
   if (img?.src) open(img.src, '_blank', 'noopener');
 });
-// A picture is shrunk to 1024px and re-encoded as JPEG here: much smaller, and it drops camera metadata like location.
-// Whatever is typed in the box goes along as its caption.
+// A picked or pasted picture or file waits above the box (with a preview and a ✕) until Send, and whatever is typed
+// goes along as its caption. One attachment per message: picking another replaces it.
+const isPic = (f: File) => f.type.startsWith('image/');
+function stage(file: File | null) {
+  if (file && !isPic(file)) {
+    if (!((file.name.split('.').pop()?.toLowerCase() ?? '') in DOC_TYPES)) return toast('You can send pictures, PDFs, Word, PowerPoint, Excel, CSV and text files.', 'error');
+    if (file.size > 10_000_000) return toast('That file is too big (10 MB max).', 'error');
+  }
+  URL.revokeObjectURL(stagedUrl);
+  staged = file;
+  stagedUrl = file && isPic(file) ? URL.createObjectURL(file) : '';
+  const box = $('#chatStaged');
+  box.hidden = !file;
+  box.innerHTML = !file ? '' : `${stagedUrl ? `<img src="${stagedUrl}" alt="Picture to send">` : `<span>📎 ${esc(file.name)}</span>`}`
+    + '<button type="button" class="off small" id="chatUnstage" aria-label="Remove attachment" title="Remove">✕</button>';
+  if (file) $('#chatInput').focus();
+}
+$('#chatStaged').addEventListener('click', (e) => { if ((e.target as HTMLElement).closest('#chatUnstage')) stage(null); });
 $('#chatPic').addEventListener('click', () => $<HTMLInputElement>('#chatFile').click());
 $('#chatFile').addEventListener('change', () => {
   const picker = $<HTMLInputElement>('#chatFile'), file = picker.files?.[0];
   picker.value = '';
-  if (file) sendPicture(file);
+  if (file) stage(file);
 });
-// Pasting a picture into the chat box sends it too (text pastes as usual).
+// Pasting a picture into the chat box attaches it too (text pastes as usual).
 $('#chatInput').addEventListener('paste', (e) => {
-  const file = Array.from(e.clipboardData?.files ?? []).find((f) => f.type.startsWith('image/'));
+  const file = Array.from(e.clipboardData?.files ?? []).find(isPic);
   if (!file) return;
   e.preventDefault();
-  sendPicture(file);
+  stage(file);
 });
+// Saves a chat picture or file: the server signs a link that says "download as <name>", loaded in a hidden frame so
+// the game page never navigates away.
+async function downloadAttachment(key: string) {
+  const res = await fetch(`${apiBase}/api/chatimg?download=1&key=${encodeURIComponent(key)}`, { headers: { authorization: `Bearer ${token}` } }).catch(() => null);
+  const data = res?.ok ? await res.json() : null;
+  if (!data?.url) return toast('That file is no longer available.', 'error');
+  const frame = document.createElement('iframe');
+  frame.hidden = true;
+  frame.src = data.url;
+  document.body.append(frame);
+  setTimeout(() => frame.remove(), 60_000);
+}
 // Documents open from a fresh short-lived link (a tab is opened first so pop-up blockers allow it).
 async function openDoc(key: string) {
   const tab = open('', '_blank');
@@ -2472,28 +2505,12 @@ async function openDoc(key: string) {
   tab?.close();
   toast(data?.url ? 'Allow pop-ups to open files.' : 'That file is no longer available.', 'error');
 }
-// PDFs, Office files, CSV and text go up as they are, with their name.
-async function sendDoc(file: File) {
-  if (!token) return;
-  try {
-    const ext = file.name.split('.').pop()?.toLowerCase() ?? '';
-    if (!(ext in DOC_TYPES)) throw new Error('You can send pictures, PDFs, Word, PowerPoint, Excel, CSV and text files.');
-    if (file.size > 10_000_000) throw new Error('That file is too big (10 MB max).');
-    toast(`Sending <b>${esc(file.name)}</b>…`);
-    const res = await fetch(`${apiBase}/api/chatimg`, { method: 'POST', headers: { authorization: `Bearer ${token}`, 'x-file-name': encodeURIComponent(file.name) }, body: file });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(data.error ?? "Couldn't send that file.");
-    const box = $<HTMLTextAreaElement>('#chatInput');
-    send(chatMsg({ text: box.value, img: data.key }));
-    box.value = '';
-  } catch (err) {
-    toast(esc((err as Error).message), 'error');
-  }
-}
-async function sendPicture(file: File) {
-  if (!token) return;
-  if (!file.type.startsWith('image/')) return sendDoc(file);
-  try {
+// Uploads an attachment and returns its key. A picture is shrunk to 1024px and re-encoded as JPEG here: much smaller,
+// and it drops camera metadata like location. PDFs, Office files, CSV and text go up as they are, with their name.
+async function upload(file: File): Promise<string> {
+  const headers: Record<string, string> = { authorization: `Bearer ${token}` };
+  let body: Blob = file;
+  if (isPic(file)) {
     const bmp = await createImageBitmap(file).catch(() => { throw new Error("That file isn't a picture we can read."); });
     const k = Math.min(1, 1024 / Math.max(bmp.width, bmp.height));
     const cv = document.createElement('canvas');
@@ -2501,15 +2518,12 @@ async function sendPicture(file: File) {
     cv.getContext('2d')!.drawImage(bmp, 0, 0, cv.width, cv.height);
     const blob = await new Promise<Blob | null>((r) => cv.toBlob(r, 'image/jpeg', 0.85));
     if (!blob) throw new Error("Couldn't prepare that picture.");
-    const res = await fetch(`${apiBase}/api/chatimg`, { method: 'POST', headers: { authorization: `Bearer ${token}` }, body: blob });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(data.error ?? "Couldn't send that picture.");
-    const box = $<HTMLTextAreaElement>('#chatInput');
-    send(chatMsg({ text: box.value, img: data.key }));
-    box.value = '';
-  } catch (err) {
-    toast(esc((err as Error).message), 'error');
-  }
+    body = blob;
+  } else headers['x-file-name'] = encodeURIComponent(file.name);
+  const res = await fetch(`${apiBase}/api/chatimg`, { method: 'POST', headers, body });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error ?? `Couldn't send that ${isPic(file) ? 'picture' : 'file'}.`);
+  return data.key;
 }
 
 // To-dos: one list of what I can see (assigned to me, made by me, or for everyone) plus my older private ones.
@@ -2588,9 +2602,29 @@ $('#chatForm').addEventListener('submit', (e) => {
     else { send({ t: 'watch', url }); input.value = ''; }
     return;
   }
+  if (staged) return sendStaged(input);
   if (input.value.trim()) send(chatMsg({ text: input.value }));
   input.value = '';
 });
+// The message goes to the thread that was open when Send was pressed, even if the upload takes a while.
+// If the upload fails, the attachment and caption stay in the box to try again.
+async function sendStaged(input: HTMLTextAreaElement) {
+  if (sending || !token || !staged) return;
+  sending = true;
+  const file = staged, msg = chatMsg({ text: input.value });
+  $('#chatStaged').classList.add('busy');
+  if (!isPic(file)) toast(`Sending <b>${esc(file.name)}</b>…`);
+  try {
+    const img = await upload(file);
+    send({ ...msg, img });
+    if (staged === file) { stage(null); input.value = ''; input.dispatchEvent(new Event('input')); }
+  } catch (err) {
+    toast(esc((err as Error).message), 'error');
+  } finally {
+    sending = false;
+    $('#chatStaged').classList.remove('busy');
+  }
+}
 // The to-do and chat boxes grow with what's typed (CSS caps them at a few lines). Enter still sends: messages are one line.
 for (const box of [$<HTMLTextAreaElement>('#chatInput')]) {
   const fit = () => { box.style.height = 'auto'; box.style.height = `${box.scrollHeight + 6}px`; }; // + its borders
@@ -2746,7 +2780,8 @@ async function saveSnapshot() {
 }
 
 // ---------- landing page + accounts ----------
-let authMode: 'signup' | 'login' = 'signup';
+type AuthMode = 'signup' | 'login' | 'forgot' | 'reset';
+let authMode: AuthMode = 'signup';
 let pendingLook: Look | null = null; // buddy picked on the landing page, applied once the game state arrives
 // The landing and login page can be zoomed like any web page (for reading); the game itself can't, so pinches
 // zoom the room instead of the whole page.
@@ -2866,30 +2901,47 @@ async function subscribePush() {
   } catch { pushAsked = false; }
 }
 
-ui.querySelectorAll<HTMLButtonElement>('#authForm [data-mode]').forEach((b) =>
-  b.addEventListener('click', () => {
-    authMode = b.dataset.mode as 'signup' | 'login';
-    ui.querySelectorAll('#authForm [data-mode]').forEach((x) => x.className = x === b ? 'on' : 'off');
-    $('#authSubmit').textContent = authMode === 'signup' ? 'Create my room' : 'Log in';
-    $<HTMLInputElement>('#authPass').autocomplete = authMode === 'signup' ? 'new-password' : 'current-password';
-    $('#authTitle').textContent = authMode === 'signup' ? 'Move into the house 🏠' : 'Welcome back! 👋';
-    // Sign-up asks for a username and an email; log-in takes either one in the first box.
-    $('#authEmailLabel').hidden = authMode !== 'signup';
-    $<HTMLInputElement>('#authEmail').required = authMode === 'signup';
-    $('#authConfirmLabel').hidden = authMode !== 'signup';
-    $<HTMLInputElement>('#authConfirm').required = authMode === 'signup';
-    $('#authUserText').textContent = authMode === 'signup' ? 'Username' : 'Username or email';
-    $('#authHint').className = 'hint'; // back to plain helper text if the sign-in notice was showing
-    $('#authHint').textContent = authMode === 'signup' ? 'Already studying with us? Switch to Log in.' : 'New here? Switch to Sign up.';
-    $('#authError').hidden = true;
-  }));
+// The landing form has four jobs. Sign-up asks for a username and an email; log-in takes either one in the first box;
+// "forgot" asks only for that, to email a reset link; "reset" (opened from that link) asks only for the new password.
+const AUTH_MODES = {
+  signup: { title: 'Move into the house 🏠', submit: 'Create my room', user: 'Username', pass: 'Password', fields: ['User', 'Email', 'Pass', 'Confirm'], hint: 'Already studying with us? Switch to Log in.' },
+  login: { title: 'Welcome back! 👋', submit: 'Log in', user: 'Username or email', pass: 'Password', fields: ['User', 'Pass', 'Forgot'], hint: 'New here? Switch to Sign up.' },
+  forgot: { title: 'Forgot your password? 🔑', submit: 'Email me a link', user: 'Username or email', pass: '', fields: ['User'], hint: "We'll email the address on your account a link to pick a new password." },
+  reset: { title: 'Pick a new password 🔑', submit: 'Save new password', user: '', pass: 'New password', fields: ['Pass', 'Confirm'], hint: "Then you're straight back in." },
+};
+function setAuthMode(mode: AuthMode) {
+  authMode = mode;
+  const m = AUTH_MODES[mode];
+  ui.querySelectorAll<HTMLButtonElement>('#authForm [data-mode]').forEach((x) => x.className = x.dataset.mode === (mode === 'forgot' ? 'login' : mode) ? 'on' : 'off');
+  $('#authForm .seg').hidden = mode === 'reset';
+  $('#authSubmit').textContent = m.submit;
+  $('#authTitle').textContent = m.title;
+  $('#authUserText').textContent = m.user;
+  $('#authPassText').textContent = m.pass;
+  $<HTMLInputElement>('#authPass').autocomplete = mode === 'login' ? 'current-password' : 'new-password';
+  for (const f of ['User', 'Email', 'Pass', 'Confirm', 'Forgot']) $(`#auth${f}Label`).hidden = !m.fields.includes(f);
+  $('#authHint').className = 'hint'; // back to plain helper text if a notice was showing
+  $('#authHint').textContent = m.hint;
+  $('#authError').hidden = true;
+}
+ui.querySelectorAll<HTMLButtonElement>('#authForm [data-mode]').forEach((b) => b.addEventListener('click', () => setAuthMode(b.dataset.mode as AuthMode)));
+$('#authForgot').addEventListener('click', () => setAuthMode('forgot'));
+// Opened from a reset email: the link's token picks the new password. It's dropped from the address bar right away.
+const resetToken = new URLSearchParams(location.search).get('reset');
+if (resetToken) history.replaceState(null, '', location.pathname);
 
 $('#authForm').addEventListener('submit', async (e) => {
   e.preventDefault();
   const err = $('#authError');
   const btn = $<HTMLButtonElement>('#authSubmit');
-  if (authMode === 'signup' && $<HTMLInputElement>('#authPass').value !== $<HTMLInputElement>('#authConfirm').value) {
-    err.textContent = "Passwords don't match.";
+  // Say exactly what's wrong before asking the server (which checks the same things again).
+  const user = $<HTMLInputElement>('#authUser').value.trim(), pass = $<HTMLInputElement>('#authPass').value;
+  const mismatch = pass !== $<HTMLInputElement>('#authConfirm').value ? "The two passwords don't match." : null;
+  const problem = authMode === 'signup' ? usernameProblem(user) ?? emailProblem($<HTMLInputElement>('#authEmail').value) ?? passwordProblem(pass) ?? mismatch
+    : authMode === 'reset' ? passwordProblem(pass) ?? mismatch
+    : !user ? 'Enter your username or email.' : authMode === 'login' && !pass ? 'Enter your password.' : null;
+  if (problem) {
+    err.textContent = problem;
     err.hidden = false;
     return;
   }
@@ -2904,10 +2956,17 @@ $('#authForm').addEventListener('submit', async (e) => {
         password: $<HTMLInputElement>('#authPass').value,
         email: authMode === 'signup' ? $<HTMLInputElement>('#authEmail').value : undefined,
         legacyId: authMode === 'signup' ? legacyId ?? undefined : undefined,
+        token: authMode === 'reset' ? resetToken : undefined,
       }),
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) { err.textContent = data.error ?? 'Something went wrong. Try again.'; err.hidden = false; return; }
+    if (authMode === 'forgot') { // the server says the same whether or not the account exists
+      err.hidden = true;
+      $('#authHint').className = 'auth-note';
+      $('#authHint').textContent = 'If that account has an email, a reset link is on its way. It works for an hour. Check your spam folder too.';
+      return;
+    }
     token = data.token;
     localStorage.setItem('auralis.token', data.token);
     if (authMode === 'signup') { localStorage.removeItem('auralis.id'); pendingLook = buddyLook; }
@@ -3063,7 +3122,8 @@ $('#shuffleBuddy').addEventListener('click', () => {
 });
 drawBuddy();
 
-if (token) connect();
+if (resetToken) { showLanding(true); setAuthMode('reset'); }
+else if (token) connect();
 else showLanding(true);
 // Sent back here because the server no longer accepts our session: start on Log in and say why.
 if (sessionStorage.getItem('auralis.sessionEnded')) {

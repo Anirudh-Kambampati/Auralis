@@ -157,3 +157,19 @@ test('saves only write rows that changed', () => {
   assert.deepEqual([again.db.players.p1.coins, again.db.players.p2.coins], [5, 99]);
   again.close();
 });
+
+test('a reset link sets a new password once, signs out everywhere, and is capped per account', () => {
+  const s = openStore(path.join(tmp(), 'r.db'));
+  s.createAccount('p1', 'Mo', 'old-password', 'mo@example.com');
+  const session = s.issueToken('p1');
+  const link = s.createReset('p1');
+  assert.equal(s.useReset('not-a-real-link', 'new-password'), null);
+  assert.equal(s.useReset(link, 'new-password'), 'p1');
+  assert.ok(checkPassword('new-password', s.findAccount('Mo').pass));
+  assert.equal(s.playerForToken(session), null); // old sign-ins are gone
+  assert.equal(s.useReset(link, 'another-password'), null); // used once already
+  assert.ok(s.createReset('p1') && s.createReset('p1') && s.createReset('p1'));
+  assert.equal(s.createReset('p1'), null); // a 4th live link isn't made
+  assert.equal(s.findAccount('mo@example.com').email, 'mo@example.com');
+  s.close();
+});

@@ -6,6 +6,8 @@ export default defineConfig({
   buckets: {
     // "private" is the default; use "public_read" for anonymous reads
     assets: { access: "private" },
+    // Background music, read straight by the browser so the website build doesn't carry 500 MB of mp3s.
+    music: { access: "public_read" },
   },
   // Branch policy: per-branch tuning
   branch: (branch) => {

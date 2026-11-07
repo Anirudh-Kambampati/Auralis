@@ -76,7 +76,7 @@
             <p class="hint">Sign up and this buddy is yours. You can change it any time.</p>
           </section>
 
-          <form class="auth" id="authForm">
+          <form class="auth" id="authForm" novalidate>
             <div class="sticker">free &amp; cozy</div>
             <h2 id="authTitle">Move into the house 🏠</h2>
             <div class="seg">
@@ -85,8 +85,9 @@
             </div>
             <label id="authUserLabel"><span id="authUserText">Username</span> <input id="authUser" autocomplete="username" required minlength="3" maxlength="254" /></label>
             <label id="authEmailLabel">Email <input id="authEmail" type="email" autocomplete="email" required maxlength="254" /></label>
-            <label>Password <input id="authPass" type="password" autocomplete="new-password" required minlength="8" maxlength="200" /></label>
+            <label id="authPassLabel"><span id="authPassText">Password</span> <input id="authPass" type="password" autocomplete="new-password" required minlength="8" maxlength="200" /></label>
             <label id="authConfirmLabel">Confirm password <input id="authConfirm" type="password" autocomplete="new-password" required minlength="8" maxlength="200" /></label>
+            <p class="forgot" id="authForgotLabel" hidden><button type="button" id="authForgot">Forgot password?</button></p>
             <p class="auth-error" id="authError" role="alert" hidden></p>
             <button type="submit" id="authSubmit">Create my room</button>
             <p class="hint" id="authHint">Already studying with us? Switch to Log in.</p>
@@ -197,7 +198,7 @@
         <header class="side-head"><button type="button" class="back" id="chatBack" hidden aria-label="Back to chats">‹</button><img data-icon="chat" alt="" /><h2 id="chatTitle">Chats</h2><button type="button" class="off small" id="chatLeave" hidden>Leave</button><button class="fold" id="fold-chat" aria-expanded="true" aria-controls="chatLog" aria-label="Collapse chat">▾</button></header>
         <ul id="chatList" aria-label="Conversations"></ul>
         <div id="chatLog" aria-live="polite" hidden></div>
-        <form id="chatForm" class="row"><button type="button" class="off" id="chatPic" title="Send a picture or file" aria-label="Send a picture or file">📎</button><input type="file" id="chatFile" accept="image/*,.pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.csv,.txt" hidden><textarea id="chatInput" rows="1" maxlength="200" placeholder="Say something…" aria-label="Chat message"></textarea><button>Send</button></form>
+        <form id="chatForm" class="row"><div id="chatStaged" hidden></div><button type="button" class="off" id="chatPic" title="Send a picture or file" aria-label="Send a picture or file">📎</button><input type="file" id="chatFile" accept="image/*,.pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.csv,.txt" hidden><textarea id="chatInput" rows="1" maxlength="200" placeholder="Say something…" aria-label="Chat message"></textarea><button>Send</button></form>
       </section>
     </aside>
     <section id="deck" hidden>

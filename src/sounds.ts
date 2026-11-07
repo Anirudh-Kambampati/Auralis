@@ -415,9 +415,14 @@ const edm: Start = (ctx, out) => {
   });
 };
 
-// A looping file from public/sounds; stop() fades `out` and closes the context, then this pauses it.
+// The music mixes live in the public "music" bucket on Neon (see neon.ts), not in the website build: they're ~500 MB.
+const MUSIC = 'https://br-cold-art-azu31ica.storage.c-3.ap-southeast-1.aws.neon.tech/music';
+
+// A looping music file; stop() fades `out` and closes the context, then this pauses it.
 const file = (name: string): Start => (ctx, out) => {
-  const a = new Audio(`/sounds/${name}.mp3`);
+  const a = new Audio();
+  a.crossOrigin = 'anonymous'; // without CORS, Web Audio plays another site's audio as silence
+  a.src = `${MUSIC}/${name}.mp3`;
   a.loop = true;
   ctx.createMediaElementSource(a).connect(out);
   a.play().catch(() => {});

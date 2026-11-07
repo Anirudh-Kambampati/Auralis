@@ -642,6 +642,38 @@ export const streakBonus = (days) => (days >= 30 ? 0.5 : days >= 7 ? 0.25 : days
 
 export const quitMinutes =(minutes, elapsedMs) => Math.floor((minutes * quitQuarter(minutes, elapsedMs)) / 4);
 
+// Accounts: what's wrong with a sign-up field, in words a person can act on, or null when it's fine.
+// Shared so the website can say it at once and the server still enforces it.
+export function usernameProblem(name) {
+  const u = String(name ?? '').trim();
+  if (!u) return 'Pick a username.';
+  if (u.includes('@')) return "A username can't be an email or have @ in it.";
+  if (/\s/.test(u)) return "Usernames can't have spaces. Try _ or . instead, like study_buddy.";
+  const bad = [...new Set(u.replace(/[A-Za-z0-9_.-]/g, ''))];
+  if (bad.length) return `Usernames can't have ${bad.join(' ')} in them. Use only letters, numbers, _ . and -`;
+  if (u.length < 3) return `Usernames need at least 3 characters (that one has ${u.length}).`;
+  if (u.length > 20) return `Usernames can have at most 20 characters (that one has ${u.length}).`;
+  return null;
+}
+export function emailProblem(email) {
+  const e = String(email ?? '').trim();
+  if (!e) return 'Enter your email address.';
+  if (/\s/.test(e)) return "Email addresses can't have spaces.";
+  const at = e.split('@');
+  if (at.length < 2) return 'Your email needs an @, like name@example.com.';
+  if (at.length > 2) return 'An email address has only one @.';
+  if (!at[0]) return 'Add the part before the @, like name@example.com.';
+  if (!/^[^.]+(\.[^.]+)*\.[A-Za-z]{2,24}$/.test(at[1])) return `"${at[1] || '(nothing)'}" after the @ isn't a full address. It should look like example.com.`;
+  if (e.length > 254 || at[0].length > 64) return 'That email address is too long.';
+  return null;
+}
+export function passwordProblem(password) {
+  const p = String(password ?? '');
+  if (p.length < 8) return `Passwords need at least 8 characters (that one has ${p.length}).`;
+  if (p.length > 200) return 'Passwords can have at most 200 characters.';
+  return null;
+}
+
 // Chat attachments: a picture key ends ".jpg"; a document key ends "/<its file name>".
 export const DOC_TYPES = { pdf: 'application/pdf', doc: 'application/msword', docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
   ppt: 'application/vnd.ms-powerpoint', pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',

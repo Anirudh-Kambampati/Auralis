@@ -30,3 +30,7 @@ services:
         sync: false # e.g. mailto:you@example.com
       - key: ALLOWED_ORIGINS
         sync: false # e.g. https://auralis.vercel.app
+      - key: BREVO_API_KEY # password reset emails (see .env.example)
+        sync: false
+      - key: MAIL_FROM # a sender address verified in Brevo
+        sync: false

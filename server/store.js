@@ -5,7 +5,8 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 
 const TOKEN_DAYS = 30;
-const sha = (s) => crypto.createHash('sha256').update(s).digest('hex');
+export const RESET_MS = 3_600_000, MAX_RESETS = 3;
+const sha =(s) => crypto.createHash('sha256').update(s).digest('hex');
 
 export function hashPassword(password) {
   const salt = crypto.randomBytes(16);
@@ -53,6 +54,7 @@ export function openStore(file, legacyJsonFile) {
       created integer not null
     );
     create table if not exists auth (token text primary key, player_id text not null, expires integer not null);
+    create table if not exists resets (token text primary key, player_id text not null, expires integer not null);
     create table if not exists messages (id integer primary key, thread text not null, from_id text not null, by_name text not null, body text not null, img text, at integer not null);
     create index if not exists messages_thread on messages (thread, id);
     create index if not exists auth_player on auth (player_id);
@@ -155,7 +157,7 @@ export function openStore(file, legacyJsonFile) {
     playerByUsername: (name) => sql.prepare('select player_id from accounts where username = ?').get(String(name))?.player_id ?? null,
     deleteHouse: (code) => sql.prepare('delete from houses where code = ?').run(code),
     // Log in with either the username or the email.
-    findAccount: (login) => sql.prepare('select player_id, username, pass from accounts where username = ? or lower(email) = lower(?)').get(login, login),
+    findAccount: (login) => sql.prepare('select player_id, username, pass, email from accounts where username = ? or lower(email) = lower(?)').get(login, login),
     emailTaken: (email) => !!sql.prepare('select 1 from accounts where lower(email) = lower(?)').get(email),
     hasAccount: (playerId) => !!sql.prepare('select 1 from accounts where player_id = ?').get(playerId),
     createAccount: (playerId, username, password, email) =>
@@ -172,6 +174,25 @@ export function openStore(file, legacyJsonFile) {
       return row && row.expires > Date.now() ? row.player_id : null;
     },
     revokeToken: (token) => sql.prepare('delete from auth where token = ?').run(sha(String(token))),
+    // Password reset links: hashed like login tokens, good for an hour, at most 3 live per account (so nobody can
+    // flood someone's inbox). Null when that account already has 3.
+    createReset(playerId) {
+      const now = Date.now();
+      if (sql.prepare('select count(*) n from resets where player_id = ? and expires > ?').get(playerId, now).n >= MAX_RESETS) return null;
+      const token = crypto.randomBytes(32).toString('base64url');
+      sql.prepare('insert into resets (token, player_id, expires) values (?, ?, ?)').run(sha(token), playerId, now + RESET_MS);
+      return token;
+    },
+    // Uses a reset link once: sets the new password and signs the account out everywhere. Null if the link is bad or old.
+    useReset(token, password) {
+      if (typeof token !== 'string' || token.length > 100) return null;
+      const id = sql.prepare('delete from resets where token = ? and expires > ? returning player_id').get(sha(token), Date.now())?.player_id;
+      if (!id) return null;
+      sql.prepare('update accounts set pass = ? where player_id = ?').run(hashPassword(password), id);
+      sql.prepare('delete from resets where player_id = ?').run(id);
+      sql.prepare('delete from auth where player_id = ?').run(id);
+      return id;
+    },
     close: () => sql.close(),
   };
 }

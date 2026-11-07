@@ -8,13 +8,14 @@ import webpush from 'web-push';
 import { openStore, checkPassword, dmThread } from './store.js';
 import { openPgStore } from './store-pg.js';
 import { files, isPng, isJpeg } from './files.js';
+import { sendMail, mailOn } from './mail.js';
 import {
   ITEMS, WALLPAPERS, FLOORS, SKINS, HAIRS, SHIRTS, STYLES, FACES, OUTFITS, BODIES, ACCESSORIES, isFocusLength, canPlace, placeSwaps, focusReward, quitReward, quitMinutes, focusEnd, streakDays, streakBonus,
   WALL_PATTERNS, FLOOR_STYLES, PETS, MAX_PETS, bondLevel, NOTIFY, wantsNotify, EXPAND_COST, colorsFor, USES, PET_ACCS, MAX_ROOMS, ROOM_COST,
   isPlant, TASK_COINS, TASK_REWARDS_PER_DAY, discounted, GIFT_COINS, GIFTS_PER_DAY, nextRot, sellPrice,
 } from '../shared/game.js';
 import { parseVideo } from '../shared/watch.js';
-import { CHAT_KEY, DOC_TYPES, safeDocName, attachLabel } from '../shared/game.js';
+import { CHAT_KEY, DOC_TYPES, safeDocName, attachLabel, docName, usernameProblem, emailProblem, passwordProblem } from '../shared/game.js';
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const DIST = path.join(root, 'dist');
@@ -254,7 +255,8 @@ function handle(p, m) {
       // Your name is your login username, so a new one must be free and username-shaped.
       const name = String(m.name ?? '').trim();
       if (name && name !== p.name) {
-        if (!USERNAME.test(name)) send(sockets.get(p.id), { t: 'error', text: 'Names: 3–20 letters, numbers, _ . or - (no spaces). It is also your username.' });
+        const problem = usernameProblem(name);
+        if (problem) send(sockets.get(p.id), { t: 'error', text: `${problem} (Your name is also your username.)` });
         else Promise.resolve(store.renameAccount(p.id, name)).then((ok) => {
           if (!ok) return send(sockets.get(p.id), { t: 'error', text: `"${name}" is taken. Pick another name.` });
           p.name = name;
@@ -953,8 +955,6 @@ function newPlayer(id, name) {
 }
 
 // ---------- accounts (HTTP JSON API) ----------
-const USERNAME = /^[A-Za-z0-9_.-]{3,20}$/;
-const EMAIL = /^[^\s@]{1,64}@[^\s@]{1,190}\.[^\s@]{2,24}$/;
 const attempts = new Map(); // ip -> { n, since }: slows down password guessing
 function tooMany(ip, limit) {
   const now = Date.now();
@@ -1035,11 +1035,14 @@ async function chatImage(req, res) {
   const p = id && db.players[id];
   if (!p) return reply(401, { error: 'Please log in again.' });
   if (req.method === 'GET') {
-    const key = new URL(req.url, 'http://x').searchParams.get('key') ?? '';
+    const q = new URL(req.url, 'http://x').searchParams, key = q.get('key') ?? '';
     // Visible if it was sent in any conversation I can read the history of, however long ago.
     const mine = (th) => th === `h:${p.house}` || (th.startsWith('d:') && th.slice(2).split('|').includes(p.id)) || (th.startsWith('g:') && !!p.groups?.[th.slice(2)]);
     if (!CHAT_KEY.test(key) || !(await store.threadsWithImg(key)).some(mine)) return reply(404, { error: 'File not found.' });
-    return reply(200, { url: await files.url(key, { expiresIn: 3600 }) });
+    // ?download=1: a link that saves the file under its name instead of opening it.
+    const name = docName(key) ?? 'auralis-photo.jpg';
+    const disposition = q.has('download') ? { responseContentDisposition: `attachment; filename*=UTF-8''${encodeURIComponent(name)}` } : {};
+    return reply(200, { url: await files.url(key, { expiresIn: 3600, ...disposition }) });
   }
   if (req.method !== 'POST') return reply(405, { error: 'GET or POST' });
   const now = Date.now();
@@ -1110,9 +1113,8 @@ async function api(req, res, route) {
   const email = String(body.email ?? '').trim().toLowerCase();
   const password = String(body.password ?? '');
   if (route === 'signup') {
-    if (!USERNAME.test(username)) return reply(400, { error: 'Username: 3–20 letters, numbers, _ . or -' });
-    if (password.length < 8 || password.length > 200) return reply(400, { error: 'Password needs at least 8 characters.' });
-    if (!EMAIL.test(email) || email.length > 254) return reply(400, { error: 'Please enter a valid email address.' });
+    const problem = usernameProblem(username) ?? emailProblem(email) ?? passwordProblem(password);
+    if (problem) return reply(400, { error: problem });
     if (await store.findAccount(username)) return reply(409, { error: 'That username is taken.' });
     if (await store.emailTaken(email)) return reply(409, { error: 'That email already has an account. Try logging in.' });
     // A guest from before accounts existed can claim their old progress once.
@@ -1129,9 +1131,37 @@ async function api(req, res, route) {
     return reply(200, { token: await store.issueToken(id), username });
   }
   if (route === 'login') {
+    if (!username) return reply(400, { error: 'Enter your username or email.' });
+    if (!password) return reply(400, { error: 'Enter your password.' });
+    // Which of the two was wrong stays unsaid, so nobody can use this to find out who has an account.
     const acct = await store.findAccount(username);
     if (!acct || !checkPassword(password, acct.pass)) return reply(401, { error: 'Wrong username, email or password.' });
     return reply(200, { token: await store.issueToken(acct.player_id), username: acct.username });
+  }
+  if (route === 'forgot') {
+    if (!username) return reply(400, { error: 'Enter your username or email.' });
+    if (!mailOn() && process.env.RENDER) return reply(503, { error: "Password reset emails aren't set up yet. Ask the game's owner for help." });
+    // The same answer whether or not the account exists, so this can't be used to find out who plays.
+    const acct = await store.findAccount(username);
+    const link = acct?.email && await store.createReset(acct.player_id);
+    if (link) {
+      const url = `${SITE}/?reset=${link}`;
+      sendMail(acct.email, 'Reset your Auralis password',
+        `Hi ${acct.username},\n\nSomeone (hopefully you) asked to reset your Auralis password. Pick a new one here:\n${url}\n\nThe link works once and expires in an hour. If you didn't ask for this, ignore this email and nothing changes.`,
+        `<p>Hi ${acct.username},</p><p>Someone (hopefully you) asked to reset your Auralis password.</p>`
+          + `<p><a href="${url}" style="display:inline-block;padding:10px 16px;background:#5b7fd6;color:#fff;border-radius:10px;text-decoration:none;font-weight:700">Pick a new password</a></p>`
+          + `<p>The link works once and expires in an hour. If you didn't ask for this, ignore this email and nothing changes.</p>`,
+      ).catch((err) => console.error('reset email failed', err));
+    }
+    return reply(200, { ok: true });
+  }
+  if (route === 'reset') {
+    const problem = passwordProblem(password);
+    if (problem) return reply(400, { error: problem });
+    const id = await store.useReset(String(body.token ?? ''), password);
+    if (!id) return reply(400, { error: 'This reset link has expired or was already used. Ask for a new one with "Forgot password?".' });
+    sockets.get(id)?.close(); // every old sign-in was just revoked, including any open game
+    return reply(200, { token: await store.issueToken(id), username: db.players[id]?.name });
   }
   return reply(404, { error: 'Not found' });
 }
@@ -1159,6 +1189,13 @@ function serveStatic(req, res) {
 // Unset means same-origin only for browsers, which is how local dev and a single-host deploy work.
 const ALLOWED = (process.env.ALLOWED_ORIGINS ?? '').split(',').map((s) => s.trim().replace(/\/$/, '')).filter(Boolean);
 const originOk = (origin) => !origin || !ALLOWED.length || ALLOWED.includes(origin);
+// The website's address, for links in emails. Never taken from the request: a forged Origin or Host header would
+// otherwise put someone's reset link on another site.
+const SITE = (process.env.SITE_URL || ALLOWED[0] || 'http://localhost:5173').replace(/\/$/, '');
+
+// Render's free plan sleeps after 15 minutes without a visitor, and waking takes about a minute. A request to our
+// own public address every 10 minutes counts as a visitor. Uses ~744 of the 750 free hours a month: one service only.
+if (process.env.RENDER_EXTERNAL_URL) setInterval(() => fetch(`${process.env.RENDER_EXTERNAL_URL}/api/health`).catch(() => {}), 10 * 60_000).unref();
 
 const server = http.createServer((req, res) => {
   // "//" is not a URL against a base, and a bad escape is not decodable: answer 400 instead of throwing
@@ -1174,12 +1211,13 @@ const server = http.createServer((req, res) => {
   }
   if (req.method === 'OPTIONS') return res.writeHead(originOk(origin) ? 204 : 403).end();
   if (path === '/api/health') return res.writeHead(200, { 'content-type': 'application/json' }).end('{"ok":true}');
-  const route = path.match(/^\/api\/(signup|login|logout|snapshots|chatimg)$/)?.[1];
+  const route = path.match(/^\/api\/(signup|login|logout|forgot|reset|snapshots|chatimg)$/)?.[1];
   if (route) api(req, res, route).catch((err) => { console.error(err); if (!res.headersSent) res.writeHead(500).end(); });
   else serveStatic(req, res);
 });
 // Refuse game connections from pages on domains we don't serve.
-const wss = new WebSocketServer({ server, path: '/ws', verifyClient: ({ origin }) => originOk(origin) });
+// Game messages are a few hundred bytes (pictures and files go over HTTP); anything over 64 KB closes the socket.
+const wss = new WebSocketServer({ server, path: '/ws', maxPayload: 64 * 1024, verifyClient: ({ origin }) => originOk(origin) });
 
 wss.on('connection', (ws) => {
   let p = null;
