@@ -3,7 +3,7 @@
 import pg from 'pg';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
-import { hashPassword, savedMessages, rowMessage, changedRows, RESET_MS, MAX_RESETS } from './store.js';
+import { hashPassword, savedMessages, rowMessage, changedRows } from './store.js';
 
 const TOKEN_DAYS = 30;
 const sha = (s) => crypto.createHash('sha256').update(s).digest('hex');
@@ -17,7 +17,6 @@ export async function openPgStore(url, legacyJsonFile) {
     create table if not exists accounts (player_id text primary key, username text not null, pass text not null, created bigint not null);
     create unique index if not exists accounts_username on accounts (lower(username));
     create table if not exists auth (token text primary key, player_id text not null, expires bigint not null);
-    create table if not exists resets (token text primary key, player_id text not null, expires bigint not null);
     alter table accounts add column if not exists email text;
     create unique index if not exists accounts_email on accounts (lower(email)) where email is not null;
     alter table accounts add column if not exists coins integer;
@@ -129,7 +128,7 @@ export async function openPgStore(url, legacyJsonFile) {
     playerByUsername: async (name) => (await one('select player_id from accounts where lower(username) = lower($1)', [String(name)]))?.player_id ?? null,
     deleteHouse: (code) => pool.query('delete from houses where code = $1', [code]),
     // Log in with either the username or the email.
-    findAccount: (login) => one('select player_id, username, pass, email from accounts where lower(username) = lower($1) or lower(email) = lower($1)', [login]),
+    findAccount: (login) => one('select player_id, username, pass from accounts where lower(username) = lower($1) or lower(email) = lower($1)', [login]),
     emailTaken: async (email) => !!(await one('select 1 from accounts where lower(email) = lower($1)', [email])),
     hasAccount: async (playerId) => !!(await one('select 1 from accounts where player_id = $1', [playerId])),
     createAccount: (playerId, username, password, email) =>
@@ -145,24 +144,6 @@ export async function openPgStore(url, legacyJsonFile) {
       return row && Number(row.expires) > Date.now() ? row.player_id : null;
     },
     revokeToken: (token) => pool.query('delete from auth where token = $1', [sha(String(token))]),
-    // Password reset links, as in store.js.
-    async createReset(playerId) {
-      const now = Date.now();
-      if (Number((await one('select count(*) n from resets where player_id = $1 and expires > $2', [playerId, now])).n) >= MAX_RESETS) return null;
-      const token = crypto.randomBytes(32).toString('base64url');
-      await pool.query('insert into resets (token, player_id, expires) values ($1, $2, $3)', [sha(token), playerId, now + RESET_MS]);
-      return token;
-    },
-    async useReset(token, password) {
-      if (typeof token !== 'string' || token.length > 100) return null;
-      // Deleting the row is what claims it, so the same link can't be used twice even at the same moment.
-      const id = (await one('delete from resets where token = $1 and expires > $2 returning player_id', [sha(token), Date.now()]))?.player_id;
-      if (!id) return null;
-      await pool.query('update accounts set pass = $1 where player_id = $2', [hashPassword(password), id]);
-      await pool.query('delete from resets where player_id = $1', [id]);
-      await pool.query('delete from auth where player_id = $1', [id]);
-      return id;
-    },
     close: () => pool.end(),
   };
 }

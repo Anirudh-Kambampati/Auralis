@@ -2780,7 +2780,7 @@ async function saveSnapshot() {
 }
 
 // ---------- landing page + accounts ----------
-type AuthMode = 'signup' | 'login' | 'forgot' | 'reset';
+type AuthMode = 'signup' | 'login';
 let authMode: AuthMode = 'signup';
 let pendingLook: Look | null = null; // buddy picked on the landing page, applied once the game state arrives
 // The landing and login page can be zoomed like any web page (for reading); the game itself can't, so pinches
@@ -2901,34 +2901,25 @@ async function subscribePush() {
   } catch { pushAsked = false; }
 }
 
-// The landing form has four jobs. Sign-up asks for a username and an email; log-in takes either one in the first box;
-// "forgot" asks only for that, to email a reset link; "reset" (opened from that link) asks only for the new password.
+// Sign-up asks for a username and an email; log-in takes either one in the first box.
 const AUTH_MODES = {
-  signup: { title: 'Move into the house 🏠', submit: 'Create my room', user: 'Username', pass: 'Password', fields: ['User', 'Email', 'Pass', 'Confirm'], hint: 'Already studying with us? Switch to Log in.' },
-  login: { title: 'Welcome back! 👋', submit: 'Log in', user: 'Username or email', pass: 'Password', fields: ['User', 'Pass', 'Forgot'], hint: 'New here? Switch to Sign up.' },
-  forgot: { title: 'Forgot your password? 🔑', submit: 'Email me a link', user: 'Username or email', pass: '', fields: ['User'], hint: "We'll email the address on your account a link to pick a new password." },
-  reset: { title: 'Pick a new password 🔑', submit: 'Save new password', user: '', pass: 'New password', fields: ['Pass', 'Confirm'], hint: "Then you're straight back in." },
+  signup: { title: 'Move into the house 🏠', submit: 'Create my room', user: 'Username', hint: 'Already studying with us? Switch to Log in.' },
+  login: { title: 'Welcome back! 👋', submit: 'Log in', user: 'Username or email', hint: 'New here? Switch to Sign up.' },
 };
 function setAuthMode(mode: AuthMode) {
   authMode = mode;
   const m = AUTH_MODES[mode];
-  ui.querySelectorAll<HTMLButtonElement>('#authForm [data-mode]').forEach((x) => x.className = x.dataset.mode === (mode === 'forgot' ? 'login' : mode) ? 'on' : 'off');
-  $('#authForm .seg').hidden = mode === 'reset';
+  ui.querySelectorAll<HTMLButtonElement>('#authForm [data-mode]').forEach((x) => x.className = x.dataset.mode === mode ? 'on' : 'off');
   $('#authSubmit').textContent = m.submit;
   $('#authTitle').textContent = m.title;
   $('#authUserText').textContent = m.user;
-  $('#authPassText').textContent = m.pass;
   $<HTMLInputElement>('#authPass').autocomplete = mode === 'login' ? 'current-password' : 'new-password';
-  for (const f of ['User', 'Email', 'Pass', 'Confirm', 'Forgot']) $(`#auth${f}Label`).hidden = !m.fields.includes(f);
+  for (const f of ['Email', 'Confirm']) $(`#auth${f}Label`).hidden = mode === 'login';
   $('#authHint').className = 'hint'; // back to plain helper text if a notice was showing
   $('#authHint').textContent = m.hint;
   $('#authError').hidden = true;
 }
 ui.querySelectorAll<HTMLButtonElement>('#authForm [data-mode]').forEach((b) => b.addEventListener('click', () => setAuthMode(b.dataset.mode as AuthMode)));
-$('#authForgot').addEventListener('click', () => setAuthMode('forgot'));
-// Opened from a reset email: the link's token picks the new password. It's dropped from the address bar right away.
-const resetToken = new URLSearchParams(location.search).get('reset');
-if (resetToken) history.replaceState(null, '', location.pathname);
 
 $('#authForm').addEventListener('submit', async (e) => {
   e.preventDefault();
@@ -2936,10 +2927,10 @@ $('#authForm').addEventListener('submit', async (e) => {
   const btn = $<HTMLButtonElement>('#authSubmit');
   // Say exactly what's wrong before asking the server (which checks the same things again).
   const user = $<HTMLInputElement>('#authUser').value.trim(), pass = $<HTMLInputElement>('#authPass').value;
-  const mismatch = pass !== $<HTMLInputElement>('#authConfirm').value ? "The two passwords don't match." : null;
-  const problem = authMode === 'signup' ? usernameProblem(user) ?? emailProblem($<HTMLInputElement>('#authEmail').value) ?? passwordProblem(pass) ?? mismatch
-    : authMode === 'reset' ? passwordProblem(pass) ?? mismatch
-    : !user ? 'Enter your username or email.' : authMode === 'login' && !pass ? 'Enter your password.' : null;
+  const problem = authMode === 'signup'
+    ? usernameProblem(user) ?? emailProblem($<HTMLInputElement>('#authEmail').value) ?? passwordProblem(pass)
+      ?? (pass !== $<HTMLInputElement>('#authConfirm').value ? "The two passwords don't match." : null)
+    : !user ? 'Enter your username or email.' : !pass ? 'Enter your password.' : null;
   if (problem) {
     err.textContent = problem;
     err.hidden = false;
@@ -2956,17 +2947,10 @@ $('#authForm').addEventListener('submit', async (e) => {
         password: $<HTMLInputElement>('#authPass').value,
         email: authMode === 'signup' ? $<HTMLInputElement>('#authEmail').value : undefined,
         legacyId: authMode === 'signup' ? legacyId ?? undefined : undefined,
-        token: authMode === 'reset' ? resetToken : undefined,
       }),
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) { err.textContent = data.error ?? 'Something went wrong. Try again.'; err.hidden = false; return; }
-    if (authMode === 'forgot') { // the server says the same whether or not the account exists
-      err.hidden = true;
-      $('#authHint').className = 'auth-note';
-      $('#authHint').textContent = 'If that account has an email, a reset link is on its way. It works for an hour. Check your spam folder too.';
-      return;
-    }
     token = data.token;
     localStorage.setItem('auralis.token', data.token);
     if (authMode === 'signup') { localStorage.removeItem('auralis.id'); pendingLook = buddyLook; }
@@ -3122,8 +3106,7 @@ $('#shuffleBuddy').addEventListener('click', () => {
 });
 drawBuddy();
 
-if (resetToken) { showLanding(true); setAuthMode('reset'); }
-else if (token) connect();
+if (token) connect();
 else showLanding(true);
 // Sent back here because the server no longer accepts our session: start on Log in and say why.
 if (sessionStorage.getItem('auralis.sessionEnded')) {

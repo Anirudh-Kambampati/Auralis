@@ -8,7 +8,6 @@ import webpush from 'web-push';
 import { openStore, checkPassword, dmThread } from './store.js';
 import { openPgStore } from './store-pg.js';
 import { files, isPng, isJpeg } from './files.js';
-import { sendMail, mailOn } from './mail.js';
 import {
   ITEMS, WALLPAPERS, FLOORS, SKINS, HAIRS, SHIRTS, STYLES, FACES, OUTFITS, BODIES, ACCESSORIES, isFocusLength, canPlace, placeSwaps, focusReward, quitReward, quitMinutes, focusEnd, streakDays, streakBonus,
   WALL_PATTERNS, FLOOR_STYLES, PETS, MAX_PETS, bondLevel, NOTIFY, wantsNotify, EXPAND_COST, colorsFor, USES, PET_ACCS, MAX_ROOMS, ROOM_COST,
@@ -1138,31 +1137,6 @@ async function api(req, res, route) {
     if (!acct || !checkPassword(password, acct.pass)) return reply(401, { error: 'Wrong username, email or password.' });
     return reply(200, { token: await store.issueToken(acct.player_id), username: acct.username });
   }
-  if (route === 'forgot') {
-    if (!username) return reply(400, { error: 'Enter your username or email.' });
-    if (!mailOn() && process.env.RENDER) return reply(503, { error: "Password reset emails aren't set up yet. Ask the game's owner for help." });
-    // The same answer whether or not the account exists, so this can't be used to find out who plays.
-    const acct = await store.findAccount(username);
-    const link = acct?.email && await store.createReset(acct.player_id);
-    if (link) {
-      const url = `${SITE}/?reset=${link}`;
-      sendMail(acct.email, 'Reset your Auralis password',
-        `Hi ${acct.username},\n\nSomeone (hopefully you) asked to reset your Auralis password. Pick a new one here:\n${url}\n\nThe link works once and expires in an hour. If you didn't ask for this, ignore this email and nothing changes.`,
-        `<p>Hi ${acct.username},</p><p>Someone (hopefully you) asked to reset your Auralis password.</p>`
-          + `<p><a href="${url}" style="display:inline-block;padding:10px 16px;background:#5b7fd6;color:#fff;border-radius:10px;text-decoration:none;font-weight:700">Pick a new password</a></p>`
-          + `<p>The link works once and expires in an hour. If you didn't ask for this, ignore this email and nothing changes.</p>`,
-      ).catch((err) => console.error('reset email failed', err));
-    }
-    return reply(200, { ok: true });
-  }
-  if (route === 'reset') {
-    const problem = passwordProblem(password);
-    if (problem) return reply(400, { error: problem });
-    const id = await store.useReset(String(body.token ?? ''), password);
-    if (!id) return reply(400, { error: 'This reset link has expired or was already used. Ask for a new one with "Forgot password?".' });
-    sockets.get(id)?.close(); // every old sign-in was just revoked, including any open game
-    return reply(200, { token: await store.issueToken(id), username: db.players[id]?.name });
-  }
   return reply(404, { error: 'Not found' });
 }
 
@@ -1189,9 +1163,6 @@ function serveStatic(req, res) {
 // Unset means same-origin only for browsers, which is how local dev and a single-host deploy work.
 const ALLOWED = (process.env.ALLOWED_ORIGINS ?? '').split(',').map((s) => s.trim().replace(/\/$/, '')).filter(Boolean);
 const originOk = (origin) => !origin || !ALLOWED.length || ALLOWED.includes(origin);
-// The website's address, for links in emails. Never taken from the request: a forged Origin or Host header would
-// otherwise put someone's reset link on another site.
-const SITE = (process.env.SITE_URL || ALLOWED[0] || 'http://localhost:5173').replace(/\/$/, '');
 
 // Render's free plan sleeps after 15 minutes without a visitor, and waking takes about a minute. A request to our
 // own public address every 10 minutes counts as a visitor. Uses ~744 of the 750 free hours a month: one service only.
@@ -1211,7 +1182,7 @@ const server = http.createServer((req, res) => {
   }
   if (req.method === 'OPTIONS') return res.writeHead(originOk(origin) ? 204 : 403).end();
   if (path === '/api/health') return res.writeHead(200, { 'content-type': 'application/json' }).end('{"ok":true}');
-  const route = path.match(/^\/api\/(signup|login|logout|forgot|reset|snapshots|chatimg)$/)?.[1];
+  const route = path.match(/^\/api\/(signup|login|logout|snapshots|chatimg)$/)?.[1];
   if (route) api(req, res, route).catch((err) => { console.error(err); if (!res.headersSent) res.writeHead(500).end(); });
   else serveStatic(req, res);
 });
