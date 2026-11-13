@@ -10,8 +10,8 @@ import { openPgStore } from './store-pg.js';
 import { files, isPng, isJpeg } from './files.js';
 import {
   ITEMS, WALLPAPERS, FLOORS, SKINS, HAIRS, SHIRTS, STYLES, FACES, OUTFITS, BODIES, ACCESSORIES, isFocusLength, canPlace, placeSwaps, focusReward, quitReward, quitMinutes, focusEnd, streakDays, streakBonus,
-  WALL_PATTERNS, FLOOR_STYLES, PETS, MAX_PETS, bondLevel, NOTIFY, wantsNotify, EXPAND_COST, colorsFor, USES, PET_ACCS, MAX_ROOMS, ROOM_COST,
-  isPlant, TASK_COINS, TASK_REWARDS_PER_DAY, discounted, GIFT_COINS, GIFTS_PER_DAY, nextRot, sellPrice,
+  WALL_PATTERNS, FLOOR_STYLES, PETS, MAX_PETS, SIZES, bondLevel, NOTIFY, wantsNotify, EXPAND_COST, colorsFor, USES, PET_ACCS, MAX_ROOMS, ROOM_COST,
+  isPlant, TASK_COINS, TASK_REWARDS_PER_DAY, discounted, GIFT_COINS, GIFTS_PER_DAY, nextRot, canRotate, sellPrice,
 } from '../shared/game.js';
 import { parseVideo } from '../shared/watch.js';
 import { CHAT_KEY, DOC_TYPES, safeDocName, attachLabel, docName, usernameProblem, emailProblem, passwordProblem } from '../shared/game.js';
@@ -37,6 +37,19 @@ const sentSessions = new Map(); // playerId -> how many sessions their client ha
 for (const p of Object.values(db.players)) if (!p.rooms) { p.rooms = [p.room ?? newRoom()]; delete p.room; }
 // Plants placed before watering existed start out freshly watered.
 for (const p of Object.values(db.players)) for (const r of p.rooms) for (const f of r.furniture) if (isPlant(f.item)) f.wateredAt ??= Date.now();
+// Already rotated old objects only face forward now (except for bed).
+let cleanedRot = false;
+for (const p of Object.values(db.players)) {
+  for (const r of p.rooms ?? []) {
+    for (const f of r.furniture ?? []) {
+      if (!canRotate(f.item) && f.rot !== undefined) {
+        delete f.rot;
+        cleanedRot = true;
+      }
+    }
+  }
+}
+if (cleanedRot) store.saveAll();
 let saveTimer = null;
 const save = () => {
   clearTimeout(saveTimer);
@@ -177,6 +190,7 @@ function trimDmThreads(rec) {
 }
 
 function publicPlayer(p) {
+  for (const r of p.rooms ?? []) for (const f of r.furniture ?? []) if (!canRotate(f.item) && f.rot !== undefined) delete f.rot;
   return {
     id: p.id, name: p.name, look: p.look, rooms: p.rooms, focus: p.focus, pets: p.pets ?? [],
     totalMinutes: p.totalMinutes, online: sockets.has(p.id), pos: positions.get(p.id) ?? null, fedAt: p.fedAt ?? 0,
@@ -273,6 +287,7 @@ function handle(p, m) {
         outfit: pick(OUTFITS, m.look?.outfit, p.look.outfit ?? OUTFITS[0]),
         body: pick(BODIES, m.look?.body, p.look.body ?? BODIES[0]),
         acc: pick(ACCESSORIES, m.look?.acc, p.look.acc ?? ACCESSORIES[0]),
+        size: pick(SIZES, m.look?.size, p.look.size ?? SIZES[1]),
       };
       break;
     }
@@ -605,9 +620,9 @@ function handle(p, m) {
       room.pattern = pick(WALL_PATTERNS, m.pattern, room.pattern ?? WALL_PATTERNS[0]);
       room.floorStyle = pick(FLOOR_STYLES, m.floorStyle, room.floorStyle ?? FLOOR_STYLES[0]);
       break;
-    case 'turn': { // face the next way (side, back, other side); sideways it has to fit where it stands
+    case 'turn': { // face the next way (side, back, other side); only bed can rotate
       const f = room.furniture[m.index];
-      if (!f) return;
+      if (!f || !canRotate(f.item)) return;
       const rot = nextRot(f), rest = { ...room, furniture: room.furniture.filter((_, i) => i !== m.index) };
       if (!canPlace(rest, f.item, f.x, f.y, rot)) return send(sockets.get(p.id), { t: 'error', text: "There isn't room to turn it here. Move it somewhere with more space first." });
       f.rot = rot || undefined;
@@ -947,7 +962,7 @@ function handle(p, m) {
 function newPlayer(id, name) {
   return {
     id, name: cleanName(name), coins: 30, totalMinutes: 0, focus: null,
-    look: { skin: SKINS[0], hair: HAIRS[0], shirt: SHIRTS[0], style: STYLES[0], face: FACES[0], outfit: OUTFITS[0] },
+    look: { skin: SKINS[0], hair: HAIRS[0], shirt: SHIRTS[0], style: STYLES[0], face: FACES[0], outfit: OUTFITS[0], size: SIZES[1] },
     inventory: {}, pets: [],
     rooms: [{ wallpaper: WALLPAPERS[0], floor: FLOORS[0], furniture: [{ item: 'chair', x: 4, y: 3 }, { item: 'desk', x: 4, y: 4 }] }],
   };
@@ -1218,7 +1233,10 @@ wss.on('connection', (ws) => {
       p = db.players[id];
       // Old saves: drop furniture types that no longer exist; the old cat decoration becomes a real pet.
       const hadCat = p.rooms.some((r) => r.furniture.some((f) => f.item === 'cat')) || p.inventory.cat > 0;
-      for (const r of p.rooms) r.furniture = r.furniture.filter((f) => has(ITEMS, f.item));
+      for (const r of p.rooms) {
+        r.furniture = r.furniture.filter((f) => has(ITEMS, f.item));
+        for (const f of r.furniture) if (!canRotate(f.item) && f.rot !== undefined) delete f.rot;
+      }
       for (const k of Object.keys(p.inventory)) if (!has(ITEMS, k)) delete p.inventory[k];
       if (!STYLES.includes(p.look.style)) p.look.style = STYLES[0]; // retired hairstyles fall back to the default
       p.pets ??= hadCat ? [{ kind: 'cat' }] : [];

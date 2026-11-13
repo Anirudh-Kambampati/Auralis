@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Auralis — every furniture view</title>
+<style>
+  :root { --bg: #241f2c; --card: #2c2638; --card-hi: #332c41; --line: #443c52; --ink: #efe6d6; --dim: #a99dbb; --faint: #7f748f; --paper: #fbf6ec; }
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 26px 22px 72px; background: var(--bg); color: var(--ink); font: 13px/1.45 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; }
+  header { max-width: 1500px; margin: 0 auto 22px; }
+  h1 { margin: 0 0 6px; font-size: 22px; letter-spacing: .01em; }
+  .lede { margin: 0; color: var(--dim); font-size: 12px; }
+  .lede b { color: var(--ink); font-weight: 600; }
+  .keys { margin: 10px 0 0; color: var(--faint); font-size: 11px; }
+  .keys code { font: inherit; color: #cfc4dd; }
+  main { max-width: 1500px; margin: 0 auto; }
+  .shelf { margin: 0 0 30px; }
+  .shelf h2 { position: sticky; top: 0; z-index: 2; margin: 0 0 10px; padding: 9px 0 8px; font-size: 11px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: #cfc4dd; background: linear-gradient(var(--bg) 78%, transparent); border-bottom: 1px solid var(--line); }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); gap: 10px; }
+  .tile { min-width: 0; background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 8px 8px 7px; transition: background .12s, border-color .12s; }
+  .tile:hover { background: var(--card-hi); border-color: #564c68; }
+  .tile canvas { display: block; width: 100%; max-width: 100%; height: auto; image-rendering: pixelated; background: var(--paper); border-radius: 8px; }
+  .views { display: grid; grid-template-columns: repeat(4, 1fr); margin: 6px 0 0; font-size: 9px; letter-spacing: .1em; text-transform: uppercase; color: var(--faint); }
+  .views span { text-align: center; }
+  .views span + span { border-left: 1px solid rgba(255,255,255,.05); }
+  .name { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin: 7px 1px 0; padding-top: 6px; border-top: 1px solid rgba(255,255,255,.055); }
+  .name b { font-size: 12px; font-weight: 600; color: #fff; }
+  .name span { font-size: 10px; color: var(--faint); font-variant-numeric: tabular-nums; white-space: nowrap; }
+</style>
+</head>
+<body>
+  <header>
+    <h1>Every furniture view</h1>
+    <p class="lede" id="lede">Drawing…</p>
+    <p class="keys">Each piece is shown <b>front</b>, <b>side</b>, <b>back</b> and <b>other side</b> at the same scale, standing on the same floor line — <code>to scale</code> means a wider piece really is drawn wider.</p>
+  </header>
+  <main id="shelves"></main>
+<script type="module">
+  import { drawFurniture } from '/src/draw.ts';
+  import { ITEMS, lying } from '/shared/game.js';
+
+  const SCALE = 3;    // canvas pixels per room pixel
+  const CELL = Math.max(...Object.values(ITEMS).map((it) => Math.max(it.w, it.h))) * 16 + 14; // room pixels per view
+  const FLOOR = 68;   // room pixels from the top of a cell to its floor line: room for the tallest overhang
+  const H = FLOOR + 10;
+
+  const VIEWS = ['front', 'side', 'back', 'other side'];
+
+  const shelves = [
+    ['Desks & tables', ['desk', 'chair', 'books', 'workTable', 'pcDesk', 'gamingDesk', 'diningTable', 'coffeeTable', 'consoleTable', 'craftTable', 'puzzleTable', 'standingDesk', 'draftingTable', 'makeupTable', 'bench', 'weightBench', 'poolTable', 'pingPong', 'airHockey', 'foosball', 'rowingMachine', 'sideTable', 'nightstand', 'counter', 'island']],
+    ['Storage', ['bookshelf', 'wardrobe', 'dresser', 'mediaConsole', 'toyChest', 'shoeRack', 'loom', 'clothesRack', 'miniFridge', 'fridge', 'microwave', 'stove', 'sink']],
+    ['Seating & soft things', ['sofa', 'loveseat', 'sectional', 'chaise', 'daybed', 'armchair', 'beanbag', 'giantBeanbag', 'gamerBeanbag', 'pouf', 'ottoman', 'floorCushion', 'barStool', 'bed', 'hammock']],
+    ['Decor', ['lamp', 'globe', 'rug', 'roundRug', 'plush', 'mirror', 'tv', 'fireplace', 'aquarium', 'terrarium', 'standingFan', 'grandClock', 'radiator', 'whiteboard', 'dressingScreen', 'telescope', 'easel', 'speaker', 'recordPlayer']],
+    ['Music & games', ['piano', 'synth', 'guitar', 'cello', 'drumKit', 'djDeck', 'arcade', 'gameConsole', 'trampoline', 'ballPit', 'discoBall']],
+    ['Fitness', ['gymBall', 'dumbbells', 'punchingBag', 'exerciseBike', 'treadmill', 'climbingWall', 'medicineBalls']],
+    ['Plants', ['plant', 'cactus', 'sunflower', 'palm', 'tulips', 'fig', 'bonsai', 'succulent']],
+    ['Kitchen & bath', ['bathtub', 'toilet', 'vanity', 'towelRack', 'teapot', 'fruitBowl', 'cake']],
+    ['Pets', ['petBall', 'petBed', 'doghouse', 'catTower', 'petBasket', 'petTunnel']],
+    ['Seasonal', ['pumpkin', 'christmasTree', 'snowman', 'giftBox', 'sleigh', 'wreath', 'stocking', 'candyCane', 'witchHat', 'sharkPlush']],
+  ];
+
+  const drawn = new Set();
+  const host = document.getElementById('shelves');
+  let tiles = 0;
+
+  function tile(item) {
+    const it = ITEMS[item];
+    if (!it) return null;
+    const scratch = document.createElement('canvas');
+    scratch.width = CELL * 4;
+    scratch.height = H;
+    const s = scratch.getContext('2d', { willReadFrequently: true });
+    s.imageSmoothingEnabled = false;
+    for (let rot = 0; rot < 4; rot++) {
+      const cx = rot * CELL + CELL / 2;
+      const fw = (rot % 2 ? it.h : it.w) * 16;
+      // A soft contact shadow on the floor line, so every piece reads as standing rather than floating.
+      s.fillStyle = 'rgba(58,38,51,0.13)';
+      s.fillRect(Math.round(cx - fw / 2), FLOOR, fw, 2);
+      s.fillStyle = 'rgba(58,38,51,0.07)';
+      s.fillRect(Math.round(cx - fw / 2 - 3), FLOOR + 2, fw + 6, 1);
+      drawFurniture(s, item, Math.round(cx - fw / 2), FLOOR, 1200, undefined, false, it.w, 0, 0, rot, it.h, lying(it));
+    }
+    // Crop the headroom above the tallest part of this piece; the floor line stays put, so every tile still lines up.
+    const data = s.getImageData(0, 0, scratch.width, scratch.height).data;
+    let y0 = FLOOR, y1 = FLOOR + 4;
+    for (let y = 0; y < scratch.height; y++) {
+      for (let x = 0; x < scratch.width; x++) {
+        if (data[(y * scratch.width + x) * 4 + 3] > 12) { if (y < y0) y0 = y; if (y > y1) y1 = y; break; }
+      }
+    }
+    y0 = Math.max(0, y0 - 2); y1 = Math.min(scratch.height, y1 + 3);
+
+    const cv = document.createElement('canvas');
+    cv.width = scratch.width * SCALE;
+    cv.height = (y1 - y0) * SCALE;
+    const c = cv.getContext('2d');
+    c.imageSmoothingEnabled = false;
+    c.fillStyle = '#fbf6ec';
+    c.fillRect(0, 0, cv.width, cv.height);
+    c.scale(SCALE, SCALE);
+    c.drawImage(scratch, 0, y0, scratch.width, y1 - y0, 0, 0, scratch.width, y1 - y0);
+
+    const wrap = document.createElement('div');
+    wrap.className = 'tile';
+    wrap.append(cv);
+
+    const views = document.createElement('div');
+    views.className = 'views';
+    for (const v of VIEWS) {
+      const span = document.createElement('span');
+      span.textContent = v;
+      views.append(span);
+    }
+    wrap.append(views);
+
+    const name = document.createElement('div');
+    name.className = 'name';
+    name.innerHTML = '<b></b><span></span>';
+    name.querySelector('b').textContent = it.name ?? item;
+    name.querySelector('span').textContent = item + ' · ' + it.w + '×' + it.h + (lying(it) ? ' lying' : '');
+    wrap.append(name);
+    tiles++;
+    return wrap;
+  }
+
+  function shelf(title, items) {
+    const box = document.createElement('section');
+    box.className = 'shelf';
+    const h2 = document.createElement('h2');
+    h2.textContent = title;
+    box.append(h2);
+    const grid = document.createElement('div');
+    grid.className = 'grid';
+    for (const item of items) {
+      const t = tile(item);
+      if (t) { grid.append(t); drawn.add(item); }
+    }
+    if (grid.childElementCount) box.append(grid);
+    host.append(box);
+  }
+
+  for (const [title, items] of shelves) shelf(title, items);
+  const rest = Object.keys(ITEMS).filter((k) => !drawn.has(k));
+  if (rest.length) shelf('Everything else', rest);
+  document.getElementById('lede').innerHTML =
+    '<b>' + tiles + '</b> pieces · <b>' + (tiles * 4) + '</b> views · ' + Object.keys(ITEMS).length + ' in the catalogue';
+  document.body.dataset.ready = 'yes';
+</script>
+</body>
+</html>

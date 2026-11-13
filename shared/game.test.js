@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   buildGrid, canPlace, placeSwaps, focusReward, quitReward, quitMinutes, focusEnd, streakDays, streakBonus, colorsFor, roomSize, PETS, EXPAND_COST,
-  ITEMS, EVENTS, easterSunday, activeEvents, nextEvent, footprint, nextRot,
+  ITEMS, EVENTS, easterSunday, activeEvents, nextEvent, footprint, nextRot, canRotate,
   DOOR, WALL, FLOOR, BLOCKED, VOID, ROOM_W, colsFor, isFocusLength, FOCUS_LENGTHS, bondLevel,
 } from './game.js';
 
@@ -149,17 +149,35 @@ test('festivals: Easter, windows across New Year', () => {
   for (const e of EVENTS) for (const k of e.items) assert.ok(ITEMS[k], `${e.id}: ${k}`);
 });
 
-test('turning: sideways swaps the footprint, square upright things only face front or back', () => {
-  assert.deepEqual(footprint({ item: 'wardrobe', rot: 1 }), { w: 1, h: 2 });
-  assert.deepEqual(footprint({ item: 'wardrobe', rot: 2 }), { w: 2, h: 1 });
-  assert.deepEqual([0, 1, 2, 3].map((rot) => nextRot({ item: 'tv', rot })), [1, 2, 3, 0]);
-  assert.equal(nextRot({ item: 'arcade' }), 2);
-  assert.equal(nextRot({ item: 'arcade', rot: 2 }), 0);
+test('turning: bed, bed-adjacent furniture and rugs rotate, sideways swaps the footprint', () => {
+  assert.equal(canRotate('bed'), true);
+  assert.equal(canRotate('singleBed'), true);
+  assert.equal(canRotate('bunkBed'), true);
+  assert.equal(canRotate('daybed'), true);
+  assert.equal(canRotate('cloudBed'), true);
+  assert.equal(canRotate('petBed'), true);
+  assert.equal(canRotate('nightstand'), true);
+  assert.equal(canRotate('bedsideLamp'), true);
+  assert.equal(canRotate('rug'), true);
+  assert.equal(canRotate('roundRug'), true);
+  assert.equal(canRotate('runnerRug'), true);
+  assert.equal(canRotate('wardrobe'), false);
+  assert.equal(canRotate('tv'), false);
+  assert.deepEqual(footprint({ item: 'bed', rot: 1 }), { w: 3, h: 2 });
+  assert.deepEqual(footprint({ item: 'daybed', rot: 1 }), { w: 1, h: 2 });
+  assert.deepEqual(footprint({ item: 'rug', rot: 1 }), { w: 2, h: 3 });
+  assert.deepEqual(footprint({ item: 'wardrobe', rot: 1 }), { w: 2, h: 1 });
+  assert.deepEqual([0, 1, 2, 3].map((rot) => nextRot({ item: 'bed', rot })), [1, 2, 3, 0]);
+  assert.deepEqual([0, 1, 2, 3].map((rot) => nextRot({ item: 'daybed', rot })), [1, 2, 3, 0]);
   assert.equal(nextRot({ item: 'roundRug', rot: 1 }), 2); // rugs turn all the way round
-  const room = { furniture: [{ item: 'sofa', x: 0, y: 4, rot: 1 }] }; // a 3x1 sofa turned: 1 wide, 3 deep
-  assert.equal(canPlace(room, 'plant', 0, 6), false); // its third tile
-  assert.equal(canPlace(room, 'plant', 1, 4), true); // beside it, where it used to reach
-  assert.equal(canPlace({ furniture: [] }, 'sofa', 0, 6, 1), false); // 3 deep doesn't fit at the bottom edge
+  assert.equal(nextRot({ item: 'nightstand' }), 2);
+  assert.equal(nextRot({ item: 'wardrobe' }), 0);
+  assert.equal(nextRot({ item: 'tv' }), 0);
+  assert.equal(nextRot({ item: 'arcade' }), 0);
+  const room = { furniture: [{ item: 'bed', x: 0, y: 4, rot: 1 }] }; // a 2x3 bed turned: 3 wide, 2 deep
+  assert.equal(canPlace(room, 'plant', 2, 4), false); // within footprint
+  assert.equal(canPlace(room, 'plant', 3, 4), true); // beside footprint
+  assert.equal(canPlace({ furniture: [] }, 'bed', 0, 7, 1), false); // 2 deep doesn't fit at bottom edge of small room
 });
 
 test('pause freezes the timer until resumed', () => {

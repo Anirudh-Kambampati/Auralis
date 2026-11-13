@@ -1,11 +1,11 @@
 import {
   SHELVES, buildGrid, walkable, canPlace, placeSwaps,roomSize, MAX_ROOMS, ROOM_COST, colorsFor, ITEMS, PETS, PET_ACCS, MAX_PETS, bondLevel, NOTIFY, wantsNotify, EXPAND_COST, ROOM_SIZES,
-  WALLPAPERS, WALL_PATTERNS, FLOORS, FLOOR_STYLES, SKINS, HAIRS, SHIRTS, STYLES, FACES, OUTFITS, BODIES, ACCESSORIES, FOCUS_LENGTHS, isFocusLength,
-  WALL_H, WALL, FLOOR, DOOR, BLOCKED, VOID, buddyMultiplier, focusEnd, streakDays, streakBonus, sellPrice, footprint, lying, THIRSTY_MS, isPlant, discounted, GIFT_COINS, activeEvents, nextEvent,
+  WALLPAPERS, WALL_PATTERNS, FLOORS, FLOOR_STYLES, SKINS, HAIRS, SHIRTS, STYLES, FACES, OUTFITS, BODIES, SIZES, ACCESSORIES, FOCUS_LENGTHS, isFocusLength,
+  WALL_H, WALL, FLOOR, DOOR, BLOCKED, VOID, buddyMultiplier, focusEnd, streakDays, streakBonus, sellPrice, footprint, lying, canRotate, THIRSTY_MS, isPlant, discounted, GIFT_COINS, activeEvents, nextEvent,
   docName, attachLabel, DOC_TYPES, usernameProblem, emailProblem, passwordProblem,
 } from '../shared/game.js';
 import {
-  T, OVERHANG, SURFACE, drawSeated, drawActing, drawSeam, drawFloor, drawWall, drawWallFace, drawWallTop, drawDoor, drawWindow, drawPainting, drawFurniture, drawAvatar, drawDeskLamp, drawGlow, drawUsing, skyNow, weatherNow, NIGHT_TINT,
+  T, OVERHANG, SURFACE, AVATAR_H, avatarScale, drawSeated, drawActing, drawSeam, drawFloor, drawWall, drawWallFace, drawWallTop, drawDoor, drawWindow, drawPainting, drawFurniture, drawAvatar, drawDeskLamp, drawGlow, drawUsing, skyNow, weatherNow, NIGHT_TINT,
   coinURL, uiIconURL, AV, drawPaper, isDark, paintBlockText, drawWindow as drawWin, drawDroplet, drawHeart, tileURL, type Look,
 } from './draw';
 import { drawPet, petPos, petIconURL, seedOf } from './pets';
@@ -131,6 +131,7 @@ function onMessage(m: any) {
     houseCode = m.house.code;
     houseOwnerName = m.house.ownerName ?? '';
     members = m.house.members;
+    for (const member of members) for (const r of member.rooms) for (const f of r.furniture) if (!canRotate(f.item) && f.rot !== undefined) delete f.rot;
     todos = m.house.todos;
     houseEvents = m.house.events ?? [];
     me = { ...m.me, sessions: m.me.sessions ?? me.sessions }; // study history only comes when it changed
@@ -603,6 +604,8 @@ function interact(si: number, fi: number) {
 // moonlight at night, dimmer when it isn't clear, none behind closed curtains. Top-row rooms have their windows on
 // the back wall; any room whose front wall faces outside gets the same light coming up from the front.
 const BEAM: Record<string, [string, number]> = { day: ['255,246,220', 0.2], dusk: ['255,190,120', 0.18], night: ['175,195,255', 0.09] };
+// Window light falls a little shorter than it used to, so a sunlit room doesn't wash out the whole floor.
+const BEAM_LEN = 0.82;
 function drawWindowLight(sky: string, weather: string, onScreen: (x: number, y: number, w: number, h: number) => boolean) {
   const [rgb, a0] = BEAM[sky], a = weather === 'clear' ? a0 : a0 * 0.5;
   const beam = (xl: number, xr: number, y: number, dir: 1 | -1, len: number) => {
@@ -623,8 +626,8 @@ function drawWindowLight(sky: string, weather: string, onScreen: (x: number, y: 
     const front = o.y + s.h; // the wall row in front of the room
     for (let lx = 1; lx + 2 <= s.w - 1; lx += 6) { // same spacing as the windows drawn on the back wall
       const xl = (o.x + lx) * T + 7, xr = (o.x + lx) * T + 25; // the glass
-      if (i < grid.cols) beam(xl, xr, o.y * T, 1, Math.min(5, s.h) * T);
-      if (frontWindow(o.x + lx, front)) beam(xl, xr, front * T, -1, Math.min(3, s.h) * T);
+      if (i < grid.cols) beam(xl, xr, o.y * T, 1, Math.min(5, s.h) * T * BEAM_LEN);
+      if (frontWindow(o.x + lx, front)) beam(xl, xr, front * T, -1, Math.min(3, s.h) * T * BEAM_LEN);
     }
   });
   ctx.restore();
@@ -933,7 +936,7 @@ onKey((e) => {
   const f = myRoom()?.furniture[moving];
   if (!f) return;
   const step = ({ ArrowUp: [0, -1], ArrowDown: [0, 1], ArrowLeft: [-1, 0], ArrowRight: [1, 0] } as Record<string, number[]>)[e.key];
-  const act = { r: 'rotate', f: 'flip', Delete: 'putaway', Backspace: 'putaway', Escape: 'deselect' }[e.key.length === 1 ? e.key.toLowerCase() : e.key];
+  const act = { ...(canRotate(f.item) ? { r: 'rotate' } : {}), f: 'flip', Delete: 'putaway', Backspace: 'putaway', Escape: 'deselect' }[e.key.length === 1 ? e.key.toLowerCase() : e.key];
   if (step) {
     if (canPlace(without(myRoom()!, moving), f.item, f.x + step[0], f.y + step[1], f.rot)) send({ t: 'move', r: editRoom, index: moving, x: f.x + step[0], y: f.y + step[1] });
   } else if (act) panel.querySelector<HTMLButtonElement>(`button[data-act="${act}"]`)?.click(); // same as pressing the button
@@ -1203,7 +1206,7 @@ function render(t: number, dt: number) {
       // Tiles of a desk that something stands on: its own built-in laptop/mug there is hidden (bit 1 = left, 2 = right, as drawn).
       let bare = 0;
       const fp = footprint(f);
-      if (it.solid && !f.rot) for (const g of room.furniture) {
+      if (it.solid && !(canRotate(f.item) && f.rot)) for (const g of room.furniture) {
         if ((ITEMS[g.item as ItemKey] as { top?: boolean } | undefined)?.top &&g.y >= f.y && g.y < f.y + it.h && g.x >= f.x && g.x < f.x + it.w) bare |= 1 << (f.flip ? f.x + it.w - 1 - g.x : g.x - f.x);
       }
       const thirsty = isPlant(f.item) && now - (f.wateredAt ?? now) > THIRSTY_MS; // droops until someone waters it
@@ -1293,11 +1296,13 @@ function render(t: number, dt: number) {
         : a.use && !walking ? drawUsing(ctx, m.look, a.use, ax, ay, t)
         : drawAvatar(ctx, m.look, ax, ay, stepFrame, a.up)),
     });
-    labels.push({ x: a.x, y: a.y, m, seated, lift: seated ? 30 : act?.act === 'pullup' ? 28 : act ? 12 : 7 });
-    // Studying after dark: a desk lamp clicks on, on the table in front of the chair.
+    // Both the bubble and the name tag clear the head, wherever a bigger or smaller character's head ends up.
+    labels.push({ x: a.x, y: a.y, m, seated, lift: Math.round((seated ? 30 : act?.act === 'pullup' ? 28 : act ? 12 : 7) * avatarScale(m.look)) });
+    // Studying after dark: a desk lamp clicks on, on the table in front of the chair. A wide, soft pool of light
+    // rather than a hot spot right on the desk, which used to glare at the person studying.
     if (seated && dark) {
       sprites.push({ y: a.y + 1.6, draw: () => drawDeskLamp(ctx, ax + 10, ay + T + 4) });
-      lights.push({ x: ax + 15, y: ay + T - 4, rad: 34, alpha: 0.5 });
+      lights.push({ x: ax + 15, y: ay + T - 4, rad: 30, alpha: 0.22 });
     }
   }
   sprites.sort((p, q) => p.y - q.y).forEach((s) => s.draw());
@@ -1592,14 +1597,17 @@ const petIcon = (kind: string, cls = 'icon', coat = 0, acc?: string) => `<img cl
 // whole-number number of device pixels per art pixel, then shown at exactly that many device pixels.
 // frame = the img's padding + border on both sides (boxes are border-box), so the picture itself isn't squeezed.
 function crispAvatar(look: Look, scale: number, head: boolean, frame: number) {
-  const dpr = devicePixelRatio || 1, k = Math.max(1, Math.round(scale * dpr)), h = head ? 16 : 22;
+  // The canvas grows with a tall (or small) character, so the picture is never cropped or stretched.
+  const dpr = devicePixelRatio || 1, k = Math.max(1, Math.round(scale * dpr)), sz = avatarScale(look);
+  const w = Math.ceil(16 * sz), h = Math.ceil((head ? 16 : 22) * sz);
   const c = document.createElement('canvas');
-  c.width = 16 * k; c.height = h * k;
+  c.width = w * k; c.height = h * k;
   const g = c.getContext('2d')!;
   g.imageSmoothingEnabled = false;
   g.scale(k, k);
-  drawAvatar(g, look, 0, head ? 4 : 5, 0, false);
-  return { url: c.toDataURL(), style: `width:${(16 * k) / dpr + frame}px;height:${(h * k) / dpr + frame}px` };
+  // A head crop starts at the top of the sprite; a whole body has its feet on the bottom edge.
+  drawAvatar(g, look, (w - 16) / 2, head ? AVATAR_H * sz - 17 : h - 17, 0, false);
+  return { url: c.toDataURL(), style: `width:${(w * k) / dpr + frame}px;height:${(h * k) / dpr + frame}px` };
 }
 function avatarPreview(look: Look) {
   const { url, style } = crispAvatar(look, 4, false, 18);
@@ -1721,15 +1729,16 @@ function decorateBody(mine: Member) {
   if (!sel) moving = null;
   const palette = sel ? colorsFor(sel.item) : [];
   const looks: string[] = sel ? (ITEMS[sel.item as ItemKey] as { looks?: string[] }).looks ?? [] : [];
+  const canRot = sel ? canRotate(sel.item) : false;
   const selBar = sel ? `<div class="selected">${icon(sel.item)}<b>${ITEMS[sel.item as ItemKey].name}</b>
-      <button class="off" data-act="rotate" title="Turn it: side, back, other side, front">⟳ Rotate</button>
+      ${canRot ? '<button class="off" data-act="rotate" title="Turn it: side, back, other side, front">⟳ Rotate</button>' : ''}
       <button class="off" data-act="flip" title="Mirror it to face the other way">↔ Flip</button>
       <button class="off" data-act="putaway">Put away</button><button data-act="deselect">Done</button></div>
       ${looks.length ? `<h3>Style</h3><div class="row styles">${looks.map((name, k) =>
         `<button class="${(sel.s ?? 0) === k ? 'on' : 'off'}" data-act="shape" data-v="${k}">${icon(sel.item, 'chip-icon', k)}${name}</button>`).join('')}</div>` : ''}
       ${palette.length ? `<h3>Colour</h3>${swatches('recolor', palette, sel.v ?? -1, true)}` : ''}` : '';
   const hint = placing ? `Tap a spot in your room to place the <b>${ITEMS[placing].name}</b>.`
-    : sel ? 'Drag it, or tap a new spot to move it there. Keys: arrows move · R rotate · F flip · Delete put away · Esc done.'
+    : sel ? (canRot ? 'Drag it, or tap a new spot to move it there. Keys: arrows move · R rotate · F flip · Delete put away · Esc done.' : 'Drag it, or tap a new spot to move it there. Keys: arrows move · F flip · Delete put away · Esc done.')
     : 'Drag any furniture to move it, or tap it for more options.';
   const shelves = SHELVES.filter((sh) => inv.some(([k]) => (ITEMS[k as ItemKey] as { shelf?: string }).shelf === sh.id));
   if (!shelves.some((sh) => sh.id === storeShelf)) storeShelf = 'all';
@@ -1847,6 +1856,7 @@ function panelBody(mine: Member) {
       }).join('')}${(me.petAccs ?? []).length ? '' : '<p class="hint">Get bows, hats and more for your pets in Shop → Pet style.</p>'}<p class="hint">Tap your pet in the room to have it follow you. Study with it out to grow your bond: bonded pets do tricks and sometimes find coins.</p>` : ''}
       <div class="center"><button class="off" data-act="randomlook">🎲 Randomize look</button></div>
       <h3>Body type</h3>${lookTiles('body', BODIES, mine.look)}
+      <h3>Height</h3>${lookTiles('size', SIZES, mine.look)}
       <h3>Skin tone</h3>${swatches('skin', SKINS, mine.look.skin)}
       <h3>Hair style</h3>${lookTiles('style', STYLES, mine.look, true)}
       <h3>Hair colour</h3>${swatches('hair', HAIRS, mine.look.hair)}
@@ -1983,7 +1993,7 @@ panel.addEventListener('click', (e) => {
     case 'putaway': if (moving !== null) send({ t: 'pickup', r: editRoom, index: moving }); moving = null; renderPanel(); break;
     case 'deselect': moving = null; renderPanel(); break;
     case 'flip': if (moving !== null) send({ t: 'flip', r: editRoom, index: moving }); break;
-    case 'rotate': if (moving !== null) send({ t: 'turn', r: editRoom, index: moving }); break;
+    case 'rotate': if (moving !== null && canRotate(myRoom()?.furniture[moving]?.item ?? '')) send({ t: 'turn', r: editRoom, index: moving }); break;
     case 'storeShelf': storeShelf = v; renderPanel(); break;
     case 'sell': // two taps, so nothing gets sold by a stray click
       if (!b.classList.contains('armed')) {
@@ -1999,7 +2009,7 @@ panel.addEventListener('click', (e) => {
     case 'shape': if (moving !== null) send({ t: 'shape', r: editRoom, index: moving, s: Number(v) }); break;
     case 'wallpaper': case 'floor': case 'pattern': case 'floorStyle':
       send({ t: 'room', r: editRoom, wallpaper: room.wallpaper, floor: room.floor, pattern: room.pattern, floorStyle: room.floorStyle, [b.dataset.act]: v }); break;
-    case 'skin': case 'hair': case 'shirt': case 'style': case 'face': case 'outfit': case 'body': case 'acc':
+    case 'skin': case 'hair': case 'shirt': case 'style': case 'face': case 'outfit': case 'body': case 'acc': case 'size':
       send({ t: 'look', name: mine.name, look: { ...mine.look, [b.dataset.act]: v } }); break;
     case 'randomlook': send({ t: 'look', name: mine.name, look: randomLook() }); break;
     case 'copy': copyCode(); break;

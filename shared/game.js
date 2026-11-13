@@ -476,6 +476,7 @@ export const STYLES = ['short', 'side part', 'buzz', 'spiky', 'curly', 'bob', 'l
 export const FACES = ['happy', 'sleepy', 'wink', 'grin', 'cool', 'surprised', 'blush', 'smirk', 'fierce', 'silly', 'calm', 'laugh', 'sad', 'cry', 'angry', 'shy', 'pout', 'starry'];
 export const OUTFITS = ['tee', 'tie', 'sweater', 'jacket', 'hoodie', 'overalls', 'dress', 'skirt', 'striped', 'vest', 'tank', 'kimono', 'polo', 'suit', 'cardigan', 'apron', 'raincoat', 'sailor', 'hawaiian', 'puffer', 'flannel', 'varsity', 'denim', 'turtleneck'];
 export const BODIES = ['regular', 'lean', 'athletic', 'chubby', 'broad', 'stocky', 'petite', 'curvy'];
+export const SIZES = ['small', 'regular', 'tall']; // how big the character is drawn, relative to one tile
 export const ACCESSORIES = ['none', 'glasses', 'round', 'shades', 'bandage', 'mask', 'earring', 'headphones', 'cap', 'beanie', 'catears'];
 
 export const FOCUS_LENGTHS = [15, 20, 25, 45, 60, 90]; // one-tap picks
@@ -582,11 +583,25 @@ export function buildGrid(rooms) {
 export const walkable = (k) => k === FLOOR || k === DOOR;
 
 // Turning: rot 0 faces front, 1 and 3 sideways, 2 away. Sideways a piece's width and depth swap.
-export const footprint = (f) => { const it = ITEMS[f.item]; return f.rot % 2 ? { w: it.h, h: it.w } : { w: it.w, h: it.h }; };
+// Bed and bed-adjacent furniture can rotate (all beds, nightstands, bedside lamps, etc.).
+const BED_ADJACENT = new Set([
+  'bed', 'singleBed', 'bunkBed', 'daybed', 'cloudBed', 'petBed', 'hammock',
+  'nightstand', 'bedsideLamp', 'alarmClock', 'blanketLadder',
+]);
+export const canRotate = (item) => {
+  if (!item) return false;
+  if (BED_ADJACENT.has(item)) return true;
+  const it = ITEMS[item];
+  if (!it) return false;
+  if (!it.solid && !it.top) return true; // rugs and floor mats
+  return !!(it.act === 'sleep' || it.pet === 'sleep' || item.toLowerCase().includes('bed') || item.toLowerCase().includes('rug') || item.toLowerCase().includes('mat'));
+};
+export const footprint = (f) => { const it = ITEMS[f.item]; return (canRotate(f.item) && f.rot % 2) ? { w: it.h, h: it.w } : { w: it.w, h: it.h }; };
 // Rugs, mats and beds are seen from above, so they turn as a whole picture; upright things show a side or their back.
-export const lying = (it) => (!it.solid && !it.top) || it.h > it.w;
-// The next way a piece can face. Square upright things only have a front and a back (their side looks like their front).
+export const lying = (it) => (!it?.solid && !it?.top) || it?.h > it?.w || it?.act === 'sleep' || it?.pet === 'sleep' || (typeof it?.name === 'string' && it.name.toLowerCase().includes('bed'));
+// The next way a piece can face. Square upright things only have a front and a back.
 export const nextRot = (f) => {
+  if (!canRotate(f.item)) return 0;
   const it = ITEMS[f.item], r = f.rot ?? 0;
   return it.w === it.h && !lying(it) ? (r ? 0 : 2) : (r + 1) % 4;
 };
@@ -597,7 +612,7 @@ export function canPlace(room, item, x, y, rot = 0) {
   const it = ITEMS[item];
   const s = roomSize(room);
   if (!it || !Number.isInteger(x) || !Number.isInteger(y)) return false;
-  const d = footprint({ item, rot });
+  const d = footprint({ item, rot: canRotate(item) ? rot : 0 });
   if (x < 0 || y < 0 || x + d.w > s.w || y + d.h > s.h) return false;
   return !room.furniture.some((f) => hits(f, it, x, y, d));
 }

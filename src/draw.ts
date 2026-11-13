@@ -1,9 +1,25 @@
 // All art is original pixel art drawn in code. Coordinates are art pixels; one tile is 16x16.
+import { canRotate } from '../shared/game.js';
 export const T = 16;
 const OUT = '#3a2633';
 
 type Ctx = CanvasRenderingContext2D;
-export type Look = { skin: string; hair: string; shirt: string; style?: string; face?: string; outfit?: string; body?: string; acc?: string };
+export type Look = { skin: string; hair: string; shirt: string; style?: string; face?: string; outfit?: string; body?: string; acc?: string; size?: string };
+
+// How much bigger (or smaller) than the standard tile figure a person is drawn. Their feet stay where they stand,
+// so a taller character simply reaches further up the room.
+const SIZE_SCALE: Record<string, number> = { small: 0.75, regular: 1, tall: 1.5 };
+export const avatarScale = (look: Look) => SIZE_SCALE[look.size ?? ''] ?? 1;
+// Runs drawing code in sprite pixels, scaled about a point (ax, ay) that must not move.
+function scaledAt(c: Ctx, k: number, ax: number, ay: number, paint: () => void) {
+  if (k === 1) { paint(); return; }
+  c.save();
+  c.translate(ax, ay);
+  c.scale(k, k);
+  c.translate(-ax, -ay);
+  paint();
+  c.restore();
+}
 
 // Furniture palette: while furniture is drawn, the original candy colours become warmer, muted ones (teak and walnut,
 // olive, mustard, terracotta, dusty blue, cream) with warm brown outlines. Characters, pets and icons keep theirs.
@@ -25,10 +41,14 @@ const r = (c: Ctx, x: number, y: number, w: number, h: number, color: string) =>
   c.fillRect(x, y, w, h);
 };
 
+// Shading mixes towards a warm shadow (the palette's ink) or a warm light (cream) instead of adding grey, so every
+// material keeps its hue as it turns away from the light. Mixing also stops light colours from clipping to flat white.
+const SHADE_TO = [42, 29, 40], LIGHT_TO = [255, 246, 231];
 export function shade(hex: string, amt: number) {
   const n = parseInt(tone(hex).slice(1, 7), 16);
-  const f = (v: number) => Math.max(0, Math.min(255, Math.round(v + amt * 255))).toString(16).padStart(2, '0');
-  return `#${f(n >> 16)}${f((n >> 8) & 255)}${f(n & 255)}`;
+  const to = amt < 0 ? SHADE_TO : LIGHT_TO, k = Math.min(1, Math.abs(amt) * 1.15);
+  const f = (v: number, t: number) => Math.max(0, Math.min(255, Math.round(v + (t - v) * k))).toString(16).padStart(2, '0');
+  return `#${f(n >> 16, to[0])}${f((n >> 8) & 255, to[1])}${f(n & 255, to[2])}`;
 }
 
 const cache = new Map<string, HTMLCanvasElement>();
@@ -50,15 +70,17 @@ function paintRows(c: Ctx, rows: string[], pal: Record<string, string>) {
   });
 }
 
-// Outlined box with rounded corners, lit from the top left: a bright top, a shaded right side and a darker base.
+// Outlined box with rounded corners, lit from the top left: a bright top, a rim of light down the left, a shaded
+// right side and a darker base. Four tones, always in the same places, so every piece reads from the same light.
 function box(c: Ctx, x: number, y: number, w: number, h: number, fill: string) {
   r(c, x + 1, y, w - 2, 1, OUT);
   r(c, x + 1, y + h - 1, w - 2, 1, OUT);
   r(c, x, y + 1, 1, h - 2, OUT);
   r(c, x + w - 1, y + 1, 1, h - 2, OUT);
   r(c, x + 1, y + 1, w - 2, h - 2, fill);
-  if (w > 5 && h > 4) r(c, x + w - 2, y + 2, 1, h - 3, shade(fill, -0.06));
-  r(c, x + 1, y + 1, w - 2, 1, shade(fill, 0.12));
+  if (w > 5 && h > 4) r(c, x + w - 2, y + 2, 1, h - 3, shade(fill, -0.09));
+  r(c, x + 1, y + 1, w - 2, 1, shade(fill, 0.13));
+  if (w > 3 && h > 4) r(c, x + 1, y + 2, 1, h - 3, shade(fill, 0.07));
   if (h > 7) r(c, x + 1, y + 2, w - 2, 1, shade(fill, 0.05));
   if (h > 3) r(c, x + 1, y + h - 2, w - 2, 1, shade(fill, -0.12));
   if (h > 9) r(c, x + 1, y + h - 3, w - 2, 1, shade(fill, -0.05));
@@ -68,6 +90,26 @@ function disc(c: Ctx, cx: number, cy: number, rad: number, color: string) {
   for (let dy = -rad; dy <= rad; dy++) {
     const half = Math.floor(Math.sqrt(rad * rad + rad * 0.6 - dy * dy));
     r(c, cx - half, cy + dy, half * 2 + 1, 1, color);
+  }
+}
+
+// A round body lit by the same lamp as the boxes: the face turned up and to the left catches the light, the lower right
+// turns away into shade, and the rows under it are darker still. Four tones in the same places as box(), so a ball, a
+// bowl of fruit, a beanbag and a wardrobe all read as lit from one direction. Small dots stay flat so details stay legible.
+function sphere(c: Ctx, cx: number, cy: number, rad: number, fill: string, outline = true) {
+  if (rad < 2) { disc(c, cx, cy, rad, fill); return; }
+  const tones = [shade(fill, 0.24), shade(fill, 0.12), fill, shade(fill, -0.11), shade(fill, -0.22)];
+  const cuts = [-0.62, -0.2, 0.35, 0.75]; // along the light's own diagonal: -1 is the lit corner, +1 the shaded one
+  if (outline) disc(c, cx, cy, rad + 1, OUT);
+  for (let dy = -rad; dy <= rad; dy++) {
+    const half = Math.floor(Math.sqrt(rad * rad + rad * 0.6 - dy * dy));
+    let from = -half;
+    for (let i = 0; i < cuts.length; i++) {
+      const edge = Math.max(from, Math.min(half + 1, Math.round((cuts[i] * rad - dy * 0.78) / 0.5))); // where this tone ends
+      if (edge > from) r(c, cx + from, cy + dy, edge - from, 1, tones[i]);
+      from = edge;
+    }
+    if (from <= half) r(c, cx + from, cy + dy, half - from + 1, 1, tones[4]);
   }
 }
 
@@ -275,25 +317,99 @@ function fromBehind(style: Overlay): Overlay {
     return [y, r];
   }));
 }
-// Volume for any hairstyle: a light rim along the top, shadow where hair meets the face and along its lower edge.
-// Layers: the hair falls in locks that fan out from the crown, with a darker line where each pair of locks parts
-// (none straight down the middle), a broken shine band across the top, and shadow against the skin and underneath.
-function shadeHair(rows: string[]) {
-  const isHair = (ch?: string) => ch === 'h' || ch === 'H' || ch === 'l';
+// The hairline, one row above the eyes, is what tells two styles apart at this size, so each hangs its fringe over
+// the brow its own way: straight, swept, parted, wispy, or combed back off the forehead.
+const HAIRLINE: Record<string, [string, string]> = {
+  short: ['HhhhhhhhhHHh', 'hHhshhhhhHsh'], // soft cap with two wisps
+  'side part': ['ssshhhhhhHHh', 'ssshhhhhhHHh'], // short temple, long sweep across
+  buzz: ['ssssssssssss', 'ssssssssssss'], // hairline high and shaved
+  spiky: ['hHhhHhhHhhHh', 'hHsHsshHssHs'], // points over the brow
+  messy: ['HhhHhhHhhHhH', 'hshHsshHsshH'], // uneven, a strand hanging
+  undercut: ['sshhhhhhhhHs', 'sshhhhhhhhHs'], // shaved sides, hair only on top
+  quiff: ['ssshhhhhhhss', 'sshhhhhhhhss'], // swept up and back
+  fauxhawk: ['ssshhhhhhsss', 'sssshhhhssss'], // tight crest, bare temples
+  topknot: ['sssshhhhssss', 'ssshhhhhhsss'], // pulled back tight
+  slick: ['sshhhhhhhhhs', 'shhhhhhhhhhs'], // combed flat and glossy
+  curtains: ['hhsshhhhsshH', 'hhsshhhhsshH'], // two curtains, a gap between
+  crop: ['HHHHHHHHHHHH', 'ssssssssssss'], // a short neat edge
+  mohawk: ['ssssssssssss', 'ssssssssssss'], // only the crest
+  pixie: ['sshhhhhhhhss', 'sshhHhssssss'], // tapered, one wisp at the temple
+  bowl: ['HHHHHHHHHHHH', 'HHHHHHHHHHHH'], // a hard line all the way across
+  manbun: ['ssshhhhhhsss', 'sshhhhhhhhss'],
+  emo: ['hhhhhhhhhhss', 'hhhhhhhhhsss'], // the fringe comes down over one eye
+  bob: ['hhhhhhhhhhhH', 'hhhhhhhhhhhH'], // a blunt fringe
+  long: ['hhhjhhhhjhhH', 'hhhshhhhshhH'], // parted down the middle
+  wavy: ['hhhjhhhhjhhH', 'hshshhhhshsh'], // parted, soft at the edges
+  shaggy: ['hhHhhhHhhhHh', 'sHshHsshHssh'], // choppy layers
+  halfup: ['sshhhhhhhhss', 'sshhshhshhss'], // the front swept up into the tie
+  wolf: ['hHhhHhhHhhHh', 'hsHsshHssHsh'], // choppy, strands over the brows
+  sidelong: ['hhhhhhhhhhhH', 'hhhhhhhsssss'], // one long fringe to the side
+};
+
+// How each style's hair behaves: where it parts, which way the locks run, how glossy it is and how deep its shadows
+// go. This is what stops thirty styles shading into one another.
+type HairFlow = { part?: number; sweep?: number; gloss?: 'none' | 'soft' | 'hard'; depth?: number };
+const HAIR_FLOW: Record<string, HairFlow> = {
+  short: { sweep: 0.3, depth: 0.4 },
+  'side part': { part: 5, sweep: 0.9, depth: 0.4 },
+  buzz: { gloss: 'none', depth: 0.2 },
+  spiky: { sweep: 0.1, depth: 0.8 },
+  messy: { sweep: -0.4, depth: 0.5 },
+  undercut: { sweep: 0.5, depth: 0.3 },
+  quiff: { sweep: 0.6, gloss: 'hard', depth: 0.4 },
+  fauxhawk: { sweep: 0.1, depth: 0.6 },
+  topknot: { sweep: -0.2, depth: 0.3 },
+  slick: { sweep: 0.8, gloss: 'hard', depth: 0.3 },
+  curtains: { part: 7, sweep: 0.2, depth: 0.5 },
+  crop: { depth: 0.3 },
+  mohawk: { gloss: 'hard', depth: 0.2 },
+  pixie: { sweep: 0.4, depth: 0.4 },
+  bowl: { depth: 0.3 },
+  manbun: { sweep: -0.2, depth: 0.3 },
+  emo: { sweep: 1, depth: 0.6 },
+  curly: { depth: 0.8 },
+  bob: { sweep: 0.2, depth: 0.5 },
+  long: { part: 7, sweep: 0.2, depth: 0.6 },
+  ponytail: { sweep: 0.3, depth: 0.4 },
+  buns: { sweep: -0.2, depth: 0.4 },
+  afro: { depth: 0.8 },
+  wavy: { part: 7, sweep: 0.2, depth: 0.6 },
+  shaggy: { sweep: -0.5, depth: 0.7 },
+  twintails: { sweep: 0.2, depth: 0.4 },
+  halfup: { sweep: -0.2, depth: 0.4 },
+  wolf: { sweep: 0.4, depth: 0.7 },
+  sidelong: { sweep: 1, depth: 0.5 },
+  braids: { sweep: 0.2, depth: 0.5 },
+};
+
+// Volume and layering for any hairstyle, always lit from the top left: a bright rim along the crown, hair falling in
+// locks that fan out from the crown and part along the style's own sweep, the sides turning away into shade, and the
+// deepest tone along the underside and where the hair folds onto the face. Four tones, placed by the silhouette, so a
+// bob, a shag and a slick-back each read as themselves instead of as the same dark cap.
+function shadeHair(rows: string[], style = '', up = false) {
+  const isHair = (ch?: string) => ch === 'h' || ch === 'H' || ch === 'j' || ch === 'l';
   const top = [...rows[0]].map((_, x) => rows.findIndex((row) => isHair(row[x])));
   const tops = top.filter((t) => t >= 0);
   if (!tops.length) return rows;
-  const crown = Math.min(...tops) - 3, mid = rows[0].length / 2;
+  const crown = Math.min(...tops), mid = rows[0].length / 2 - 0.5;
+  const flow = HAIR_FLOW[style] ?? {};
+  const sweep = (up ? -1 : 1) * (flow.sweep ?? 0.2); // from behind, the locks run the other way
+  const gloss = flow.gloss ?? 'soft', depth = flow.depth ?? 0.5;
   return rows.map((row, y) => [...row].map((ch, x) => {
-    if (ch !== 'h') return ch;
-    const up = rows[y - 1]?.[x], down = rows[y + 1]?.[x], left = row[x - 1], right = row[x + 1];
-    const d = y - top[x]; // how far down the hair this pixel is
-    const lock = ((Math.atan2(x + 0.5 - mid, y + 0.5 - crown) * 180) / Math.PI / 19 + 1000) % 1; // where across its lock it sits
-    const parting = Math.abs(lock - 0.5) < 0.17 && d >= 2;
-    if ([up, down, left, right].some((n) => n === 's' || n === 'S')) return 'H'; // shadow against the skin
-    if (down === 'o' && y >= 6) return 'H'; // the underside of the hair
-    if (!parting && ((d === 2 && x >= 2 && x <= 13) || (d === 3 && x >= 4 && x <= 7))) return 'l'; // the shine band
-    return parting ? 'H' : ch;
+    if (ch !== 'h') return ch; // tones painted on purpose stay put
+    const above = rows[y - 1]?.[x], below = rows[y + 1]?.[x], left = row[x - 1], right = row[x + 1];
+    const d = y - top[x]; // how far down the hair this pixel sits
+    if ([above, below, left, right].some((n) => n === 's' || n === 'S')) return 'j'; // the fold onto the face
+    if (!isHair(below)) return 'j'; // the lowest edge of the hair
+    if (d <= 1 && !isHair(above)) return 'l'; // the lit rim along the crown
+    if (depth > 0.35 && !isHair(rows[y + 2]?.[x])) return 'H'; // one row above the edge
+    if (flow.part !== undefined && Math.abs(x - flow.part) < 1 && y < crown + 7) return 'j'; // the parting
+    const round = ((Math.atan2(x - mid, y + 0.5 - crown) * 180) / Math.PI + sweep * 45 + 720) % 360;
+    const lock = (round / 22) % 1; // where across its lock this pixel sits
+    if (gloss !== 'none' && d >= 1 && d <= 2 && Math.abs(lock - 0.5) < 0.3) return 'l'; // the shine
+    if (Math.abs(lock - 0.5) < 0.11 && d >= 3) return 'H'; // where two locks part
+    if ((!isHair(left) || !isHair(right)) && d > 2) return 'H'; // the outer edge, turning away
+    return ch;
   }).join(''));
 }
 // The mohawk from behind: its crest runs down the back of the head, shaved either side.
@@ -304,8 +420,11 @@ const MOHAWK_BACK: Overlay = {
 
 function avatarRows(look: Look, step: number, up: boolean) {
   let rows = [BLANK, BLANK, ...(up ? HEAD_BACK : HEAD_FRONT), ...(up ? BODY_BACK : BODY_FRONT), ...LEGS[step]];
-  const style = STYLE_OVERLAY[look.style ?? ''];
-  const backStyle = !up || !style ? style : look.style === 'mohawk' ? { ...style, ...MOHAWK_BACK } : fromBehind(style);
+  const key = look.style ?? '';
+  const base = STYLE_OVERLAY[key];
+  const line = HAIRLINE[key];
+  const style = base && line ? { ...base, 8: '.o' + line[0] + 'o.', 9: '.o' + line[1] + 'o.' } : base;
+  const backStyle = !up || !style ? style : key === 'mohawk' ? { ...style, ...MOHAWK_BACK } : fromBehind(style);
   const layers = [OUTFIT_OVERLAY[look.outfit ?? ''], backStyle, up ? null : FACE_OVERLAY[look.face ?? '']];
   for (const over of layers) {
     if (!over) continue;
@@ -316,25 +435,44 @@ function avatarRows(look: Look, step: number, up: boolean) {
   if (acc && (!up || ACC_BACK.has(look.acc!))) rows = rows.map((row, y) => (acc[y] ? [...row].map((ch, x) => (acc[y][x] !== '.' ? acc[y][x] : ch)).join('') : row));
   const shape = BODY_SHAPE[look.body ?? ''];
   if (shape) rows = rows.map((row, y) => shape[y]?.(row) ?? row);
-  return shadeHair(rows);
+  return shadeHair(shadeBody(rows), key, up);
+}
+
+// Volume across the torso: light down the left edge and shadow down the right, the same light as the hair and the
+// furniture. Only the plain shirt pixels are touched, so printed outfits keep their own detail.
+function shadeBody(rows: string[]) {
+  return rows.map((row, y) => {
+    if (y < 14 || y > 17) return row;
+    const s = [...row];
+    const span = (ch: string) => s.reduce<number[]>((xs, c, x) => (c === ch ? [...xs, x] : xs), []);
+    const shirt = span('t');
+    if (shirt.length >= 3) { s[shirt[0]] = 'u'; s[shirt[shirt.length - 1]] = 'T'; }
+    const skin = span('s');
+    if (skin.length >= 2) s[skin[skin.length - 1]] = 'S';
+    return s.join('');
+  });
 }
 
 // x, y = top-left of the tile the avatar stands on; the sprite overhangs the tile above.
 const lookPal = (look: Look): Record<string, string> => {
   const acc = ACC_COL[look.acc ?? ''] ?? '#5a5070';
   return {
-    o: OUT, h: look.hair, H: shade(look.hair, -0.15), l: shade(look.hair, 0.2),
+    o: OUT, h: look.hair, H: shade(look.hair, -0.24), j: shade(look.hair, -0.42), l: shade(look.hair, 0.3),
     s: look.skin, S: shade(look.skin, -0.1), e: '#2a1e26', w: '#ffffff', b: '#f7a0a8', m: '#c8606a', q: '#7fc4f0',
-    t: look.shirt, T: shade(look.shirt, -0.15), c: '#fff4e6', d: '#7a5040', a: acc, A: shade(acc, -0.15),
+    t: look.shirt, T: shade(look.shirt, -0.15), u: shade(look.shirt, 0.15), c: '#fff4e6', d: '#7a5040', a: acc, A: shade(acc, -0.15),
     v: '#6a8ad0', V: '#5a78bc', r: '#e06a5a', y: '#ffd34d', k: '#3a3448', g: '#8fd0a8', p: look.outfit === 'overalls' ? '#5a78bc' : '#5a5080',
   };
 };
 export function drawAvatar(c: Ctx, look: Look, x: number, y: number, step: number, up: boolean) {
+  const k = avatarScale(look);
   const key = `av|${Object.values(look).join()}|${step}${up}`;
   const sprite = baked(key, 16, AVATAR_H, (g) => paintRows(g, avatarRows(look, step, up), lookPal(look)));
-  r(c, x + 4, y + 14, 8, 2, 'rgba(58,38,51,0.22)');
-  r(c, x + 3, y + 15, 10, 1, 'rgba(58,38,51,0.12)');
-  c.drawImage(sprite, x, y + T - AVATAR_H + (step ? -1 : 0) + 1);
+  // Scaled from the feet, so a big character still stands squarely on their tile.
+  const wide = 4 * k, wider = 5 * k;
+  r(c, x + 8 - wide, y + 14, wide * 2, 2, 'rgba(58,38,51,0.22)');
+  r(c, x + 8 - wider, y + 15, wider * 2, 1, 'rgba(58,38,51,0.12)');
+  const bottom = y + T + 1 + (step ? -1 : 0), w = 16 * k, h = AVATAR_H * k;
+  c.drawImage(sprite, 0, 0, 16, AVATAR_H, Math.round(x + 8 - w / 2), Math.round(bottom - h), w, h);
 }
 
 // Furniture redrawn at full detail is drawn at AV times the room's pixels.
@@ -401,8 +539,13 @@ const CHAIRS: Record<string, { col: string; back: ChairPart; seat: ChairPart }> 
 function seatedSprite(look: Look) {
   return baked(`sit|${Object.values(look).join()}`, 16, 18, (g) => paintRows(g, avatarRows(look, 0, false).slice(0, 18), lookPal(look)));
 }
-// The seated sprite's top `rows` pixels (all of it by default) at x, y.
-const drawSitter = (c: Ctx, look: Look, x: number, y: number, rows = 18) => c.drawImage(seatedSprite(look), 0, 0, 16, rows, x, y, 16, rows);
+// The seated sprite's top `rows` pixels (all of it by default) at x, y, scaled from the bottom of those rows.
+// fromTop pins the head where it is instead (a sleeper's head stays on the pillow, however tall they are).
+const drawSitter = (c: Ctx, look: Look, x: number, y: number, rows = 18, fromTop = false) => {
+  const k = avatarScale(look), w = 16 * k, h = rows * k;
+  const top = fromTop ? y : y + rows - h;
+  c.drawImage(seatedSprite(look), 0, 0, 16, rows, Math.round(x + 8 - w / 2), Math.round(top), w, h);
+};
 
 // Seated in a chair facing us: gentle bob, and sparkles drifting up while studying.
 export function drawSeated(c: Ctx, look: Look, x: number, y: number, t: number, chairCol?: string, kind = 'chair', sparkle = true) {
@@ -434,7 +577,7 @@ export function drawActing(c: Ctx, look: Look, act: string, item: string, x: num
   const beat = Math.floor(t / 260) % 2;
   if (act === 'sleep') {
     // Tucked in: head on the pillow, blanket up to the chin, z's drifting up.
-    drawSitter(c, look, x, y - 3, 14);
+    drawSitter(c, look, x, y - 3, 14, true);
     box(c, x, y + 9, 16, 9, col ?? '#9cc4f0');
     r(c, x + 1, y + 9, 14, 2, '#fffaf3');
     const p = (t / 1600) % 1;
@@ -465,18 +608,24 @@ export function drawActing(c: Ctx, look: Look, act: string, item: string, x: num
   } else if (act === 'lift') {
     drawAvatar(c, look, x, y - 2, 0, false);
     const dy = beat ? -14 : -6;
-    for (const dx of [-2, 13]) {
-      r(c, x + dx, y + dy + 1, 5, 1, '#5a5070');
-      box(c, x + dx - 1, y + dy - 1, 2, 4, col ?? '#f48a8a');
-      box(c, x + dx + 4, y + dy - 1, 2, 4, col ?? '#f48a8a');
-    }
+    // The bells ride with the hands, so they stay in reach at any height.
+    scaledAt(c, avatarScale(look), x + 8, y + 16, () => {
+      for (const dx of [-2, 13]) {
+        r(c, x + dx, y + dy + 1, 5, 1, '#5a5070');
+        box(c, x + dx - 1, y + dy - 1, 2, 4, col ?? '#f48a8a');
+        box(c, x + dx + 4, y + dy - 1, 2, 4, col ?? '#f48a8a');
+      }
+    });
   } else if (act === 'pullup') {
     // Hanging from the crossbar (18px up), facing it: up until the chin clears the bar, then slowly back down.
     const p = (1 - Math.cos(t / 450)) / 2, ay = y - 19 - Math.round(p * 6);
     r(c, x + 4, y + 14, 8, 2, 'rgba(58,38,51,0.18)'); // shadow stays on the floor
-    c.drawImage(baked(`av|${Object.values(look).join()}|0true`, 16, AVATAR_H, (g) => paintRows(g, avatarRows(look, 0, true), lookPal(look))), x, ay);
-    for (const ax of [2, 12]) r(c, x + ax, y - 17, 2, ay + 10 - (y - 17), look.skin); // arms up to the bar
-    for (const ax of [1, 11]) r(c, x + ax, y - 18, 4, 2, shade(look.skin, -0.1)); // hands round it
+    // Hanging from the bar, so the hands stay on it and a taller body simply reaches further down.
+    scaledAt(c, avatarScale(look), x + 8, y - 18, () => {
+      c.drawImage(baked(`av|${Object.values(look).join()}|0true`, 16, AVATAR_H, (g) => paintRows(g, avatarRows(look, 0, true), lookPal(look))), x, ay);
+      for (const ax of [2, 12]) r(c, x + ax, y - 17, 2, ay + 10 - (y - 17), look.skin); // arms up to the bar
+      for (const ax of [1, 11]) r(c, x + ax, y - 18, 4, 2, shade(look.skin, -0.1)); // hands round it
+    });
   } else if (act === 'punch') {
     drawAvatar(c, look, x + 5 - beat * 2, y + 1, 0, true);
     if (beat) { r(c, x + 2, y - 8, 2, 1, '#fff3b0'); r(c, x + 1, y - 10, 1, 1, '#fff3b0'); }
@@ -786,7 +935,7 @@ export const NIGHT_TINT: Record<Sky, string> = { day: '', dusk: 'rgba(90,60,120,
 
 // Warm light added on top of the night tint ('lighter' blending brightens what is underneath).
 // Light spreads well past its source (GLOW_REACH times the listed radius): bright near it, then a long soft falloff.
-export const GLOW_REACH = 4;
+export const GLOW_REACH = 5;
 export function drawGlow(c: Ctx, x: number, y: number, rad: number, alpha: number) {
   rad *= GLOW_REACH;
   const g = c.createRadialGradient(x, y, 1, x, y, rad);
@@ -1117,10 +1266,7 @@ const DRAW: Record<string, Draw> = {
     r(c, x + 9, y + 12, 5, 1, '#e8e3dc');
   },
   gymBall(c, x, y, _t, col = '#9db4ee') {
-    disc(c, x + 8, y + 8, 7, OUT);
-    disc(c, x + 8, y + 8, 6, col);
-    r(c, x + 2, y + 9, 12, 1, shade(col, -0.12));
-    disc(c, x + 6, y + 5, 2, shade(col, 0.18));
+    sphere(c, x + 8, y + 8, 6, col);
   },
   dumbbells(c, x, y, _t, col = '#f48a8a') {
     const Y = y - 4;
@@ -1167,9 +1313,9 @@ const DRAW: Record<string, Draw> = {
   },
   petBall(c, x, y, t) {
     const bx = x + 8 + Math.round(Math.sin(t / 350) * 3);
-    disc(c, bx, y + 11, 3, OUT);
-    disc(c, bx, y + 11, 2, '#ffd34d');
-    r(c, bx - 2, y + 11, 5, 1, '#f48a8a');
+    sphere(c, bx, y + 11, 2, '#ffd34d');
+    r(c, bx - 2, y + 11, 1, 1, '#f48a8a');
+    r(c, bx + 2, y + 11, 1, 1, '#f48a8a');
   },
   petBed(c, x, y, _t, col = '#b89af0') {
     box(c, x, y + 6, 16, 9, col);
@@ -1222,11 +1368,7 @@ const DRAW: Record<string, Draw> = {
     const Y = y - 6;
     const leaves = [[8, 8, 4], [4, 10, 3], [12, 10, 3], [6, 4, 3], [10, 4, 3]];
     for (const [a, b, rad] of leaves) disc(c, x + a, Y + b, rad + 1, OUT);
-    for (const [a, b, rad] of leaves) {
-      disc(c, x + a, Y + b, rad, '#4f9a6a');
-      disc(c, x + a, Y + b - 1, rad - 1, '#6cbf7a');
-      r(c, x + a - 1, Y + b - rad + 1, 2, 1, '#a8e6a0');
-    }
+    for (const [a, b, rad] of leaves) sphere(c, x + a, Y + b, rad, '#6cbf7a', false);
     box(c, x + 4, Y + 15, 8, 7, col);
     box(c, x + 3, Y + 13, 10, 4, shade(col, 0.08));
     heart(c, x + 8, Y + 17, '#fff4e6');
@@ -1290,18 +1432,15 @@ const DRAW: Record<string, Draw> = {
     r(c, x + 7, Y + 15, 2, 6, '#b07a4e');
     r(c, x + 2, Y + 3, 1, 12, '#c9a050');
     r(c, x + 3, Y + 14, 4, 1, '#c9a050');
-    disc(c, x + 8, Y + 8, 6, OUT);
-    disc(c, x + 8, Y + 8, 5, '#7fb2e8');
+    sphere(c, x + 8, Y + 8, 5, '#7fb2e8');
     r(c, x + 5, Y + 5, 3, 3, '#8fd0a8');
     r(c, x + 9, Y + 9, 4, 2, '#8fd0a8');
     r(c, x + 6, Y + 11, 2, 1, '#8fd0a8');
     r(c, x + 9, Y + 4, 1, 1, '#ffffff');
   },
   beanbag(c, x, y, _t, col = '#f4a6b8') {
-    disc(c, x + 8, y + 9, 7, OUT);
-    disc(c, x + 8, y + 9, 6, col);
-    disc(c, x + 8, y + 11, 4, shade(col, -0.08));
-    disc(c, x + 7, y + 6, 2, shade(col, 0.15));
+    sphere(c, x + 8, y + 9, 6, col);
+    r(c, x + 5, y + 13, 5, 1, shade(col, -0.28)); // it slumps at the base
   },
   bookshelf(c, x, y, _t, col = '#b07a4e') {
     const Y = y - 16;
@@ -1449,7 +1588,7 @@ const DRAW: Record<string, Draw> = {
     r(c, x + 7, Y + 7, 2, 8, '#8a5a3c');
     r(c, x + 5, Y + 9, 3, 1, '#8a5a3c');
     for (const [a, b, rad] of [[5, 6, 3], [11, 5, 3], [8, 3, 3]]) disc(c, x + a, Y + b, rad + 1, OUT);
-    for (const [a, b, rad] of [[5, 6, 3], [11, 5, 3], [8, 3, 3]]) { disc(c, x + a, Y + b, rad, '#6cbf7a'); r(c, x + a - 1, Y + b - 2, 2, 1, '#a8e6a0'); }
+    for (const [a, b, rad] of [[5, 6, 3], [11, 5, 3], [8, 3, 3]]) sphere(c, x + a, Y + b, rad, '#6cbf7a', false);
     box(c, x + 2, Y + 14, 12, 6, '#7a6a8a');
     r(c, x + 3, Y + 15, 10, 1, '#9a8aaa');
   },
@@ -1581,9 +1720,9 @@ const DRAW: Record<string, Draw> = {
     r(c, x + 14, y + 4 + (Math.floor(t / 400) % 2), 1, 3, 'rgba(255,255,255,0.7)');
   },
   fruitBowl(c, x, y) {
-    disc(c, x + 5, y + 8, 2, '#f48a8a');
-    disc(c, x + 9, y + 7, 2, '#ffd27a');
-    disc(c, x + 11, y + 9, 2, '#8fd0a8');
+    sphere(c, x + 5, y + 8, 2, '#f48a8a');
+    sphere(c, x + 9, y + 7, 2, '#ffd27a');
+    sphere(c, x + 11, y + 9, 2, '#8fd0a8');
     box(c, x + 2, y + 9, 12, 5, '#fffaf3');
     r(c, x + 3, y + 11, 10, 1, '#9db4ee');
   },
@@ -1907,12 +2046,11 @@ const DRAW: Record<string, Draw> = {
     r(c, x + 7, Y + 12, 2, 12, '#8a5a3c');
     const leaves = [[8, 6, 5], [4, 10, 4], [12, 10, 4], [5, 3, 3], [11, 3, 3]];
     for (const [a, b, rad] of leaves) disc(c, x + a, Y + b, rad + 1, OUT);
-    for (const [a, b, rad] of leaves) { disc(c, x + a, Y + b, rad, '#3f8a5a'); r(c, x + a - 1, Y + b - rad + 1, 2, 1, '#6cbf7a'); }
+    for (const [a, b, rad] of leaves) sphere(c, x + a, Y + b, rad, '#3f8a5a', false);
     box(c, x + 3, Y + 22, 10, 10, col);
   },
   terrarium(c, x, y) {
-    disc(c, x + 8, y + 8, 5, OUT);
-    disc(c, x + 8, y + 8, 4, '#d4f0fb');
+    sphere(c, x + 8, y + 8, 4, '#d4f0fb');
     r(c, x + 5, y + 10, 6, 2, '#8a5a3c');
     r(c, x + 6, y + 7, 2, 3, '#6cbf7a');
     r(c, x + 9, y + 8, 1, 2, '#8fd0a8');
@@ -1921,14 +2059,12 @@ const DRAW: Record<string, Draw> = {
   },
   succulent(c, x, y, _t, col = '#f2b48a') {
     box(c, x + 5, y + 9, 6, 5, col);
-    disc(c, x + 8, y + 8, 3, '#8fd0a8');
-    r(c, x + 7, y + 6, 2, 2, '#a8e6a0');
+    sphere(c, x + 8, y + 8, 3, '#8fd0a8');
     r(c, x + 5, y + 8, 1, 1, '#f4a6b8');
   },
   // ---- seasonal ----
   pumpkin(c, x, y, t) {
-    disc(c, x + 8, y + 9, 6, OUT);
-    disc(c, x + 8, y + 9, 5, '#f28a3a');
+    sphere(c, x + 8, y + 9, 5, '#f28a3a');
     r(c, x + 5, y + 5, 1, 9, '#d9702a');
     r(c, x + 10, y + 5, 1, 9, '#d9702a');
     r(c, x + 7, y + 1, 2, 3, '#4f9a6a');
@@ -1957,10 +2093,8 @@ const DRAW: Record<string, Draw> = {
   },
   snowman(c, x, y) {
     const Y = y - 12;
-    disc(c, x + 8, Y + 20, 6, OUT);
-    disc(c, x + 8, Y + 20, 5, '#fffaf3');
-    disc(c, x + 8, Y + 10, 4, OUT);
-    disc(c, x + 8, Y + 10, 3, '#fffaf3');
+    sphere(c, x + 8, Y + 20, 5, '#fffaf3');
+    sphere(c, x + 8, Y + 10, 3, '#fffaf3');
     r(c, x + 6, Y + 9, 1, 1, OUT);
     r(c, x + 9, Y + 9, 1, 1, OUT);
     r(c, x + 8, Y + 11, 3, 1, '#f28a3a');
@@ -2064,7 +2198,7 @@ const ALT: Record<string, Draw[]> = {
       r(c, x + 7, Y + 14, 2, 14, '#8a5a3c');
       box(c, x + 4, y + 12, 8, 3, '#8a5a3c');
       disc(c, x + 8, Y + 7, 7, OUT);
-      disc(c, x + 8, Y + 7, 6, '#fff4e6');
+      sphere(c, x + 8, Y + 7, 6, '#fff4e6', false);
       disc(c, x + 8, Y + 7, 3, Math.floor(t / 700) % 2 ? '#ffe8b0' : '#ffeec4');
       r(c, x + 2, Y + 4, 12, 1, '#ead9c4');
       r(c, x + 2, Y + 10, 12, 1, '#ead9c4');
@@ -2075,11 +2209,7 @@ const ALT: Record<string, Draw[]> = {
       const Y = y - 8;
       const leaves = [[5, 7, 4], [11, 6, 4], [8, 2, 3]];
       for (const [a, b, rad] of leaves) disc(c, x + a, Y + b, rad + 1, OUT);
-      for (const [a, b, rad] of leaves) {
-        disc(c, x + a, Y + b, rad, '#3f8a5a');
-        r(c, x + a, Y + b - rad + 1, 1, rad, '#2f6a44');
-        r(c, x + a - rad + 1, Y + b, 2, 1, '#2f6a44');
-      }
+      for (const [a, b, rad] of leaves) sphere(c, x + a, Y + b, rad, '#3f8a5a', false);
       box(c, x + 4, Y + 14, 8, 10, col);
       r(c, x + 5, Y + 15, 6, 1, shade(col, -0.1));
     },
@@ -2215,25 +2345,28 @@ export function drawUsing(c: Ctx, look: Look, use: string, x: number, y: number,
   const u = USE_LOOK[use] ?? USE_LOOK.admire;
   const beat = Math.floor(t / 280) % 2;
   const dx = u.bob ? (beat ? 1 : -1) : 0;
+  const k = avatarScale(look);
   drawAvatar(c, look, x + dx, y, u.bob && beat ? 1 : 0, !!u.back);
-  // Props in hand.
-  if (u.prop === 'can') { box(c, x + 11, y - 3, 6, 5, '#7fb2e8'); r(c, x + 9, y - 5, 3, 1, '#7fb2e8'); r(c, x + 7, y - 6, 2, 1, '#7fb2e8'); }
-  else if (u.prop === 'book') { box(c, x + 3, y + 4, 10, 6, '#f48a8a'); r(c, x + 4, y + 5, 8, 4, '#fffaf3'); r(c, x + 8, y + 5, 1, 4, '#e8e3dc'); }
-  else if (u.prop === 'guitar') { disc(c, x + 6, y + 8, 3, '#e8a050'); r(c, x + 8, y + 3, 6, 2, '#8a5a3c'); r(c, x + 6, y + 8, 1, 1, '#5a3620'); }
-  else if (u.prop === 'brush') { r(c, x + 13, y - 4 + beat, 1, 5, '#8a5a3c'); r(c, x + 13, y - 5 + beat, 1, 1, '#f48a8a'); }
-  else if (u.prop === 'pan') { r(c, x + 12, y - 1, 6, 1, OUT); box(c, x + 9, y - 3, 5, 3, '#5a5070'); }
-  else if (u.prop === 'cup') { box(c, x + 11, y + 5, 4, 4, '#fff4e6'); r(c, x + 15, y + 6, 1, 2, OUT); }
-  else if (u.prop === 'pad') box(c, x + 5, y + 6, 6, 3, '#7a7090');
-  // Particles drift up (or fall, for water and fish food) above the thing being used.
-  for (let k = 0; k < 3; k++) {
-    const p = (t / 1400 + k / 3) % 1;
-    const falls = u.fx === 'drop' || u.fx === 'flake';
-    const px = Math.round(x + 4 + k * 4 + Math.sin(p * 6 + k) * 2);
-    const py = Math.round(falls ? y - 10 + p * 8 : y - 8 - p * 14);
-    c.globalAlpha = 1 - p * 0.8;
-    particle(c, u.fx, px, py, u.col);
-    c.globalAlpha = 1;
-  }
+  // Props in hand, and the particles above them: drawn in the same scaled sprite pixels as the character.
+  scaledAt(c, k, x + 8 + dx, y + T + 1, () => {
+    if (u.prop === 'can') { box(c, x + 11, y - 3, 6, 5, '#7fb2e8'); r(c, x + 9, y - 5, 3, 1, '#7fb2e8'); r(c, x + 7, y - 6, 2, 1, '#7fb2e8'); }
+    else if (u.prop === 'book') { box(c, x + 3, y + 4, 10, 6, '#f48a8a'); r(c, x + 4, y + 5, 8, 4, '#fffaf3'); r(c, x + 8, y + 5, 1, 4, '#e8e3dc'); }
+    else if (u.prop === 'guitar') { disc(c, x + 6, y + 8, 3, '#e8a050'); r(c, x + 8, y + 3, 6, 2, '#8a5a3c'); r(c, x + 6, y + 8, 1, 1, '#5a3620'); }
+    else if (u.prop === 'brush') { r(c, x + 13, y - 4 + beat, 1, 5, '#8a5a3c'); r(c, x + 13, y - 5 + beat, 1, 1, '#f48a8a'); }
+    else if (u.prop === 'pan') { r(c, x + 12, y - 1, 6, 1, OUT); box(c, x + 9, y - 3, 5, 3, '#5a5070'); }
+    else if (u.prop === 'cup') { box(c, x + 11, y + 5, 4, 4, '#fff4e6'); r(c, x + 15, y + 6, 1, 2, OUT); }
+    else if (u.prop === 'pad') box(c, x + 5, y + 6, 6, 3, '#7a7090');
+    // Particles drift up (or fall, for water and fish food) above the thing being used.
+    for (let j = 0; j < 3; j++) {
+      const p = (t / 1400 + j / 3) % 1;
+      const falls = u.fx === 'drop' || u.fx === 'flake';
+      const px = Math.round(x + 4 + j * 4 + Math.sin(p * 6 + j) * 2);
+      const py = Math.round(falls ? y - 10 + p * 8 : y - 8 - p * 14);
+      c.globalAlpha = 1 - p * 0.8;
+      particle(c, u.fx, px, py, u.col);
+      c.globalAlpha = 1;
+    }
+  });
 }
 
 // ---------- recipe sprites ----------
@@ -2245,14 +2378,14 @@ const RECIPES: Record<string, [number, string, string]> = {
   rockingChair: [8, '#f4a6b8', 'b3,0,10,12,$|r5,2,6,1,$l|r4,12,1,10,#8a5a3c|r11,12,1,10,#8a5a3c|b2,10,12,6,$d|r1,22,14,1,#8a5a3c|r0,21,1,1,#8a5a3c|r15,21,1,1,#8a5a3c'],
   bench: [6, '#b07a4e', 'r2,0,28,2,$d|r2,4,28,2,$d|r3,0,2,14,$D|r27,0,2,14,$D|b1,10,30,5,$|r3,15,2,7,$D|r27,15,2,7,$D'],
   loveseat: [8, '#b89af0', 'b2,0,28,13,$d|b4,2,12,10,$|b16,2,12,10,$|b2,11,28,10,$d|b0,5,6,17,$D|b26,5,6,17,$D|r4,21,2,3,O|r26,21,2,3,O'],
-  pouf: [2, '#ffd27a', 'o8,10,6,$|r3,8,10,1,$l|r4,12,8,1,$d|d8,10,1,$D'],
+  pouf: [2, '#ffd27a', 'S8,10,6,$|d8,10,1,$D'],
   swingChair: [16, '#fffaf3', 'r2,0,12,2,#8a8090|r7,2,1,6,#8a8090|r7,24,2,6,#8a8090|r3,30,10,2,#8a8090|o8,16,7,#d9b48a|d8,17,5,#c89a6a|b4,15,8,5,$'],
   throne: [16, '#f48a8a', 'b2,0,12,22,#ffd34d|b4,3,8,16,$|d8,2,1,#7fb2e8|b1,18,14,7,#ffd34d|b3,19,10,4,$|r3,25,2,6,#d9a628|r11,25,2,6,#d9a628'],
   sectional: [8, '#8fd0a8', 'b2,0,44,13,$d|b4,2,13,10,$|b17,2,13,10,$|b2,11,44,10,$d|b30,9,16,13,$|b0,5,6,17,$D|r4,21,2,3,O|r42,21,2,3,O'],
   diningChair: [8, '#d9a06a', 'b3,0,10,13,$|r5,2,1,9,$d|r8,2,1,9,$d|r10,2,1,9,$d|b2,12,12,4,$l|r3,16,2,8,$D|r11,16,2,8,$D'],
   chaise: [4, '#f4a6b8', 'b2,0,10,14,$d|b2,8,28,10,$|r3,10,26,1,$l|b26,6,5,12,$d|r4,18,2,4,O|r26,18,2,4,O'],
   hammock: [10, '#ffd27a', 'r2,0,2,26,#8a5a3c|r44,0,2,26,#8a5a3c|r4,6,4,1,#d9b48a|r40,6,4,1,#d9b48a|b8,8,32,8,$|r9,10,30,1,$l|r10,13,4,1,$d|r20,13,4,1,$d|r30,13,4,1,$d'],
-  giantBeanbag: [4, '#9db4ee', 'o16,11,9,$|d16,13,6,$d|d12,7,3,$l'],
+  giantBeanbag: [4, '#9db4ee', 'S16,11,9,$|r14,17,6,1,$D'],
   saucerChair: [6, '#b89af0', 'r5,16,1,6,#5a5070|r10,16,1,6,#5a5070|r3,21,10,1,#5a5070|o8,10,7,$|d8,11,5,$d|r4,6,8,1,$l'],
   stumpSeat: [2, '', 'b2,6,12,11,#a87a58|r3,8,1,7,#8a5a3c|r8,9,1,6,#8a5a3c|o8,6,6,#d9b48a|d8,6,3,#c8a078|d8,6,1,#a87a58'],
   clubChair: [6, '#b07a4e', 'b2,0,12,12,$|r4,2,1,1,$D|r8,2,1,1,$D|r11,2,1,1,$D|r6,5,1,1,$D|r10,5,1,1,$D|b0,6,4,14,$d|b12,6,4,14,$d|b3,10,10,9,$l|r3,20,2,2,O|r11,20,2,2,O'],
@@ -2308,7 +2441,7 @@ const RECIPES: Record<string, [number, string, string]> = {
   olive: [16, '#e8e3dc', 'r7,10,2,16,#9a8a7a|r5,14,2,1,#9a8a7a|o4,6,3,#9ab08a|o12,6,3,#9ab08a|o8,3,4,#a8c098|d6,6,1,#5a5070|d11,4,1,#5a5070|b4,24,8,8,$'],
   vase: [10, '#9db4ee', 'r7,0,1,8,#6cbf7a|r9,2,1,6,#6cbf7a|h8,1,#f48a8a|o10,3,1,#ffd27a|b4,8,8,16,$|r5,10,6,2,$l|r6,7,4,2,$d'],
   bust: [14, '', 'o8,5,4,#f4f2ee|r6,4,1,1,#c8c0c8|r9,4,1,1,#c8c0c8|b4,9,8,5,#e8e3dc|b3,14,10,16,#d8d0d8|r4,15,8,1,#f4f2ee'],
-  discoBall: [16, '', 'r7,0,2,4,#a8a0b8|o8,9,5,#c8c0d0|f5,7,2,2,#ffffff|f10,10,2,2,#ffffff|r7,6,2,2,#f4a6c8|r9,12,2,1,#9db4ee|r7,14,2,14,#5a5070|r4,28,8,3,#5a5070'],
+  discoBall: [16, '', 'r7,0,2,4,#a8a0b8|S8,9,5,#c8c0d0|f5,7,2,2,#ffffff|f10,10,2,2,#ffffff|r7,6,2,2,#f4a6c8|r9,12,2,1,#9db4ee|r7,14,2,14,#5a5070|r4,28,8,3,#5a5070'],
   neonHeart: [12, '#f48a8a', 'b1,0,14,16,#3a3448|r4,4,2,2,$|r10,4,2,2,$|r3,6,10,2,$|r4,8,8,2,$|r6,10,4,2,$|r7,12,2,1,$|r7,16,2,10,#5a5070|r4,26,8,2,#5a5070'],
   ovalRug: [0, '#ffd27a', 'b6,3,36,26,$|b2,7,44,18,$|r7,4,34,24,$|r3,8,42,16,$|r10,8,28,16,$l|h24,14,$'],
   runnerRug: [0, '#f4a6b8', 'b2,1,12,46,$|r4,3,8,42,$l|h8,10,$|h8,22,$|h8,34,$'],
@@ -2347,11 +2480,11 @@ const RECIPES: Record<string, [number, string, string]> = {
   pingPong: [6, '', 'r3,30,3,6,#3a3448|r42,30,3,6,#3a3448|b0,2,48,28,#4f8ac0|r2,4,44,24,#5a9ad0|r23,4,1,24,#ffffff|r0,15,48,1,#e8e3dc|r22,0,4,32,#fffaf3|o12,10,2,#f48a8a|o36,20,2,#e06a5a|d30,12,1,#ffffff'],
   boardGame: [0, '', 'b2,8,12,6,#fffaf3|r3,9,5,2,#f48a8a|r8,11,5,2,#7fb2e8|r5,6,2,3,#8fd0a8|r10,5,2,4,#ffd27a|r12,12,1,1,O'],
   puzzleTable: [4, '#d9a06a', 'r3,12,2,10,$D|r27,12,2,10,$D|b0,2,32,10,$|r3,4,20,6,#9db4ee|r3,4,8,3,#8fd0a8|r14,7,9,3,#ffd27a|r24,5,3,3,#f48a8a|r27,7,2,2,#b89af0'],
-  ballPit: [0, '#9db4ee', 'b0,2,32,30,$|r2,4,28,26,$l|d6,8,2,#f48a8a|d12,10,2,#ffd27a|d20,8,2,#8fd0a8|d26,12,2,#b89af0|d8,16,2,#7fb2e8|d16,18,2,#f48a8a|d24,20,2,#ffd27a|d10,24,2,#8fd0a8|d20,26,2,#f4a6c8'],
+  ballPit: [0, '#9db4ee', 'b0,2,32,30,$|r2,4,28,26,$l|S6,8,2,#f48a8a|S12,10,2,#ffd27a|S20,8,2,#8fd0a8|S26,12,2,#b89af0|S8,16,2,#7fb2e8|S16,18,2,#f48a8a|S24,20,2,#ffd27a|S10,24,2,#8fd0a8|S20,26,2,#f4a6c8'],
   bowling: [6, '', 'r6,2,2,8,#ffffff|r9,4,2,8,#ffffff|r12,2,2,8,#ffffff|r6,4,2,1,#f48a8a|r9,6,2,1,#f48a8a|r12,4,2,1,#f48a8a|b5,12,10,3,#d9a06a|o3,18,3,#3a3448'],
   rockingHorse: [10, '#fffaf3', 'b10,0,6,7,$|r14,3,1,1,O|r9,0,2,10,#f48a8a|b2,6,12,8,$|r1,7,2,4,#f48a8a|r4,14,1,6,$d|r11,14,1,6,$d|r0,20,16,2,#b07a4e'],
   vrHeadset: [0, '', 'b2,7,12,6,#3a3448|r3,8,4,3,#7fb2e8|r9,8,4,3,#7fb2e8|r1,9,1,2,#5a5070|r14,9,1,2,#5a5070|f7,6,2,1,#8fd0a8'],
-  gamerBeanbag: [4, '', 'o8,10,7,#3a3448|d8,12,4,#2b2530|r3,6,10,1,#f48a8a|r4,8,8,1,#7fb2e8|d6,6,2,#4a4458'],
+  gamerBeanbag: [4, '', 'S8,10,7,#3a3448|r3,6,10,1,#f48a8a|r4,8,8,1,#7fb2e8'],
   karaoke: [12, '#f4a6b8', 'r12,0,1,9,#a8a0b8|o12,1,2,#5a5070|b1,8,14,18,$|o8,16,4,#3a3448|d8,16,2,#5a5070|r3,10,10,2,#2b2530|f4,10,3,1,#8fd0a8|f9,10,3,1,#ffd27a'],
   retroTV: [12, '#b07a4e', 'r4,0,1,5,#3a3448|r11,0,1,5,#3a3448|b0,4,16,16,$|b2,6,10,11,#2b2530|f3,7,8,9,#8fc4f0|r13,8,2,2,#ffd27a|r13,12,2,2,#f48a8a|r3,20,2,8,$D|r11,20,2,8,$D'],
   yogaMat: [0, '#b89af0', 'b1,6,14,9,$|r2,7,12,1,$l|o14,7,2,$d'],
@@ -2367,7 +2500,7 @@ const RECIPES: Record<string, [number, string, string]> = {
   climbingWall: [24, '', 'b0,0,32,40,#c8b8a8|o5,5,2,#f48a8a|o14,9,2,#7fb2e8|o24,4,2,#ffd27a|o9,17,2,#8fd0a8|o22,15,2,#b89af0|o6,27,2,#ffd27a|o18,25,2,#f48a8a|o27,30,2,#7fb2e8'],
   elliptical: [14, '', 'r3,0,2,18,#5a5070|r11,0,2,18,#5a5070|b4,2,8,4,#3a3448|f6,3,4,1,#8fd0a8|o8,22,5,#7a7090|d8,22,3,#5a5070|r1,28,14,2,#5a5070'],
   hulaHoop: [4, '', 'r4,7,8,1,#ffd27a|r2,8,12,1,#f48a8a|r1,9,1,7,#f48a8a|r14,9,1,7,#f48a8a|r2,16,12,1,#f48a8a|r4,17,8,1,#ffd27a'],
-  medicineBalls: [2, '', 'o12,10,3,#7a7090|r10,9,4,1,#ffd27a|o5,13,4,#3a3448|r2,12,6,1,#f48a8a'],
+  medicineBalls: [2, '', 'S12,10,3,#7a7090|r10,9,4,1,#ffd27a|S5,13,4,#3a3448|r2,12,6,1,#f48a8a'],
   boxingDummy: [16, '', 'o8,30,4,#3a3448|r7,22,2,6,#5a5070|b4,6,8,16,#e06a5a|r3,8,10,2,#3a3448|o8,3,3,#f2c48a'],
   scratchPost: [10, '#f4a6b8', 'r6,4,4,18,#e8d3b0|r6,7,4,1,#c8a878|r6,11,4,1,#c8a878|r6,15,4,1,#c8a878|r6,19,4,1,#c8a878|b1,21,14,5,$|b2,0,12,4,$'],
   hamsterWheel: [8, '', 'r7,3,2,14,#c8c0d0|r3,18,10,4,#7fb2e8|o8,10,8,#a8a0b8|d8,10,7,#e8f6ff|s5,10,6,1,#a8a0b8'],
@@ -2459,6 +2592,7 @@ function recipeDraw(item: string): Draw | undefined {
       else if (k === 'r') r(c, x + n[0], Y + n[1], n[2], n[3], fill);
       else if (k === 'd') disc(c, x + n[0], Y + n[1], n[2], fill);
       else if (k === 'o') { disc(c, x + n[0], Y + n[1], n[2] + 1, OUT); disc(c, x + n[0], Y + n[1], n[2], fill); }
+      else if (k === 'S') sphere(c, x + n[0], Y + n[1], n[2], fill);
       else if (k === 'h') heart(c, x + n[0], Y + n[1], fill);
       else if (k === 'f') { if (Math.floor(t / 600 + n[0]) % 2) r(c, x + n[0], Y + n[1], n[2], n[3], fill); }
       else if (k === 's') r(c, x + n[0] + Math.round(Math.sin(t / 400) * 2), Y + n[1], n[2], n[3], fill);
@@ -2859,6 +2993,7 @@ function animates(key: string, size: number, paint: (g: Ctx, t: number) => void)
   return v;
 }
 export function drawFurniture(c: Ctx, item: string, x: number, y: number, t: number, col?: string, flip = false, w = 1, s = 0, bare = 0, rot = 0, h = 1, lying = false, thirsty = false) {
+  if (!canRotate(item)) rot = 0;
   const draw = (s && ALT[item]?.[s - 1]) || (HD[item] && hdDraw(HD[item])) || DRAW[item] || recipeDraw(item);
   if (!draw) return;
   const filter = thirsty ? 'grayscale(0.7) brightness(0.9)' : 'none'; // a plant that needs water droops grey
@@ -2880,7 +3015,7 @@ export function drawFurniture(c: Ctx, item: string, x: number, y: number, t: num
   c.drawImage(cv, x - pad, y - pad, size / AV, size / AV);
 }
 function paintFurniture(c: Ctx, draw: Draw, item: string, x: number, y: number, t: number, col: string | undefined, flip: boolean, w: number, h: number, bare: number, rot: number, lying: boolean) {
-  if (rot) { drawTurned(c, draw, item, x, y, t, col, flip, w, h, bare, rot, lying); return; }
+  if (rot && canRotate(item)) { drawTurned(c, draw, item, x, y, t, col, flip, w, h, bare, rot, lying); return; }
   if (!flip) { draw(c, x, y, t, col, bare); return; }
   // Turned pieces are mirrored around the middle of their footprint.
   c.save();
@@ -2890,10 +3025,6 @@ function paintFurniture(c: Ctx, draw: Draw, item: string, x: number, y: number, 
   c.restore();
 }
 
-// Every piece only has a front view, so turned pieces are made from it: painted on a spare canvas, then
-// rugs and beds turn as a whole; upright things show their front squeezed into the narrow side and slanted back
-// into the room (a column at a time, so pixels stay crisp), or from behind, mirrored and in shadow. Either way a
-// wardrobe still looks like a wardrobe.
 let spare: HTMLCanvasElement | undefined;
 function drawTurned(c: Ctx, draw: Draw, item: string, x: number, y: number, t: number, col: string | undefined, flip: boolean, w: number, h: number, bare: number, rot: number, lying: boolean) {
   const W = w * T, up = OVERHANG[item] ?? 0, H = up + h * T;
@@ -2911,37 +3042,18 @@ function drawTurned(c: Ctx, draw: Draw, item: string, x: number, y: number, t: n
     else if (rot === 2) { c.translate(x + W, y + H); c.rotate(Math.PI); }
     else { c.translate(x - up, y + W); c.rotate(-Math.PI / 2); }
     c.drawImage(spare, 0, 0, W, H);
-  } else if (rot === 2) {
-    g.globalCompositeOperation = 'source-atop';
-    g.fillStyle = 'rgba(43,37,48,0.4)';
-    g.fillRect(0, 0, W, H);
-    c.translate(x * 2 + W, 0);
-    c.scale(-1, 1);
-    c.drawImage(spare, x, y - up, W, H);
   } else {
-    // Sideways, upright like everything else in the room: the front squeezed into the narrow end on the front tile,
-    // and its top surface running back over the extra depth.
-    if (rot === 3) { c.translate(x * 2 + fw, 0); c.scale(-1, 1); }
-    const D = (w - h) * T, top = y + w * T - H; // extra depth; where the squeezed picture's top sits
-    const SW = spare.width, SH = spare.height;
-    const px = g.getImageData(0, 0, SW, SH).data;
-    const filled = (r: number) => { for (let i = 0; i < SW; i++) if (px[(r * SW + i) * 4 + 3]) return true; return false; };
-    let srow = 0; // the picture's top edge: its first row with anything in it
-    while (srow < SH - 3 * AV && !filled(srow)) srow++;
-    const row = srow / AV;
-    // The top's colour: the piece's most common colour, leaving out outlines (wood for a desk, fabric for a sofa).
-    const counts = new Map<number, number>();
-    for (let i = 0; i < px.length; i += 4) {
-      if (px[i + 3] > 200 && px[i] + px[i + 1] + px[i + 2] > 240) {
-        const k = (px[i] << 16) | (px[i + 1] << 8) | px[i + 2];
-        counts.set(k, (counts.get(k) ?? 0) + 1);
-      }
+    if (rot === 2) {
+      g.globalCompositeOperation = 'source-atop';
+      g.fillStyle = 'rgba(43,37,48,0.25)';
+      g.fillRect(0, 0, W, H);
+      c.translate(x * 2 + W, 0);
+      c.scale(-1, 1);
+    } else if (rot === 3) {
+      c.translate(x * 2 + fw, 0);
+      c.scale(-1, 1);
     }
-    const most = [...counts].sort((a, b) => b[1] - a[1])[0]?.[0] ?? 0xd9a06a;
-    const topCol = `#${most.toString(16).padStart(6, '0')}`;
-    const back = top + row - D;
-    box(c, x, back, fw, D + 2, shade(topCol, 0.08)); // the top, running back
-    c.drawImage(spare, 0, 0, SW, SH, x, top, fw, H); // the front, squeezed
+    c.drawImage(spare, 0, 0, W, H, x, y - up, W, H);
   }
   c.restore();
 }
