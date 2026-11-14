@@ -53,8 +53,6 @@ export const ITEMS = {
   exerciseBike: { name: 'Exercise bike', w: 1, h: 1, price: 85, solid: true, colors: 'pastel', act: 'bike' },
   treadmill: { name: 'Treadmill', w: 1, h: 1, price: 105, solid: true, act: 'run' },
   projectorScreen: { name: 'Projector screen', w: 3, h: 1, price: 150, solid: true, colors: 'pastel', shelf: 'living' },
-  acUnit: { name: 'Air conditioner', w: 1, h: 1, price: 120, solid: true, colors: 'pastel', wallMount: true, shelf: 'living' },
-  resistanceBands: { name: 'Resistance bands', w: 1, h: 1, price: 20, solid: true, colors: 'pastel', act: 'stretch', shelf: 'fitness' },
   // kitchen
   counter: { name: 'Kitchen counter', w: 2, h: 1, price: 40, solid: true, colors: 'wood', use: 'cook' },
   sink: { name: 'Kitchen sink', w: 1, h: 1, price: 35, solid: true , use: 'wash' },
@@ -467,11 +465,11 @@ export const bondLevel = (bond = 0) => Math.min(5, Math.floor(Math.sqrt(bond / 2
 export const WALLPAPERS = ['#f6dcc0', '#cfe8d8', '#ddd5f5', '#fbd0d4', '#cfe1f7', '#f8edc0', '#fffaf3', '#e8d3c0', '#c9e4ef', '#e6d0ea',
   '#f4c8a0', '#b8e0c8', '#c8c0f0', '#f0b8c0', '#a8c8f0', '#f0e0a0', '#d8d0c8', '#3a4060', '#4a5a48', '#f0f0f0',
   '#ffe0cc', '#c4e8e0', '#f2d8f0', '#5a4a6a'];
-export const WALL_PATTERNS = ['plain', 'stripes', 'dots', 'hearts', 'checks', 'stars', 'flowers', 'waves', 'diamonds', 'brick', 'grid', 'gingham', 'scallops', 'paws', 'chevrons', 'confetti', 'hexes', 'triangles', 'spiral', 'rain', 'cubes', 'camouflage'];
+export const WALL_PATTERNS = ['plain', 'stripes', 'dots', 'hearts', 'checks', 'stars', 'flowers', 'waves', 'diamonds', 'brick', 'grid', 'gingham', 'scallops', 'paws'];
 export const FLOORS = ['#c8935f', '#b07a58', '#e0b382', '#9fae86', '#b3a2c9', '#d8a0a0', '#e8e3dc', '#8a7a8e', '#a8c4d8', '#d9b48a',
   '#7a5a40', '#e8d0b0', '#5a5a60', '#c0c8c8', '#e8b8a8', '#a8b8e0', '#88b098', '#f0e8d8', '#6a4a58', '#d8c068',
   '#c8a8e0', '#9ccab8', '#f0c8c8', '#4a4048'];
-export const FLOOR_STYLES = ['planks', 'tiles', 'carpet', 'herringbone', 'marble', 'parquet', 'stone', 'checker', 'terrazzo', 'woven', 'harlequin', 'mosaic', 'bamboo', 'cobblestone', 'hexfloor', 'grass', 'ripple', 'neon', 'cracks'];
+export const FLOOR_STYLES = ['planks', 'tiles', 'carpet', 'herringbone', 'marble', 'parquet', 'stone', 'checker', 'terrazzo', 'woven', 'harlequin'];
 export const SKINS = ['#ffe0c8', '#f5c9a5', '#d9a07a', '#a8714f', '#6e4630', '#f8d4b4', '#e8b48a', '#c08a60', '#8a5a3a', '#4e3020'];
 export const HAIRS = ['#2a1f27', '#5a3522', '#c89a3a', '#b8503a', '#5a4aa8', '#c8809a', '#4a9a8a', '#7a4a32', '#c8a870', '#9a90a0', '#8a3028', '#3a4a90', '#3a7a40'];
 export const SHIRTS = ['#f48a8a', '#7fb2e8', '#8fd0a8', '#ffd27a', '#b89af0', '#f4b6d0', '#3a3448', '#f4f2ee', '#e8d2b0', '#5a8a5a', '#a0704a', '#4a5a90'];
@@ -614,16 +612,13 @@ export const nextRot = (f) => {
 };
 
 // Room-local placement check. Each layer only collides with itself: rugs, solid furniture, small tabletop things.
-// Wall-mounted items (wallMount) can only go on wall tiles above the floor (y < 0), never on the floor.
 const layer = (it) => (it.top ? 2 : it.solid ? 1 : 0);
 export function canPlace(room, item, x, y, rot = 0) {
   const it = ITEMS[item];
   const s = roomSize(room);
   if (!it || !Number.isInteger(x) || !Number.isInteger(y)) return false;
   const d = footprint({ item, rot: canRotate(item) ? rot : 0 });
-  const wallBottom = it.wallMount ? 0 : s.h;
-  const wallTop = it.wallMount ? -WALL_H : 0;
-  if (x < 0 || y < wallTop || x + d.w > s.w || y + d.h > wallBottom) return false;
+  if (x < 0 || y < 0 || x + d.w > s.w || y + d.h > s.h) return false;
   return !room.furniture.some((f) => hits(f, it, x, y, d));
 }
 const hits = (f, it, x, y, d) => {
