@@ -611,6 +611,10 @@ export const nextRot = (f) => {
   return it.w === it.h && !lying(it) ? (r ? 0 : 2) : (r + 1) % 4;
 };
 
+// Lights you can switch on and off by clicking them in your room. Shared so the server checks the same list the client offers.
+export const LIGHTS = new Set(['lamp', 'arcLamp', 'bedsideLamp', 'candles', 'neonHeart', 'fairyJar', 'floorCandle', 'snowflakeLamp', 'lanternString', 'diya', 'menorah', 'discoBall',
+  'skyLantern', 'sparklers', 'garbaLamp', 'bonfire', 'eidLantern', 'crescentLamp', 'lotusLamp']);
+
 // Room-local placement check. Each layer only collides with itself: rugs, solid furniture, small tabletop things.
 const layer = (it) => (it.top ? 2 : it.solid ? 1 : 0);
 export function canPlace(room, item, x, y, rot = 0) {

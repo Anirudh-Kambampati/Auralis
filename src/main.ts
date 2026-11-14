@@ -2,7 +2,7 @@ import {
   SHELVES, buildGrid, walkable, canPlace, placeSwaps,roomSize, MAX_ROOMS, ROOM_COST, colorsFor, ITEMS, PETS, PET_ACCS, MAX_PETS, bondLevel, NOTIFY, wantsNotify, EXPAND_COST, ROOM_SIZES,
   WALLPAPERS, WALL_PATTERNS, FLOORS, FLOOR_STYLES, SKINS, HAIRS, SHIRTS, STYLES, FACES, OUTFITS, BODIES, SIZES, ACCESSORIES, FOCUS_LENGTHS, isFocusLength, SCAR_ACCS, SCAR_COLOURS,
   WALL_H, WALL, FLOOR, DOOR, BLOCKED, VOID, buddyMultiplier, focusEnd, streakDays, streakBonus, sellPrice, footprint, lying, canRotate, THIRSTY_MS, isPlant, discounted, GIFT_COINS, activeEvents, nextEvent,
-  docName, attachLabel, DOC_TYPES, usernameProblem, emailProblem, passwordProblem,
+  docName, attachLabel, DOC_TYPES, usernameProblem, emailProblem, passwordProblem, LIGHTS,
 } from '../shared/game.js';
 import {
   T, OVERHANG, SURFACE, AVATAR_H, avatarScale, lookKey, drawSeated, drawActing, drawSeam, drawFloor, drawWall, drawWallFace, drawWallTop, drawDoor, drawWindow, drawPainting, drawFurniture, drawAvatar, drawDeskLamp, drawGlow, drawUsing, skyNow, weatherNow, skyProgress, nightTint,
@@ -1427,9 +1427,6 @@ function render(t: number, dt: number) {
   }
 }
 
-// Lights you can switch on and off by clicking them in your own room.
-const LIGHTS = new Set(['lamp', 'arcLamp', 'bedsideLamp', 'candles', 'neonHeart', 'fairyJar', 'floorCandle', 'snowflakeLamp', 'lanternString', 'diya', 'menorah', 'discoBall',
-  'skyLantern', 'sparklers', 'garbaLamp', 'bonfire', 'eidLantern', 'crescentLamp', 'lotusLamp']);
 // Things that light up the room at night: offset of the light from the item's top-left, size and strength.
 // The pools are small and amber rather than wide and yellow: a lamp lights the thing under it, not the whole room.
 const GLOWS: Record<string, { dx: number; dy: number; rad: number; alpha: number }> = {
