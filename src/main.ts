@@ -2431,21 +2431,11 @@ $('#chatUnreply').addEventListener('click', () => { replyTo = null; renderSide()
   let staged: File | null = null, stagedUrl = '', sending = false; // the chat attachment waiting for Send (see stage())
   let replyTo: { id: number; by: string; text: string } | null = null; // the message being quoted in my next send
 
-// Quote a message for my next reply: show the strip above the box and pull its text
-// into the composer so it travels with the reply being written.
+// Quote a message for my next reply: show the strip above the box.
 function setReply(c: Chat) {
   replyTo = { id: c.id, by: c.by, text: c.text };
-  const box = $<HTMLTextAreaElement>('#chatInput');
-  const body = (c.text || 'Picture').replace(/\n/g, ' ');
-  let prefix = `> ${c.by}: ${body}\n\n`;
-  const MAX = box.maxLength || 200;
-  if (prefix.length > MAX) prefix = `> ${c.by}: ${body.slice(0, Math.max(0, MAX - 12))}…\n\n`;
-  const current = box.value.trim();
-  box.value = current ? prefix + current : prefix;
-  if (box.value.length > MAX) box.value = box.value.slice(0, MAX);
-  box.dispatchEvent(new Event('input'));
   renderSide();
-  box.focus();
+  $<HTMLTextAreaElement>('#chatInput').focus();
 }
 const syncUnread = () => { unread = houseUnread > 0 || Object.values(dmUnread).some(Boolean); tickTimers(); };
 // Is this thread (null = the house) on screen right now?
