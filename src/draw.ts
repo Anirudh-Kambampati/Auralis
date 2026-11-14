@@ -900,52 +900,76 @@ export function drawFloor(c: Ctx, x: number, y: number, color: string, tx: numbe
 }
 
 // Wallpaper motif for one 16x16 tile; rows below `h` are left for trims.
+// The pattern mark always contrasts with the wallpaper: muted white on dark backgrounds,
+// muted dark gray on light ones. The farther the background is from middle gray, the
+// stronger the mark (a near-black wall gets a near-white mark, and vice versa).
+function mixColor(a: string, b: string, k: number): string {
+  const na = parseInt(a.slice(1, 7), 16);
+  const nb = parseInt(b.slice(1, 7), 16);
+  const f = (va: number, vb: number) => Math.max(0, Math.min(255, Math.round(va + (vb - va) * k))).toString(16).padStart(2, '0');
+  return `#${f(na >> 16, nb >> 16)}${f((na >> 8) & 255, (nb >> 8) & 255)}${f(na & 255, nb & 255)}`;
+}
+function markColor(paper: string, boost = 1): string {
+  const n = parseInt(paper.slice(1, 7), 16);
+  const rr = n >> 16, gg = (n >> 8) & 255, bb = n & 255;
+  // Perceived luminance on a 0-255 scale (Rec. 709 weights).
+  const lum = 0.299 * rr + 0.587 * gg + 0.114 * bb;
+  const mid = 128;
+  const strength = Math.abs(lum - mid) / mid; // 0 (middle gray) to 1 (pure black/white)
+  const base = lum < mid ? '#ffffff' : '#3a3448'; // dark paper → white mark; light paper → muted dark mark
+  const k = Math.min(1, (0.40 + 0.40 * strength) * boost); // 0.40 subtle → 0.80 strong, boosted for thin motifs
+  return mixColor(paper, base, k);
+}
 function paintPattern(g: Ctx, paper: string, pattern: string, h: number) {
   r(g, 0, 0, T, h, paper);
-  const ink = shade(paper, -0.18), light = shade(paper, 0.15);
-  if (pattern === 'stripes') { r(g, 2, 0, 3, h, light); r(g, 10, 0, 3, h, light); }
-  else if (pattern === 'dots') { for (const [a, b] of [[3, 3], [11, 7], [3, 11], [11, 15]]) if (b < h) r(g, a, b, 2, 2, ink); }
-  else if (pattern === 'hearts') { heart(g, 4, 2, ink); if (h > 12) heart(g, 12, 10, ink); else heart(g, 12, 7, ink); }
-  else if (pattern === 'checks') { for (let yy = 0; yy < h; yy += 8) { r(g, 0, yy, 4, Math.min(4, h - yy), light); r(g, 8, yy, 4, Math.min(4, h - yy), light); r(g, 4, yy + 4, 4, Math.min(4, h - yy - 4), light); r(g, 12, yy + 4, 4, Math.min(4, h - yy - 4), light); } }
+  const mark = markColor(paper);
+  // Stripes, checks and diamonds are thin motifs: on light wallpaper they need extra contrast to read.
+  const n = parseInt(paper.slice(1, 7), 16);
+  const lum = 0.299 * (n >> 16) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255);
+  const strongMark = lum > 128 ? markColor(paper, 1.5) : mark;
+  if (pattern === 'stripes') { r(g, 2, 0, 3, h, strongMark); r(g, 10, 0, 3, h, strongMark); }
+  else if (pattern === 'dots') { for (const [a, b] of [[3, 3], [11, 7], [3, 11], [11, 15]]) if (b < h) r(g, a, b, 2, 2, mark); }
+  else if (pattern === 'hearts') { heart(g, 4, 2, mark); if (h > 12) heart(g, 12, 10, mark); else heart(g, 12, 7, mark); }
+  else if (pattern === 'checks') { for (let yy = 0; yy < h; yy += 8) { r(g, 0, yy, 4, Math.min(4, h - yy), strongMark); r(g, 8, yy, 4, Math.min(4, h - yy), strongMark); r(g, 4, yy + 4, 4, Math.min(4, h - yy - 4), strongMark); r(g, 12, yy + 4, 4, Math.min(4, h - yy - 4), strongMark); } }
   else if (pattern === 'stars') {
     // Little five-point stars, darker than the paper so they read, with a twinkle between.
-    const star = shade(paper, -0.29);
+    const star = mark;
     for (const [a, b] of [[4, 5], [11, 9]]) if (b + 2 < h) {
       r(g, a, b - 2, 1, 1, star); r(g, a - 1, b - 1, 3, 1, star); r(g, a - 2, b, 5, 1, star);
       r(g, a - 1, b + 1, 3, 1, star); r(g, a - 1, b + 2, 1, 1, star); r(g, a + 1, b + 2, 1, 1, star);
       r(g, a, b, 1, 1, '#fffaf3');
     }
     if (14 < h) r(g, 13, 14, 1, 1, star);
-    r(g, 1, 9, 1, 1, light);
+    r(g, 1, 9, 1, 1, mark);
   }
   else if (pattern === 'flowers') {
     for (const [a, b] of [[4, 4], [12, 10]]) if (b + 1 < h) {
-      for (const [dx, dy] of [[-1, 0], [1, 0], [0, -1], [0, 1]])       r(g, a + dx, b + dy, 1, 1, shade(paper, -0.23));
+      for (const [dx, dy] of [[-1, 0], [1, 0], [0, -1], [0, 1]])       r(g, a + dx, b + dy, 1, 1, mark);
       r(g, a, b, 1, 1, '#fffaf3');
     }
   }
-  else if (pattern === 'waves') { for (const yy of [3, 11]) for (let x = 0; x < T; x++) { const b = yy + [0, 1, 2, 1][x % 4]; if (b < h) r(g, x, b, 1, 1, ink); } }
-  else if (pattern === 'diamonds') { for (let yy = 0; yy < h; yy++) for (let x = 0; x < T; x++) if ((x + yy) % 8 === 0 || (x - yy + 16) % 8 === 0) r(g, x, yy, 1, 1, light); }
+  else if (pattern === 'waves') { for (const yy of [3, 11]) for (let x = 0; x < T; x++) { const b = yy + [0, 1, 2, 1][x % 4]; if (b < h) r(g, x, b, 1, 1, mark); } }
+  else if (pattern === 'diamonds') { for (let yy = 0; yy < h; yy++) for (let x = 0; x < T; x++) if ((x + yy) % 8 === 0 || (x - yy + 16) % 8 === 0) r(g, x, yy, 1, 1, strongMark); }
   else if (pattern === 'brick') {
     for (let k = 0; k * 4 < h; k++) {
-      r(g, 0, k * 4 + 3, T, 1, ink);
-      for (const bx of [0, 8]) r(g, (k % 2) * 4 + bx, k * 4, 1, Math.min(3, h - k * 4), ink);
+      r(g, 0, k * 4 + 3, T, 1, mark);
+      for (const bx of [0, 8]) r(g, (k % 2) * 4 + bx, k * 4, 1, Math.min(3, h - k * 4), mark);
     }
   }
   else if (pattern === 'gingham') { // picnic cloth: light bands both ways, a little darker where they cross
-    for (const xx of [0, 8]) r(g, xx, 0, 4, h, light);
-    for (const yy of [0, 8]) if (yy < h) { const hh = Math.min(4, h - yy); r(g, 0, yy, T, hh, light); r(g, 0, yy, 4, hh, ink); r(g, 8, yy, 4, hh, ink); }
+    for (const xx of [0, 8]) r(g, xx, 0, 4, h, mark);
+    for (const yy of [0, 8]) if (yy < h) { const hh = Math.min(4, h - yy); r(g, 0, yy, T, hh, mark); r(g, 0, yy, 4, hh, mark); r(g, 8, yy, 4, hh, mark); }
   }
   else if (pattern === 'scallops') { // rows of little arches
     for (const yy of [4, 12]) if (yy + 2 < h) for (const x0 of [0, 8]) {
-      r(g, x0, yy, 1, 1, ink); r(g, x0 + 1, yy + 1, 1, 1, ink); r(g, x0 + 2, yy + 2, 4, 1, ink); r(g, x0 + 6, yy + 1, 1, 1, ink); r(g, x0 + 7, yy, 1, 1, ink);
+      r(g, x0, yy, 1, 1, mark); r(g, x0 + 1, yy + 1, 1, 1, mark); r(g, x0 + 2, yy + 2, 4, 1, mark); r(g, x0 + 6, yy + 1, 1, 1, mark); r(g, x0 + 7, yy, 1, 1, mark);
     }
   }
   else if (pattern === 'paws') { // paw prints: a pad and three toes
-    const paw = shade(paper, -0.22);
+    const paw = mark;
     for (const [a, b] of [[4, 4], [12, 11]]) if (b + 2 < h) { r(g, a - 1, b + 1, 3, 2, paw); r(g, a - 2, b - 1, 1, 1, paw); r(g, a, b - 2, 1, 1, paw); r(g, a + 2, b - 1, 1, 1, paw); }
   }
-  else if (pattern === 'grid') { for (let yy = 7; yy < h; yy += 8) r(g, 0, yy, T, 1, ink); r(g, 7, 0, 1, h, ink); r(g, 15, 0, 1, h, ink); }
+  else if (pattern === 'grid') { for (let yy = 7; yy < h; yy += 8) r(g, 0, yy, T, 1, mark); r(g, 7, 0, 1, h, mark); r(g, 15, 0, 1, h, mark); }
 }
 
 // A 2x2 preview of a floor style or wall pattern in some colour, for Decorate's pickers.
