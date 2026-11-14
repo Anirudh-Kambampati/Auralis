@@ -9,7 +9,7 @@ import {
   coinURL, uiIconURL, AV, drawPaper, isDark, paintBlockText, drawWindow as drawWin, drawDroplet, drawHeart, tileURL, ACC_COL, ACC_COLORS, ACC_TINT, type Look,
 } from './draw';
 import { drawPet, petPos, petIconURL, seedOf } from './pets';
-import { toggleSound, soundName, chime, ping, stopAllSounds, setVolume } from './sounds';
+import { toggleSound, soundName, chime, ping, taskComplete, stopAllSounds, setVolume } from './sounds';
 import { countUnseen } from './tabBadge';
 import { syncWatch } from './watch';
 import { parseVideo } from '../shared/watch.js';
@@ -24,18 +24,28 @@ type Member = {
   exams?: { subject: string; date: string }[]; // YYYY-MM-DD, soonest first
 };
 // all: everyone has to tick it. to: who it's for (older ones have neither). at: reminder time. mine: one of my older private to-dos.
-type Todo = { id: number; text: string; done: boolean; by: string; byId?: string; all?: boolean; to?: string[]; ticks?: string[]; at?: number; mine?: boolean };
-type Chat = { id: number; from: string; by: string; text: string; at: number; img?: string; replyTo?: number }; // img: key of a picture
+type Todo = { id: number; text: string; done: boolean; by: string; byId?: string; all?: boolean; to?: string[]; ticks?: string[]; at?: number; mine?: boolean; repeat?: 'daily' | 'weekly' | 'monthly'; repeatUntil?: number; parentId?: number; priority?: 'low' | 'medium' | 'high' };
+type Chat = { id: number; from: string; by: string; text: string; at: number; img?: string; replyTo?: number; reactions?: Record<string, string[]> }; // img: key of a picture; reactions: emoji -> user ids
 type CalEvent = { id: number; date: string; time?: string; text: string; by?: string }; // date YYYY-MM-DD, time HH:MM
+type Announcement = { id: number; text: string; by: string; byId: string; at: number };
 type Focus = { minutes: number; endsAt: number; tag?: string; pausedAt?: number | null };
 type Session = { at: number; minutes: number; tag: string; early?: boolean };
 type Inbox = { kind: string; from?: string; by?: string; text: string; at: number; n?: number };
 type Friend = { id: string; name: string; look: Look; online: boolean; focus: boolean; status: 'friend' | 'incoming' | 'outgoing'; here?: boolean; visit?: boolean; asked?: boolean };
 type Me = { id: string; home?: string; visited?: { code: string; ownerName: string | null; online: number }[]; banned?: { id: string; name: string }[]; coins: number; discount?: boolean; notes?: { from: string; text: string; at: number }[]; inbox?: Inbox[]; inboxSeen?: number; events?: CalEvent[]; pushKey?: string; notify?: Record<string, boolean>; groups?: Record<string, { name: string; members: string[]; msgs: Chat[] }>; friends?: Friend[]; inventory: Record<string, number>; sessions: Session[]; subjects: string[]; hiddenSubjects: string[]; todos: Todo[]; dm: Record<string, Chat[]>; petAccs?: string[] };
-type Board = { scope: string; period: string; rows: { name: string; me: boolean; minutes: number }[] };
+type Board = { scope: string; period: string; rows: { name: string; me: boolean; minutes: number; members?: number }[] };
 type Avatar = { x: number; y: number; tx: number; ty: number; up: boolean; dist: number; use?: string };
 type ItemKey = keyof typeof ITEMS;
 type PetKey = keyof typeof PETS;
+
+type SessionTemplate = { id: string; name: string; work: number; break: number; sessions: number };
+
+const SESSION_TEMPLATES: SessionTemplate[] = [
+  { id: 'pomodoro', name: 'Pomodoro', work: 25, break: 5, sessions: 4 },
+  { id: 'deep', name: 'Deep Work', work: 50, break: 10, sessions: 2 },
+  { id: 'ultradian', name: 'Ultradian', work: 90, break: 20, sessions: 1 },
+  { id: 'short', name: 'Quick Sprint', work: 15, break: 5, sessions: 6 },
+];
 
 // The window the app lives in right now: this tab, or the floating picture-in-picture window it moves into.
 let ui: Document = document, win: Window = window;
@@ -55,6 +65,7 @@ const apiBase = import.meta.env.VITE_API ?? '';
 let members: Member[] = [];
 let todos: Todo[] = [];
 let houseEvents: CalEvent[] = [];
+let houseAnnouncements: Announcement[] = [];
 let chat: Chat[] = [];
 let dmPeer: string | null = null; // null = talking to the whole house
 let houseCode = '';
@@ -99,6 +110,9 @@ let ws: WebSocket;
 const serverUrl = import.meta.env.VITE_SERVER ?? `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws`;
 // Loading screen until the first house state arrives; after a few seconds explain the wait.
 let hintTimer = 0;
+let reconnectAttempts = 0;
+const maxReconnectAttempts = 10;
+const baseReconnectDelay = 1500;
 function showLoading(on: boolean) {
   $('#loading').hidden = !on;
   clearTimeout(hintTimer);
@@ -109,8 +123,21 @@ function showLoading(on: boolean) {
 function connect() {
   if (!houseCode) showLoading(true);
   ws = new WebSocket(serverUrl);
-  ws.onopen = () => send({ t: 'hello', token });
-  ws.onclose = () => { if (token) setTimeout(connect, 1500); };
+  ws.onopen = () => {
+    reconnectAttempts = 0; // Reset on successful connection
+    send({ t: 'hello', token });
+  };
+  ws.onclose = (e) => {
+    if (!token) return; // Don't reconnect if logged out
+    if (e.code === 1000) return; // Normal closure, don't reconnect
+    const delay = Math.min(baseReconnectDelay * Math.pow(1.5, reconnectAttempts), 30000); // Exponential backoff, max 30s
+    reconnectAttempts = Math.min(reconnectAttempts + 1, maxReconnectAttempts);
+    console.log(`WebSocket disconnected (code: ${e.code}). Reconnecting in ${delay}ms... (attempt ${reconnectAttempts}/${maxReconnectAttempts})`);
+    setTimeout(connect, delay);
+  };
+  ws.onerror = (err) => {
+    console.error('WebSocket error:', err);
+  };
   ws.onmessage = (e) => onMessage(JSON.parse(e.data));
 }
 const send = (m: object) => ws?.readyState === 1 && ws.send(JSON.stringify(m));
@@ -134,6 +161,7 @@ function onMessage(m: any) {
     for (const member of members) for (const r of member.rooms) for (const f of r.furniture) if (!canRotate(f.item) && f.rot !== undefined) delete f.rot;
     todos = m.house.todos;
     houseEvents = m.house.events ?? [];
+    houseAnnouncements = m.house.announcements ?? [];
     me = { ...m.me, sessions: m.me.sessions ?? me.sessions }; // study history only comes when it changed
     subscribePush();
     renderNotifyPrefs();
@@ -298,12 +326,22 @@ function onMessage(m: any) {
   } else if (m.t === 'todo_assigned') {
     notify(chime);
     toast(`📋 <b>${esc(m.by)}</b> assigned you: ${esc(m.text)}`, 'reward', { ms: 10_000, onClick: () => setPanel('todos') });
+  } else if (m.t === 'todo_completed') {
+    notify(taskComplete);
+    toast(`✅ <b>${esc(m.by)}</b> completed: ${esc(m.text)}`, 'reward', { ms: 8_000, onClick: () => setPanel('todos') });
   } else if (m.t === 'friend_matches') {
     $('#friendSuggest').innerHTML = m.names.map((n: string) => `<option value="${esc(n)}">`).join('');
   } else if (m.t === 'error') {
     toast(esc(m.text), 'error');
   } else if (m.t === 'info') { // news that isn't a refusal: a plain toast
     toast(esc(m.text));
+  } else if (m.t === 'chat_react') { // reactions updated for a message
+    const idx = chat.findIndex((c) => c.id === m.id);
+    if (idx >= 0) {
+      chat[idx] = { ...chat[idx], reactions: m.reactions };
+      if (dmPeer === null) renderSide(); // house chat
+      else if (chat[idx].from === dmPeer || dmPeer === null) renderSide(); // DM or group
+    }
   }
 }
 
@@ -441,6 +479,26 @@ function startBreak(ms: number, text: string) {
     breakTimer = 0;
     chime(); // an alarm you set yourself, so it rings even with notification sounds off
     if (!myMember()?.focus) standUp();
+    // Auto-continue session template if active
+    const templateId = localStorage.getItem('auralis.template');
+    const sessionNum = parseInt(localStorage.getItem('auralis.templateSession') ?? '1', 10);
+    if (templateId) {
+      const template = SESSION_TEMPLATES.find((t) => t.id === templateId);
+      if (template && sessionNum < template.sessions) {
+        const nextSession = sessionNum + 1;
+        localStorage.setItem('auralis.templateSession', String(nextSession));
+        const tag = localStorage.getItem('auralis.tag') || template.name;
+        send({ t: 'focus_start', minutes: template.work, tag, tz: new Date().getTimezoneOffset() });
+        toast(`⏰ Break's over! Starting ${template.name} session ${nextSession}/${template.sessions}.`, 'reward');
+        goSit();
+        return;
+      } else if (template && sessionNum >= template.sessions) {
+        // Template complete
+        localStorage.removeItem('auralis.template');
+        localStorage.removeItem('auralis.templateSession');
+        toast(`🎉 ${template.name} complete! ${template.sessions} sessions done.`, 'reward');
+      }
+    }
     toast("⏰ Break's over! Ready for another focus session?", 'reward');
     if (!openPanel && !myMember()?.focus) setPanel('focus');
   }, ms);
@@ -1822,7 +1880,7 @@ function statsBody() {
     return `${tabs}<div class="row">${seg('scope', boardScope, [['house', 'My house'], ['friends', 'Friends'], ['all', 'Everyone']])}
         ${seg('period', boardPeriod, [['week', 'This week'], ['all', 'All time']])}</div>
       ${!rows ? '<p class="hint">Loading…</p>' : `<ol class="board">${rows.map((r, i) =>
-        `<li class="${r.me ? 'me' : ''}"><span class="rank">${medal(i)}</span><b>${esc(r.name)}${r.me ? ' (you)' : ''}</b><span>${hm(r.minutes)}</span></li>`).join('')}</ol>`}
+        `<li class="${r.me ? 'me' : ''}"><span class="rank">${medal(i)}</span><b>${esc(r.name)}${r.me ? ' (you)' : ''}</b>${r.members ? ` <small>(${r.members} members)</small>` : ''}<span>${hm(r.minutes)}</span></li>`).join('')}</ol>`}
       <p class="hint">Ranked by focused minutes from finished sessions.</p>`;
   }
   const c = chart(me.sessions, statsRange, statsAnchor);
@@ -1882,11 +1940,13 @@ function panelBody(mine: Member) {
          <div class="row"><input id="tag" maxlength="24" placeholder="Study" value="${esc(lastTag)}" aria-label="Subject">
            <button class="off" data-act="tagsave" title="Save as a quick pick">★ Save</button></div>
          ${subjectChips()}
-         <h3>How long?</h3>
-         <div class="tiles lengths">${FOCUS_LENGTHS.map((n) => `<button class="tile" data-act="focus" data-v="${n}"><b>${n}</b><small>min</small><span class="reward">+${n} ${coin()}</span></button>`).join('')}</div>
-         <div class="row custom-len"><input id="customLen" type="number" min="10" max="180" step="5" inputmode="numeric" placeholder="Custom" aria-label="Custom length in minutes" aria-describedby="customHint">
-           <span id="customHint" class="hint">min · multiple of 5, 10 to 180</span><button data-act="focuscustom">Start</button></div>
-         <p class="hint center">You'll walk to your desk and study until the timer ends. Study at the same time as housemates for +25% coins each, up to ×2.</p>${together}`) + examsHTML(mine);
+<h3>How long?</h3>
+          <div class="tiles lengths">${FOCUS_LENGTHS.map((n) => `<button class="tile" data-act="focus" data-v="${n}"><b>${n}</b><small>min</small><span class="reward">+${n} ${coin()}</span></button>`).join('')}</div>
+          <div class="row custom-len"><input id="customLen" type="number" min="10" max="180" step="5" inputmode="numeric" placeholder="Custom" aria-label="Custom length in minutes" aria-describedby="customHint">
+            <span id="customHint" class="hint">min · multiple of 5, 10 to 180</span><button data-act="focuscustom">Start</button></div>
+          <p class="hint center">You'll walk to your desk and study until the timer ends. Study at the same time as housemates for +25% coins each, up to ×2.</p>
+          <h3>Session templates</h3>
+          <div class="tiles templates small">${SESSION_TEMPLATES.map((t) => `<button class="tile" data-act="focustemplate" data-v="${t.id}"><b>${t.name}</b><small>${t.work}min work / ${t.break}min break</small><span class="reward">${t.sessions} sessions</span></button>`).join('')}</div>`) + examsHTML(mine);
   }
   if (openPanel === 'shop') return shopBody(mine);
   if (openPanel === 'decorate') return decorateBody(mine);
@@ -1922,6 +1982,14 @@ function panelBody(mine: Member) {
   }
   // house
   const away = !!me.home && me.home !== houseCode;
+  // Format announcements
+  const announcementsHtml = houseAnnouncements.length ? `
+    <h3>📢 Announcements</h3>
+    <div class="announcements">
+      ${houseAnnouncements.map((a) => `<div class="announcement"><p>${linkify(a.text)}</p><small>— ${esc(a.by)} · ${new Date(a.at).toLocaleString([], { weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}</small>${members.find((m) => m.id === myId)?.id === houseCode.split(':')[0] ? `<button class="off small" data-act="announcement-del" data-v="${a.id}">Delete</button>` : ''}</div>`).join('')}
+    </div>
+    ${houseOwnerName && houseOwnerName === members.find((m) => m.id === myId)?.name ? `<button class="new-announcement" data-act="announcement-add">＋ Post announcement</button>` : ''}
+  ` : '';
   return `${away
     ? `<p class="hint">You're visiting ${houseOwnerName ? `<b>${esc(houseOwnerName)}</b>'s house` : "a friend's house"}. Your own home keeps its code, so you can always go back.</p>
     <div class="code-big">${houseCode}</div>
@@ -1929,6 +1997,7 @@ function panelBody(mine: Member) {
     : `<p class="hint">This is your home, and its code never changes. Share it: when friends join, their rooms open up into yours to make one big house.</p>
     <div class="code-big">${houseCode}</div>
     <div class="center"><button class="off" data-act="copy">Copy code</button></div>`}
+    ${announcementsHtml}
     <h3>Housemates</h3>
     <ul class="members">${members.map((m) => `<li><span class="dot${m.online ? ' on' : ''}"></span>${esc(m.name)}${m.id === myId ? ' (you)' : ''}${m.focus ? '<span class="tag">📖 studying</span>' : ''}${m.id !== myId ? `<button class="off small" data-act="gift" data-v="${m.id}" title="Send ${esc(m.name)} ${GIFT_COINS} coins">🎁 ${GIFT_COINS}</button><button class="off small" data-act="noteto" data-v="${m.id}" aria-label="Leave ${esc(m.name)} a note">✉️</button>` : ''}${!away && m.id !== myId ? `<button class="off small" data-act="kick" data-v="${m.id}">Remove</button>` : ''}</li>`).join('')}</ul>
     ${noteTo && members.some((m) => m.id === noteTo) ? `<h3>Note for ${esc(members.find((m) => m.id === noteTo)!.name)}'s desk</h3>
@@ -1999,6 +2068,21 @@ panel.addEventListener('click', (e) => {
       b.dataset.v = String(n); // then start it like any other length
     }
     // falls through
+    case 'focustemplate': {
+      const template = SESSION_TEMPLATES.find((t) => t.id === v);
+      if (!template) break;
+      lastTag = panel.querySelector<HTMLInputElement>('#tag')?.value.trim() ?? '';
+      localStorage.setItem('auralis.tag', lastTag);
+      endBreak();
+      if (window.Notification?.permission === 'default') Notification.requestPermission();
+      // Start the first session
+      send({ t: 'focus_start', minutes: template.work, tag: lastTag || template.name, tz: new Date().getTimezoneOffset() });
+      // Store template for auto-continue
+      localStorage.setItem('auralis.template', v);
+      localStorage.setItem('auralis.templateSession', '1');
+      setPanel(null);
+      break;
+    }
     case 'focus': {
       const v = b.dataset.v!;
       lastTag = panel.querySelector<HTMLInputElement>('#tag')?.value.trim() ?? '';
@@ -2123,6 +2207,17 @@ panel.addEventListener('click', (e) => {
     case 'rejoin': send({ t: 'join', code: v }); break;
     case 'forget': send({ t: 'forget', code: v }); break;
     case 'unban': send({ t: 'unban', id: v }); break;
+    case 'announcement-add': {
+      const announcementModal = $<HTMLDialogElement>('#announcementModal');
+      $<HTMLFormElement>('#announcementNew').reset();
+      $('#announcementModalTitle').textContent = 'New announcement';
+      announcementModal.showModal();
+      break;
+    }
+    case 'announcement-del': {
+      if (confirm('Delete this announcement?')) send({ t: 'announcement_del', id: Number(v) });
+      break;
+    }
     case 'petrelease': // two taps: a pet can't be brought back
       if (!b.classList.contains('armed')) {
         b.classList.add('armed');
@@ -2363,9 +2458,12 @@ function todoHTML(list: Todo[]) {
     const ticked = t.mine || shared ? t.done : !!t.ticks?.includes(myId);
     const canTick = t.mine || shared || who.some((m) => m.id === myId);
     const late = t.at && !t.done && t.at < Date.now();
+    const priorityIcon = t.priority === 'high' ? '🔴' : t.priority === 'low' ? '🔵' : '';
     const pills = [
       t.at ? `<span class="due${late ? ' late' : ''}">⏰ ${fmtDue(t.at)}</span>` : '',
+      t.priority ? `<span class="pill priority-${t.priority}">${priorityIcon} ${t.priority}</span>` : '',
       t.mine ? '<span class="pill">🔒 just you</span>' : t.all ? '<span class="pill all">👥 everyone</span>' : '',
+      t.repeat ? `<span class="pill repeat">🔁 ${t.repeat}${t.repeatUntil ? ` until ${new Date(t.repeatUntil).toLocaleDateString()}` : ''}</span>` : '',
       ...who.map((m) => { const done = t.ticks?.includes(m.id); return `<span class="pill${done ? ' ticked' : ''}">${done ? '✓ ' : ''}${esc(m.name)}</span>`; }),
     ].join('');
     const from = t.byId && t.byId !== myId ? `<small>from ${esc(t.by)}</small>` : shared && t.by ? `<small>${esc(t.by)}</small>` : '';
@@ -2427,6 +2525,7 @@ function threadMsgs(peer: string | null): Chat[] {
 // Someone I can message: a housemate or a friend.
 const friendsOnly = () => (me.friends ?? []).filter((f) => f.status === 'friend');
 const person = (id: string | null) => members.find((m) => m.id === id) ?? friendsOnly().find((f) => f.id === id);
+const houseMembers = () => members;
 $('#chatUnreply').addEventListener('click', () => { replyTo = null; renderSide(); $('#chatInput').focus(); });
 // The message to send in the open thread: the house, a group, or one person.
   const chatMsg = (x: { text: string; img?: string; replyTo?: number }) => (groupOf(dmPeer) ? { t: 'gmsg', g: dmPeer!.slice(2), ...x } : dmPeer ? { t: 'dm', to: dmPeer, ...x } : { t: 'chat', ...x });
@@ -2528,10 +2627,23 @@ function renderSide() {
     const atBottom = log.scrollHeight - log.scrollTop - log.clientHeight < 40, fromBottom = log.scrollHeight - log.scrollTop;
     const more = msgs.length >= 50 && !historyDone.has(threadKey(dmPeer)) ? '<p class="more">Scroll up for older messages</p>' : '';
     const byId = new Map<number, Chat>(msgs.map((c) => [c.id, c]));
-    const quoteOf = (c: Chat) => { const q = c.replyTo ? byId.get(c.replyTo) : null; return q ? `<span class="quote"><b>${esc(q.by)}</b> <span class="qt">${esc(q.text) || 'Picture'}</span></span>` : ''; };
+    const quoteOf = (c: Chat) => { const q = c.replyTo ? byId.get(c.replyTo) : null; return q ? `<span class="quote" data-reply-to="${q.id}"><b>${esc(q.by)}</b> <span class="qt">${esc(q.text) || 'Picture'}</span></span>` : ''; };
+    const reactionBar = (c: Chat) => {
+      if (!c.reactions) return '';
+      const emojis = Object.entries(c.reactions).map(([emoji, users]) => {
+        const count = users.length;
+        const meReacted = users.includes(myId);
+        return `<button class="reaction ${meReacted ? 'on' : ''}" data-react="${c.id}" data-emoji="${esc(emoji)}" title="${users.map((u) => person(u)?.name).filter(Boolean).join(', ')}">${emoji} <span>${count}</span></button>`;
+      }).join('');
+      return `<div class="reactions">${emojis}</div>`;
+    };
+    const reactionPicker = (msgId: number) => {
+      const emojis = ['👍', '❤️', '😂', '😮', '😢', '🔥', '✨', '👏', '💯', '🤔'];
+      return `<div class="reaction-picker" data-msg="${msgId}">${emojis.map((e) => `<button data-react-add="${msgId}" data-emoji="${e}" title="${e}">${e}</button>`).join('')}</div>`;
+    };
     log.innerHTML = msgs.length
       ? more + msgs.map((c) => !c.from ? `<p class="note">${esc(c.text)}</p>` : `<p class="${c.from === myId ? 'mine' : ''}" data-quote="${c.id}"><b>${esc(c.by)}</b>${quoteOf(c)}${linkify(c.text)}${c.img ? `<span class="chat-att">${docName(c.img) ? `<button type="button" class="chat-doc" data-key="${esc(c.img)}">📎 <span>${esc(docName(c.img)!)}</span></button>` : `<img class="chat-img" data-key="${esc(c.img)}" alt="Picture from ${esc(c.by)}">`}`
-        + `<button type="button" class="chat-dl" data-dl="${esc(c.img)}" title="Download" aria-label="Download ${esc(docName(c.img) ?? 'picture')}">⬇</button></span>` : ''}<button type="button" class="chat-reply" title="Reply" aria-label="Reply to ${esc(c.by)}">↩</button></p>`).join('')
+        + `<button type="button" class="chat-dl" data-dl="${esc(c.img)}" title="Download" aria-label="Download ${esc(docName(c.img) ?? 'picture')}">⬇</button></span>` : ''}${reactionBar(c)}<button type="button" class="chat-reply" title="Reply" aria-label="Reply to ${esc(c.by)}">↩</button>${reactionPicker(c.id)}</p>`).join('')
       : dmPeer
         ? `<p class="empty">${group ? `Just the people in ${esc(peerName)}.` : `Just you and ${esc(peerName)} — nobody else can see this.`}</p>`
         : '<p class="empty">Say hi to your housemates 👋</p>';
@@ -2594,6 +2706,34 @@ $('#chatLog').addEventListener('click', (e) => {
     const c = quote ? threadMsgs(dmPeer).find((x) => x.id === Number(quote.dataset.quote)) : null;
     if (c) setReply(c);
     e.stopPropagation();
+    return;
+  }
+  // Click on quoted message to jump to it
+  const quoteLink = (e.target as HTMLElement).closest<HTMLSpanElement>('.quote');
+  if (quoteLink) {
+    const replyToId = quoteLink.dataset.replyTo;
+    if (replyToId) {
+      const log = $('#chatLog');
+      const targetEl = log.querySelector(`[data-quote="${replyToId}"]`);
+      if (targetEl) {
+        targetEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        targetEl.classList.add('highlight');
+        setTimeout(() => targetEl.classList.remove('highlight'), 2000);
+      }
+    }
+    e.stopPropagation();
+    return;
+  }
+  // Reaction: toggle existing reaction
+  const reactBtn = (e.target as HTMLElement).closest<HTMLButtonElement>('.reaction');
+  if (reactBtn) {
+    send({ t: 'chat_react', id: Number(reactBtn.dataset.react), emoji: reactBtn.dataset.emoji });
+    return;
+  }
+  // Add new reaction from picker
+  const addReactBtn = (e.target as HTMLElement).closest<HTMLButtonElement>('[data-react-add]');
+  if (addReactBtn) {
+    send({ t: 'chat_react', id: Number(addReactBtn.dataset.react), emoji: addReactBtn.dataset.emoji });
     return;
   }
 });
@@ -2672,7 +2812,8 @@ async function upload(file: File): Promise<string> {
 
 // To-dos: one list of what I can see (assigned to me, made by me, or for everyone) plus my older private ones.
 $('#todoList').addEventListener('click', (e) => {
-  const b = (e.target as HTMLElement).closest<HTMLButtonElement>('button[data-todo]');
+  const target = e.target as HTMLElement;
+  const b = target.closest<HTMLButtonElement>('button[data-todo]');
   if (b?.dataset.todo === 'edit') return openTodoModal(todos.find((t) => t.id === Number(b.dataset.id)));
   if (b) send({ t: `${b.dataset.mine ? 'ptodo' : 'todo'}_${b.dataset.todo}`, id: Number(b.dataset.id) });
 });
@@ -2695,6 +2836,15 @@ function openTodoModal(t?: Todo) {
       const d = new Date(t.at), pad = (n: number) => String(n).padStart(2, '0');
       $<HTMLInputElement>('#todoDate').value = d.toLocaleDateString('en-CA');
       $<HTMLInputElement>('#todoTime').value = `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    }
+    if (t.repeat) {
+      $<HTMLSelectElement>('#todoRepeat').value = t.repeat;
+    }
+    if (t.repeatUntil) {
+      $<HTMLInputElement>('#todoRepeatUntil').value = new Date(t.repeatUntil).toLocaleDateString('en-CA');
+    }
+    if (t.priority) {
+      $<HTMLSelectElement>('#todoPriority').value = t.priority;
     }
   }
   syncBell();
@@ -2730,7 +2880,10 @@ $('#todoNew').addEventListener('submit', (e) => {
   if (at && at < Date.now() && !sameTime) return toast('That time has already passed. Pick a later one.', 'error');
   const all = $<HTMLInputElement>('#todoEveryone').checked;
   const to = Array.from($('#todoWho').querySelectorAll<HTMLInputElement>('.person input:checked')).map((i) => i.value);
-  send(editing ? { t: 'todo_edit', id: editing.id, text, at: sameTime ? editing.at : at, all, to } : { t: 'todo_add', text, at, all, to });
+  const repeat = $<HTMLSelectElement>('#todoRepeat').value || undefined;
+  const repeatUntil = $<HTMLInputElement>('#todoRepeatUntil').value ? new Date($<HTMLInputElement>('#todoRepeatUntil').value).getTime() : undefined;
+  const priority = $<HTMLSelectElement>('#todoPriority').value || undefined;
+  send(editing ? { t: 'todo_edit', id: editing.id, text, at: sameTime ? editing.at : at, all, to, repeat, repeatUntil, priority } : { t: 'todo_add', text, at, all, to, repeat, repeatUntil, priority });
   if (at && window.Notification?.permission === 'default') Notification.requestPermission().then(subscribePush); // so reminders reach me anywhere
   todoModal.close();
 });
@@ -2780,6 +2933,73 @@ for (const box of [$<HTMLTextAreaElement>('#chatInput')]) {
   });
   box.form!.addEventListener('submit', () => requestAnimationFrame(fit)); // shrink back once it's been cleared
 }
+// @mention autocomplete
+const mentionPicker = $<HTMLDivElement>('#chatMentions');
+let mentionQuery = '';
+let mentionStart = -1;
+let mentionIndex = -1;
+function showMentions(query: string, start: number) {
+  const members = houseMembers(); // helper to get current house members
+  const matches = members.filter((m) => m.id !== myId && m.name.toLowerCase().includes(query.toLowerCase()));
+  if (!matches.length) { mentionPicker.hidden = true; return; }
+  mentionPicker.innerHTML = matches.map((m, i) => `<button type="button" data-mention="${m.id}" data-index="${i}">@${esc(m.name)}</button>`).join('');
+  mentionPicker.hidden = false;
+  mentionIndex = -1;
+  updateMentionHighlight();
+}
+function hideMentions() { mentionPicker.hidden = true; mentionQuery = ''; mentionStart = -1; }
+function updateMentionHighlight() {
+  mentionPicker.querySelectorAll('button').forEach((b, i) => b.classList.toggle('sel', i === mentionIndex));
+}
+function selectMention(id: string) {
+  const input = $<HTMLTextAreaElement>('#chatInput');
+  const text = input.value;
+  const before = text.slice(0, mentionStart);
+  const after = text.slice(input.selectionStart);
+  input.value = before + '@' + id + ' ' + after;
+  // Move cursor after the mention
+  setTimeout(() => { input.selectionStart = input.selectionEnd = before.length + id.length + 2; input.dispatchEvent(new Event('input')); }, 0);
+  hideMentions();
+}
+$<HTMLTextAreaElement>('#chatInput').addEventListener('input', (e) => {
+  const input = e.target as HTMLTextAreaElement;
+  const pos = input.selectionStart;
+  const text = input.value;
+  // Check if we're in a mention
+  const atPos = text.lastIndexOf('@', pos - 1);
+  if (atPos >= 0 && text.slice(atPos + 1, pos).match(/^[\w\-]*$/)) {
+    const query = text.slice(atPos + 1, pos);
+    if (query !== mentionQuery || atPos !== mentionStart) {
+      mentionQuery = query;
+      mentionStart = atPos;
+      showMentions(query, atPos);
+    }
+  } else {
+    hideMentions();
+  }
+  // Auto-grow
+  input.style.height = 'auto';
+  input.style.height = `${input.scrollHeight + 6}px`;
+});
+$<HTMLTextAreaElement>('#chatInput').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); (e.currentTarget as HTMLTextAreaElement).form!.requestSubmit(); }
+  if (!mentionPicker.hidden) {
+    const buttons = mentionPicker.querySelectorAll('button');
+    if (e.key === 'ArrowDown') { e.preventDefault(); mentionIndex = Math.min(mentionIndex + 1, buttons.length - 1); updateMentionHighlight(); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); mentionIndex = Math.max(mentionIndex - 1, 0); updateMentionHighlight(); }
+    else if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); if (mentionIndex >= 0) selectMention(buttons[mentionIndex].dataset.mention!); }
+    else if (e.key === 'Escape') { hideMentions(); }
+  }
+});
+// Click on mention picker
+mentionPicker.addEventListener('click', (e) => {
+  const btn = (e.target as HTMLElement).closest<HTMLButtonElement>('[data-mention]');
+  if (btn) selectMention(btn.dataset.mention!);
+});
+// Hide mentions when clicking outside
+document.addEventListener('click', (e) => {
+  if (!(e.target as HTMLElement).closest('#chatInput') && !(e.target as HTMLElement).closest('#chatMentions')) hideMentions();
+});
 $('#chatList').addEventListener('click', (e) => {
   const t = e.target as HTMLElement, acc = t.closest<HTMLButtonElement>('[data-accept]'), rm = t.closest<HTMLButtonElement>('[data-unfriend]');
   if (acc) return send({ t: 'friend_accept', id: acc.dataset.accept });
@@ -2839,6 +3059,16 @@ $('#groupNew').addEventListener('submit', (e) => {
   if (!name || !ids.length) return toast('Give the group a name and pick at least one person.', 'error');
   send({ t: 'group_new', name, members: ids });
   groupModal.close();
+});
+// Announcement modal
+const announcementModal = $<HTMLDialogElement>('#announcementModal');
+$('#announcementCancel').addEventListener('click', () => announcementModal.close());
+$('#announcementNew').addEventListener('submit', (e) => {
+  e.preventDefault();
+  const text = $<HTMLTextAreaElement>('#announcementText').value.trim();
+  if (!text) return;
+  send({ t: 'announcement_add', text });
+  announcementModal.close();
 });
 $('#closeSide').addEventListener('click', () => setPanel(null));
 $<HTMLImageElement>('#todoIcon').src = uiIconURL('todo');

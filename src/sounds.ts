@@ -507,3 +507,4 @@ function notes(list: number[], gap: number, vol: number) {
 }
 export const chime = () => notes([72, 76, 79], 0.25, 0.25); // rewards, end of a break
 export const ping = () => notes([84, 91], 0.12, 0.12); // a new message
+export const taskComplete = () => notes([79, 76, 72], 0.15, 0.2); // task completed (descending)

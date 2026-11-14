@@ -19,6 +19,15 @@ import { CHAT_KEY, DOC_TYPES, safeDocName, attachLabel, docName, usernameProblem
 // The two scars are the only accessories kept to a wound palette: black, dark red, or one of the skin tones.
 const SCAR_KEYS = new Set(SCAR_ACCS.map((a) => `acc:${a}`));
 
+// Calculate next occurrence for recurring tasks
+function nextOccurrence(from, repeat) {
+  const d = new Date(from);
+  if (repeat === 'daily') d.setDate(d.getDate() + 1);
+  else if (repeat === 'weekly') d.setDate(d.getDate() + 7);
+  else if (repeat === 'monthly') d.setMonth(d.getMonth() + 1);
+  return d.getTime();
+}
+
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const DIST = path.join(root, 'dist');
 const PORT = Number(process.env.PORT) || 8787;
@@ -291,7 +300,7 @@ function broadcastHouse(code) {
   const house = {
     code, owner: h.owner ?? null, ownerName: db.players[h.owner]?.name ?? null,
     members: h.members.map((id) => publicPlayer(db.players[id])), todos: h.todos ?? [], chat: h.chat ?? [],
-    events: h.events ?? [], watch: w ? { ...w, now: Date.now() } : null,
+    events: h.events ?? [], announcements: h.announcements ?? [], watch: w ? { ...w, now: Date.now() } : null,
   };
   for (const id of h.members) {
     const p = db.players[id];
@@ -414,20 +423,36 @@ function handle(p, m) {
       break;
     }
     case 'leaderboard': {
-      // Ranked by focused minutes, this week (last 7 days) or all time; house only or everyone.
+      // Ranked by focused minutes, this week (last 7 days) or all time; house only, friends, everyone, or houses.
       const since = m.period === 'all' ? 0 : Date.now() - 7 * 86_400_000;
-      const pool = m.scope === 'all' ? Object.values(db.players)
-        : m.scope === 'friends' ? [p, ...friendList(p).filter((f) => f.status === 'friend').map((f) => db.players[f.id])]
-          : db.houses[p.house].members.map((id) => db.players[id]);
-      const rows = pool
-        .map((o) => ({
-          name: o.name,
-          me: o.id === p.id,
-          minutes: since ? (o.sessions ?? []).filter((s) => s.at >= since).reduce((n, s) => n + s.minutes, 0) : o.totalMinutes,
-        }))
-        .filter((r) => r.minutes > 0 || r.me)
-        .sort((a, b) => b.minutes - a.minutes)
-        .slice(0, 25);
+      let rows;
+      if (m.scope === 'houses') {
+        // Aggregate house-level leaderboard
+        const houseStats = Object.values(db.houses).filter((h) => h.owner && h.members.length > 0).map((h) => {
+          const members = h.members.map((id) => db.players[id]).filter(Boolean);
+          const minutes = since
+            ? members.reduce((sum, o) => sum + (o.sessions ?? []).filter((s) => s.at >= since).reduce((n, s) => n + s.minutes, 0), 0)
+            : members.reduce((sum, o) => sum + o.totalMinutes, 0);
+          return { name: h.ownerName ?? 'Unnamed house', members: members.length, minutes, me: h.code === p.house };
+        });
+        rows = houseStats
+          .filter((r) => r.minutes > 0 || r.me)
+          .sort((a, b) => b.minutes - a.minutes)
+          .slice(0, 25);
+      } else {
+        const pool = m.scope === 'all' ? Object.values(db.players)
+          : m.scope === 'friends' ? [p, ...friendList(p).filter((f) => f.status === 'friend').map((f) => db.players[f.id])]
+            : db.houses[p.house].members.map((id) => db.players[id]);
+        rows = pool
+          .map((o) => ({
+            name: o.name,
+            me: o.id === p.id,
+            minutes: since ? (o.sessions ?? []).filter((s) => s.at >= since).reduce((n, s) => n + s.minutes, 0) : o.totalMinutes,
+          }))
+          .filter((r) => r.minutes > 0 || r.me)
+          .sort((a, b) => b.minutes - a.minutes)
+          .slice(0, 25);
+      }
       return send(sockets.get(p.id), { t: 'leaderboard', scope: m.scope, period: m.period, rows });
     }
     case 'pos':
@@ -652,6 +677,35 @@ function handle(p, m) {
       else p.events = (p.events ?? []).filter((e) => e.id !== m.id);
       break;
     }
+    // House announcements: only owner can post, shown prominently to all members
+    case 'announcement_add': {
+      const h = db.houses[p.house];
+      // Only house owner can post announcements
+      if (h.owner !== p.id) return send(sockets.get(p.id), { t: 'error', text: 'Only the house owner can post announcements.' });
+      const text = cleanText(m.text, 500);
+      if (!text) return;
+      h.announcements ??= [];
+      const announcement = { id: nextId++, text, by: p.name, byId: p.id, at: Date.now() };
+      h.announcements.unshift(announcement);
+      // Keep only latest 10
+      h.announcements = h.announcements.slice(0, 10);
+      // Notify all house members
+      for (const id of h.members) {
+        if (id !== p.id) {
+          const member = db.players[id];
+          inbox(member, 'announcement', p, `posted an announcement`);
+          if (!sockets.has(id)) push(member, { title: `📢 ${h.name} announcement`, body: `${p.name}: ${text.slice(0, 100)}`, tag: `announcement-${announcement.id}` }, 'chat');
+        }
+      }
+      break;
+    }
+    case 'announcement_del': {
+      const h = db.houses[p.house];
+      // Only house owner can delete announcements
+      if (h.owner !== p.id) return send(sockets.get(p.id), { t: 'error', text: 'Only the house owner can delete announcements.' });
+      h.announcements = (h.announcements ?? []).filter((a) => a.id !== m.id);
+      break;
+    }
     case 'inbox_read': // opened the bell: everything up to now is seen (on every device)
       p.inboxSeen = Date.now();
       save();
@@ -787,7 +841,12 @@ function handle(p, m) {
       const at = Number.isFinite(m.at) && m.at > Date.now() - 60_000 && m.at < Date.now() + 2 * 365 * 86_400_000 ? m.at : undefined;
       const to = m.all ? undefined : [...new Set(Array.isArray(m.to) ? m.to : [])].filter((id) => h.members.includes(id));
       if (to && !to.length) to.push(p.id);
-      const newTodo = { id: nextId++, text, done: false, by: p.name, byId: p.id, ticks: [], ...(m.all ? { all: true } : { to }), ...(at ? { at } : {}) };
+      // Recurrence: daily, weekly, monthly
+      const repeat = ['daily', 'weekly', 'monthly'].includes(m.repeat) ? m.repeat : undefined;
+      const repeatUntil = Number.isFinite(m.repeatUntil) && m.repeatUntil > Date.now() ? m.repeatUntil : undefined;
+      // Priority: low, medium, high
+      const priority = ['low', 'medium', 'high'].includes(m.priority) ? m.priority : undefined;
+      const newTodo = { id: nextId++, text, done: false, by: p.name, byId: p.id, ticks: [], ...(m.all ? { all: true } : { to }), ...(at ? { at } : {}), ...(repeat ? { repeat } : {}), ...(repeatUntil ? { repeatUntil } : {}), ...(priority ? { priority } : {}) };
       h.todos.push(newTodo);
       // Notify assignees (but not the creator)
       if (to) {
@@ -821,6 +880,14 @@ function handle(p, m) {
       const oldAssignees = t.to ? [...t.to] : [];
       t.text = text;
       if (at) t.at = at; else delete t.at;
+      // Recurrence
+      if (['daily', 'weekly', 'monthly'].includes(m.repeat)) t.repeat = m.repeat;
+      else if (m.repeat === null) delete t.repeat;
+      if (Number.isFinite(m.repeatUntil) && m.repeatUntil > Date.now()) t.repeatUntil = m.repeatUntil;
+      else if (m.repeatUntil === null) delete t.repeatUntil;
+      // Priority
+      if (['low', 'medium', 'high'].includes(m.priority)) t.priority = m.priority;
+      else if (m.priority === null) delete t.priority;
       if (m.all) { t.all = true; delete t.to; }
       else {
         const to = [...new Set(Array.isArray(m.to) ? m.to : [])].filter((id) => h.members.includes(id));
@@ -847,9 +914,25 @@ function handle(p, m) {
       if (!t || !canSee(t, h, p.id)) return;
       if (!t.all && !t.to) { t.done = !t.done; break; } // older shared to-dos: one tick for everyone
       if (!todoFor(t, h).includes(p.id)) return;
+      const wasDone = t.done;
       t.ticks = t.ticks.includes(p.id) ? t.ticks.filter((id) => id !== p.id) : [...t.ticks, p.id];
       if (t.all) settleTodos(h);
       else t.done = todoFor(t, h).every((id) => t.ticks.includes(id));
+      // Notify creator when task is completed (not when undone)
+      if (t.done && !wasDone && t.byId && t.byId !== p.id) {
+        const creator = db.players[t.byId];
+        inbox(creator, 'todo', p, `completed “${t.text}”`);
+        if (sockets.has(t.byId)) send(sockets.get(t.byId), { t: 'todo_completed', by: p.name, text: t.text, id: t.id });
+        if (!sockets.has(t.byId)) push(creator, { title: '✅ Task completed', body: `${p.name} completed: ${t.text}`, tag: `todo-${t.id}` }, 'todo');
+      }
+      // Handle recurring tasks: when completed, create next occurrence
+      if (t.done && !wasDone && t.repeat && (!t.repeatUntil || Date.now() < t.repeatUntil)) {
+        const nextAt = t.at ? nextOccurrence(t.at, t.repeat) : undefined;
+        if (nextAt && (!t.repeatUntil || nextAt < t.repeatUntil)) {
+          const nextTodo = { id: nextId++, text: t.text, done: false, by: t.by, byId: t.byId, ticks: [], ...(t.all ? { all: true } : { to: t.to }), ...(nextAt ? { at: nextAt } : {}), repeat: t.repeat, repeatUntil: t.repeatUntil, parentId: t.id };
+          h.todos.push(nextTodo);
+        }
+      }
       break;
     }
     case 'todo_del': { // only whoever made it (older ones without a maker: anyone)
@@ -1021,7 +1104,7 @@ case 'dm': {
       for (const code of new Set(g.members.map((id) => db.players[id]?.house))) if (code && code !== p.house) broadcastHouse(code);
       break;
     }
-    case 'chat': {
+case 'chat': {
       const h = db.houses[p.house];
       const text = cleanText(m.text, 200), img = chatImg(p, m.img);
       const now = Date.now();
@@ -1033,7 +1116,40 @@ case 'dm': {
       h.chat.push({ id: nextId++, from: p.id, by: p.name, text, at: now, ...(img && { img }), ...(reply ? { replyTo: reply.id, replyBy: reply.by } : {}) });
       store.addMessage(`h:${h.code}`, h.chat.at(-1));
       h.chat = h.chat.slice(-50);
-      for (const id of h.members) if (id !== p.id && !sockets.has(id)) push(db.players[id], { title: `${p.name} · house chat`, body: text || attachLabel(img), tag: `house-${h.code}` }, 'house');
+      // Handle @mentions: find @name patterns and notify those users
+      const mentionRegex = /@(\w+)/g;
+      const mentionedNames = [...text.matchAll(mentionRegex)].map((m) => m[1].toLowerCase());
+      const mentionedIds = new Set();
+      if (mentionedNames.length) {
+        for (const id of h.members) {
+          if (id !== p.id) {
+            const player = db.players[id];
+            if (mentionedNames.includes(player.name.toLowerCase())) {
+              mentionedIds.add(id);
+              inbox(player, 'chat', p, `mentioned you in house chat`);
+              if (!sockets.has(id)) push(player, { title: `💬 @${p.name} mentioned you`, body: text || attachLabel(img), tag: `house-${h.code}` }, 'chat');
+            }
+          }
+        }
+      }
+      // Notify other members (not mentioned, not sender)
+      for (const id of h.members) if (id !== p.id && !mentionedIds.has(id) && !sockets.has(id)) push(db.players[id], { title: `${p.name} · house chat`, body: text || attachLabel(img), tag: `house-${h.code}` }, 'house');
+      break;
+    }
+    case 'chat_react': { // add or remove a reaction emoji to a chat message
+      const h = db.houses[p.house];
+      const msg = h.chat?.find((c) => c.id === m.id);
+      if (!msg) return;
+      msg.reactions ??= {};
+      const users = msg.reactions[m.emoji] ?? [];
+      const hasReacted = users.includes(p.id);
+      if (hasReacted) {
+        msg.reactions[m.emoji] = users.filter((id) => id !== p.id);
+        if (!msg.reactions[m.emoji].length) delete msg.reactions[m.emoji];
+      } else {
+        msg.reactions[m.emoji] = [...users, p.id];
+      }
+      broadcastHouse(h.code);
       break;
     }
     case 'watch': { // /watch <link> starts a watch party for the whole house; /watch stop ends it
