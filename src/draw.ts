@@ -900,16 +900,9 @@ export function drawFloor(c: Ctx, x: number, y: number, color: string, tx: numbe
 }
 
 // Wallpaper motif for one 16x16 tile; rows below `h` are left for trims.
-// The pattern mark always contrasts with the wallpaper: muted white on dark backgrounds,
-// muted dark gray on light ones. The farther the background is from middle gray, the
-// stronger the mark (a near-black wall gets a near-white mark, and vice versa).
-function mixColor(a: string, b: string, k: number): string {
-  const na = parseInt(a.slice(1, 7), 16);
-  const nb = parseInt(b.slice(1, 7), 16);
-  const f = (va: number, vb: number) => Math.max(0, Math.min(255, Math.round(va + (vb - va) * k))).toString(16).padStart(2, '0');
-  return `#${f(na >> 16, nb >> 16)}${f((na >> 8) & 255, (nb >> 8) & 255)}${f(na & 255, nb & 255)}`;
-}
-function markColor(paper: string, boost = 1): string {
+// The pattern mark stays in the wallpaper's hue family: a lighter shade on dark backgrounds,
+// a darker shade on light ones. The farther from middle gray, the stronger the mark.
+function markColor(paper: string): string {
   // Fall back to white for anything that isn't a valid hex colour (e.g. empty custom colour).
   const hex = paper.match(/^#[0-9a-fA-F]{6}$/) ? paper : '#ffffff';
   const n = parseInt(hex.slice(1, 7), 16);
@@ -918,22 +911,19 @@ function markColor(paper: string, boost = 1): string {
   const lum = 0.299 * rr + 0.587 * gg + 0.114 * bb;
   const mid = 128;
   const strength = Math.abs(lum - mid) / mid; // 0 (middle gray) to 1 (pure black/white)
-  const base = lum < mid ? '#ffffff' : '#3a3448'; // dark paper → white mark; light paper → muted dark mark
-  const k = Math.min(1, (0.50 + 0.40 * strength) * boost); // 0.50 subtle → 0.90 strong, boosted for thin motifs
-  return mixColor(hex, base, k);
+  // Keep the mark in the same hue family: a lighter shade on dark backgrounds, a darker shade on light ones.
+  // Strength scales with how far from middle gray, so extreme colours get a clearly visible mark.
+  const amt = Math.min(1, 0.25 + 0.45 * strength); // 0.25 subtle → 0.70 strong
+  return lum < mid ? shade(hex, amt) : shade(hex, -amt);
 }
 function paintPattern(g: Ctx, paper: string, pattern: string, h: number) {
   const hex = paper.match(/^#[0-9a-fA-F]{6}$/) ? paper : '#ffffff';
-  const n = parseInt(hex.slice(1, 7), 16);
-  const lum = 0.299 * (n >> 16) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255);
   r(g, 0, 0, T, h, hex);
   const mark = markColor(hex);
-  // Stripes, checks and diamonds are thin motifs: on light wallpaper they need extra contrast to read.
-  const strongMark = lum > 128 ? markColor(hex, 1.5) : mark;
-  if (pattern === 'stripes') { r(g, 2, 0, 3, h, strongMark); r(g, 10, 0, 3, h, strongMark); }
+  if (pattern === 'stripes') { r(g, 2, 0, 3, h, mark); r(g, 10, 0, 3, h, mark); }
   else if (pattern === 'dots') { for (const [a, b] of [[3, 3], [11, 7], [3, 11], [11, 15]]) if (b < h) r(g, a, b, 2, 2, mark); }
   else if (pattern === 'hearts') { heart(g, 4, 2, mark); if (h > 12) heart(g, 12, 10, mark); else heart(g, 12, 7, mark); }
-  else if (pattern === 'checks') { for (let yy = 0; yy < h; yy += 8) { r(g, 0, yy, 4, Math.min(4, h - yy), strongMark); r(g, 8, yy, 4, Math.min(4, h - yy), strongMark); r(g, 4, yy + 4, 4, Math.min(4, h - yy - 4), strongMark); r(g, 12, yy + 4, 4, Math.min(4, h - yy - 4), strongMark); } }
+  else if (pattern === 'checks') { for (let yy = 0; yy < h; yy += 8) { r(g, 0, yy, 4, Math.min(4, h - yy), mark); r(g, 8, yy, 4, Math.min(4, h - yy), mark); r(g, 4, yy + 4, 4, Math.min(4, h - yy - 4), mark); r(g, 12, yy + 4, 4, Math.min(4, h - yy - 4), mark); } }
   else if (pattern === 'stars') {
     // Little five-point stars, darker than the paper so they read, with a twinkle between.
     const star = mark;
@@ -952,7 +942,7 @@ function paintPattern(g: Ctx, paper: string, pattern: string, h: number) {
     }
   }
   else if (pattern === 'waves') { for (const yy of [3, 11]) for (let x = 0; x < T; x++) { const b = yy + [0, 1, 2, 1][x % 4]; if (b < h) r(g, x, b, 1, 1, mark); } }
-  else if (pattern === 'diamonds') { for (let yy = 0; yy < h; yy++) for (let x = 0; x < T; x++) if ((x + yy) % 8 === 0 || (x - yy + 16) % 8 === 0) r(g, x, yy, 1, 1, strongMark); }
+  else if (pattern === 'diamonds') { for (let yy = 0; yy < h; yy++) for (let x = 0; x < T; x++) if ((x + yy) % 8 === 0 || (x - yy + 16) % 8 === 0) r(g, x, yy, 1, 1, mark); }
   else if (pattern === 'brick') {
     for (let k = 0; k * 4 < h; k++) {
       r(g, 0, k * 4 + 3, T, 1, mark);
