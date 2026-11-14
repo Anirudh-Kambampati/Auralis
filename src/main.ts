@@ -5,7 +5,7 @@ import {
   docName, attachLabel, DOC_TYPES, usernameProblem, emailProblem, passwordProblem,
 } from '../shared/game.js';
 import {
-  T, OVERHANG, SURFACE, AVATAR_H, avatarScale, lookKey, drawSeated, drawActing, drawSeam, drawFloor, drawWall, drawWallFace, drawWallTop, drawDoor, drawWindow, drawPainting, drawFurniture, drawAvatar, drawDeskLamp, drawGlow, drawUsing, skyNow, weatherNow, NIGHT_TINT,
+  T, OVERHANG, SURFACE, AVATAR_H, avatarScale, lookKey, drawSeated, drawActing, drawSeam, drawFloor, drawWall, drawWallFace, drawWallTop, drawDoor, drawWindow, drawPainting, drawFurniture, drawAvatar, drawDeskLamp, drawGlow, drawUsing, skyNow, weatherNow, skyProgress, nightTint,
   coinURL, uiIconURL, AV, drawPaper, isDark, paintBlockText, drawWindow as drawWin, drawDroplet, drawHeart, tileURL, ACC_COL, ACC_COLORS, ACC_TINT, type Look,
 } from './draw';
 import { drawPet, petPos, petIconURL, seedOf } from './pets';
@@ -1143,8 +1143,10 @@ function render(t: number, dt: number) {
   }
 
   // Windows, the night tint and lamps follow the viewer's local clock.
+  const progress = skyProgress();
   const sky = skyNow(), weather = weatherNow();
   const dark = sky !== 'day';
+  const tint = nightTint(progress);
   // Top-row rooms get windows to the outside (more as the room grows); lower rooms a painting on the corner wall left by the opening above.
   slots.forEach(({ m, ri, room }, i) => {
     const o = grid.origins[i], s = grid.sizes[i];
@@ -1310,8 +1312,8 @@ function render(t: number, dt: number) {
   }
   sprites.sort((p, q) => p.y - q.y).forEach((s) => s.draw());
 
-  if (dark) {
-    ctx.fillStyle = NIGHT_TINT[sky];
+  if (tint) {
+    ctx.fillStyle = tint;
     for (let y = Y0; y < Y1; y++) for (let x = X0; x < X1; x++) if (grid.at(x, y)) ctx.fillRect(x * T, y * T, T, T);
     slots.forEach(({ room }, i) => {
       const o = grid.origins[i];

@@ -1,5 +1,5 @@
 // All art is original pixel art drawn in code. Coordinates are art pixels; one tile is 16x16.
-import { canRotate } from '../shared/game.js';
+import { canRotate, skyProgress, skyColor, tintAlpha, moonPhase, nightBrightness, weatherIntensity } from '../shared/game.js';
 export const T = 16;
 const OUT = '#3a2633';
 
@@ -1032,9 +1032,13 @@ export function drawDoor(c: Ctx, x: number, y: number, tx: number, ty: number) {
 }
 
 export type Sky = 'day' | 'dusk' | 'night';
+function pickSky(progress: number): Sky {
+  if (progress < 0.25 || progress >= 0.875) return 'night';
+  if (progress < 0.625) return 'day';
+  return 'dusk';
+}
 export function skyNow(): Sky {
-  const h = new Date().getHours();
-  return h >= 8 && h < 17 ? 'day' : (h >= 17 && h < 20) || (h >= 6 && h < 8) ? 'dusk' : 'night';
+  return pickSky(skyProgress());
 }
 
 // Made-up weather, the same for everyone at the same moment: a new spell every 3 hours, and snow instead of rain in
@@ -1047,34 +1051,33 @@ export function weatherNow(d = new Date()): Weather {
   return [11, 0, 1].includes(d.getMonth()) ? 'snow' : 'rain';
 }
 
-const SKIES: Record<Weather, Record<Sky, string>> = {
-  clear: { day: '#a8dcf5', dusk: '#f7b58a', night: '#3a4280' },
-  clouds: { day: '#b9cad8', dusk: '#cfa092', night: '#2f3558' },
-  rain: { day: '#92a6b8', dusk: '#9a8086', night: '#262b48' },
-  snow: { day: '#cdd8e4', dusk: '#c2aeb6', night: '#363c62' },
-};
+export { skyProgress, tintAlpha, moonPhase, nightBrightness };
 
 // A 2x2-tile window with curtains (drawn shut when closed), filling the tall back wall above the panel strip.
 // Painted in three layers: the sky behind the glass, rain or snow falling on it (live), then the frame and curtains.
-export function drawWindow(c: Ctx, x: number, y: number, sky: Sky, closed = false, weather: Weather = 'clear', t = 0) {
-  c.drawImage(baked(`win|${sky}|${weather}`, 32, 32, (g) => {
+export function drawWindow(c: Ctx, x: number, y: number, sky: Sky, closed = false, weather: Weather = 'clear', t = 0, skyColorOverride?: string) {
+  // Frame + glass + settled snow (baked); the sky colour is painted live below so it interpolates smoothly
+  // across the day/night cycle instead of snapping between discrete buckets.
+  c.drawImage(baked(`win|base|${weather}`, 32, 32, (g) => {
     r(g, 5, 5, 22, 19, OUT);
     r(g, 6, 6, 20, 17, '#fffaf3');
-    r(g, 7, 7, 18, 14, SKIES[weather][sky]);
-    if (weather !== 'clear') {
-      // Clouds: grey puffs across the top.
-      const puff = sky === 'night' ? '#4a5078' : weather === 'clouds' ? '#eef2f6' : '#c4ccd6';
-      r(g, 8, 8, 6, 2, puff); r(g, 9, 7, 3, 1, puff); r(g, 17, 9, 7, 2, puff); r(g, 19, 8, 3, 1, puff);
-      if (weather === 'clouds') { r(g, 11, 15, 5, 2, puff); r(g, 12, 14, 2, 1, puff); }
-    } else if (sky === 'day') {
-      r(g, 10, 9, 4, 1, '#ffffff'); r(g, 9, 10, 6, 1, '#ffffff'); r(g, 18, 16, 4, 1, '#ffffff'); r(g, 17, 17, 6, 1, '#ffffff');
-    } else if (sky === 'dusk') {
-      r(g, 18, 14, 3, 3, '#ffe08a'); r(g, 7, 18, 18, 3, '#f49a8a');
-    } else {
-      r(g, 10, 9, 2, 2, '#fff3b0'); r(g, 19, 9, 1, 1, '#ffffff'); r(g, 22, 15, 1, 1, '#ffffff'); r(g, 13, 17, 1, 1, '#fff3b0');
-    }
-    if (weather === 'snow') r(g, 7, 19, 18, 2, '#ffffff'); // settled on the sill outside
   }), x, y);
+  // Sky colour: interpolated smoothly across the day/night cycle.
+  c.fillStyle = skyColorOverride ?? skyColor(weather, skyProgress());
+  c.fillRect(x + 7, y + 7, 18, 14);
+  // Cloud puffs / sun / moon on top of the sky.
+  if (weather !== 'clear') {
+    const puff = sky === 'night' ? '#4a5078' : weather === 'clouds' ? '#eef2f6' : '#c4ccd6';
+    r(c, x + 8, y + 8, 6, 2, puff); r(c, x + 9, y + 7, 3, 1, puff); r(c, x + 17, y + 9, 7, 2, puff); r(c, x + 19, y + 8, 3, 1, puff);
+    if (weather === 'clouds') { r(c, x + 11, y + 15, 5, 2, puff); r(c, x + 12, y + 14, 2, 1, puff); }
+  } else if (sky === 'day') {
+    r(c, x + 10, y + 9, 4, 1, '#ffffff'); r(c, x + 9, y + 10, 6, 1, '#ffffff'); r(c, x + 18, y + 16, 4, 1, '#ffffff'); r(c, x + 17, y + 17, 6, 1, '#ffffff');
+  } else if (sky === 'dusk') {
+    r(c, x + 18, y + 14, 3, 3, '#ffe08a'); r(c, x + 7, y + 18, 18, 3, '#f49a8a');
+  } else {
+    r(c, x + 10, y + 9, 2, 2, '#fff3b0'); r(c, x + 19, y + 9, 1, 1, '#ffffff'); r(c, x + 22, y + 15, 1, 1, '#ffffff'); r(c, x + 13, y + 17, 1, 1, '#fff3b0');
+  }
+  if (weather === 'snow') r(c, x + 7, y + 19, 18, 2, '#ffffff'); // settled on the sill outside
   if (!closed && (weather === 'rain' || weather === 'snow')) {
     c.save();
     c.beginPath();
@@ -1123,7 +1126,15 @@ export function drawHeart(c: Ctx, x: number, y: number) {
   r(c, x + 1, y - 7, 1, 1, '#ffd0dc');
 }
 
-// Night tint over a tile: deep blue at night, a softer violet at dusk.
+// Base night-tint colour per sky band (rgb only; alpha comes from tintAlpha so it fades in/out smoothly).
+export const NIGHT_RGB: Record<Sky, string> = { day: '43,37,48', dusk: '90,60,120', night: '20,24,70' };
+export function nightTint(progress: number): string {
+  const a = tintAlpha(progress);
+  if (a <= 0) return '';
+  return `rgba(${NIGHT_RGB[pickSky(progress)]},${a})`;
+}
+
+// Legacy per-bucket tint (kept for any external consumers; prefer nightTint(progress)).
 export const NIGHT_TINT: Record<Sky, string> = { day: '', dusk: 'rgba(90,60,120,0.16)', night: 'rgba(20,24,70,0.42)' };
 
 // Warm light added on top of the night tint ('lighter' blending brightens what is underneath).
