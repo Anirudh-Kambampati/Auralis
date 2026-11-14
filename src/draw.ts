@@ -910,23 +910,26 @@ function mixColor(a: string, b: string, k: number): string {
   return `#${f(na >> 16, nb >> 16)}${f((na >> 8) & 255, (nb >> 8) & 255)}${f(na & 255, nb & 255)}`;
 }
 function markColor(paper: string, boost = 1): string {
-  const n = parseInt(paper.slice(1, 7), 16);
+  // Fall back to white for anything that isn't a valid hex colour (e.g. empty custom colour).
+  const hex = paper.match(/^#[0-9a-fA-F]{6}$/) ? paper : '#ffffff';
+  const n = parseInt(hex.slice(1, 7), 16);
   const rr = n >> 16, gg = (n >> 8) & 255, bb = n & 255;
   // Perceived luminance on a 0-255 scale (Rec. 709 weights).
   const lum = 0.299 * rr + 0.587 * gg + 0.114 * bb;
   const mid = 128;
   const strength = Math.abs(lum - mid) / mid; // 0 (middle gray) to 1 (pure black/white)
   const base = lum < mid ? '#ffffff' : '#3a3448'; // dark paper → white mark; light paper → muted dark mark
-  const k = Math.min(1, (0.40 + 0.40 * strength) * boost); // 0.40 subtle → 0.80 strong, boosted for thin motifs
-  return mixColor(paper, base, k);
+  const k = Math.min(1, (0.50 + 0.40 * strength) * boost); // 0.50 subtle → 0.90 strong, boosted for thin motifs
+  return mixColor(hex, base, k);
 }
 function paintPattern(g: Ctx, paper: string, pattern: string, h: number) {
-  r(g, 0, 0, T, h, paper);
-  const mark = markColor(paper);
-  // Stripes, checks and diamonds are thin motifs: on light wallpaper they need extra contrast to read.
-  const n = parseInt(paper.slice(1, 7), 16);
+  const hex = paper.match(/^#[0-9a-fA-F]{6}$/) ? paper : '#ffffff';
+  const n = parseInt(hex.slice(1, 7), 16);
   const lum = 0.299 * (n >> 16) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255);
-  const strongMark = lum > 128 ? markColor(paper, 1.5) : mark;
+  r(g, 0, 0, T, h, hex);
+  const mark = markColor(hex);
+  // Stripes, checks and diamonds are thin motifs: on light wallpaper they need extra contrast to read.
+  const strongMark = lum > 128 ? markColor(hex, 1.5) : mark;
   if (pattern === 'stripes') { r(g, 2, 0, 3, h, strongMark); r(g, 10, 0, 3, h, strongMark); }
   else if (pattern === 'dots') { for (const [a, b] of [[3, 3], [11, 7], [3, 11], [11, 15]]) if (b < h) r(g, a, b, 2, 2, mark); }
   else if (pattern === 'hearts') { heart(g, 4, 2, mark); if (h > 12) heart(g, 12, 10, mark); else heart(g, 12, 7, mark); }
