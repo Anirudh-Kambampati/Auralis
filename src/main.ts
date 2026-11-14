@@ -1307,7 +1307,7 @@ function render(t: number, dt: number) {
     // rather than a hot spot right on the desk, which used to glare at the person studying.
     if (seated && dark) {
       sprites.push({ y: a.y + 1.6, draw: () => drawDeskLamp(ctx, ax + 10, ay + T + 4) });
-      lights.push({ x: ax + 15, y: ay + T - 4, rad: 24, alpha: 0.2 });
+      lights.push({ x: ax + 15, y: ay + T - 4, rad: 28, alpha: 0.3 });
     }
   }
   sprites.sort((p, q) => p.y - q.y).forEach((s) => s.draw());
@@ -1332,7 +1332,7 @@ function render(t: number, dt: number) {
       ctx.rect(x0 * T, y * T, (x - x0) * T, T);
     }
     ctx.clip();
-    for (const l of lights) if (onScreen(l.x / T - 12, l.y / T - 12, 24, 24)) drawGlow(ctx, l.x, l.y, l.rad, (sky === 'night' ? l.alpha : l.alpha * 0.5) + flicker);
+    for (const l of lights) if (onScreen(l.x / T - 16, l.y / T - 16, 32, 32)) drawGlow(ctx, l.x, l.y, l.rad, (sky === 'night' ? l.alpha : l.alpha * 0.5) + flicker);
     ctx.restore();
   }
   drawWindowLight(sky, weather, onScreen);
@@ -1430,34 +1430,34 @@ function render(t: number, dt: number) {
 // Things that light up the room at night: offset of the light from the item's top-left, size and strength.
 // The pools are small and amber rather than wide and yellow: a lamp lights the thing under it, not the whole room.
 const GLOWS: Record<string, { dx: number; dy: number; rad: number; alpha: number }> = {
-  lamp: { dx: 8, dy: -4, rad: 30, alpha: 0.3 },
-  fireplace: { dx: 16, dy: 6, rad: 38, alpha: 0.38 },
-  pumpkin: { dx: 8, dy: 8, rad: 18, alpha: 0.28 },
-  christmasTree: { dx: 8, dy: -6, rad: 22, alpha: 0.22 },
-  tv: { dx: 16, dy: -6, rad: 24, alpha: 0.18 },
-  arcade: { dx: 8, dy: -8, rad: 20, alpha: 0.2 },
-  aquarium: { dx: 16, dy: -4, rad: 20, alpha: 0.16 },
-  gamingDesk: { dx: 16, dy: -2, rad: 20, alpha: 0.18 },
-  arcLamp: { dx: 8, dy: -8, rad: 28, alpha: 0.28 },
-  bedsideLamp: { dx: 8, dy: 4, rad: 18, alpha: 0.22 },
-  candles: { dx: 8, dy: 6, rad: 18, alpha: 0.22 },
-  neonHeart: { dx: 8, dy: -4, rad: 20, alpha: 0.22 },
-  fairyJar: { dx: 8, dy: 8, rad: 14, alpha: 0.2 },
-  floorCandle: { dx: 8, dy: 0, rad: 18, alpha: 0.22 },
-  snowflakeLamp: { dx: 8, dy: -6, rad: 20, alpha: 0.2 },
-  lanternString: { dx: 8, dy: -8, rad: 20, alpha: 0.22 },
-  diya: { dx: 8, dy: 8, rad: 14, alpha: 0.22 },
-  ghost: { dx: 8, dy: -2, rad: 16, alpha: 0.13 },
-  menorah: { dx: 8, dy: 4, rad: 20, alpha: 0.25 },
-  heater: { dx: 8, dy: 0, rad: 24, alpha: 0.25 },
-  discoBall: { dx: 8, dy: -6, rad: 26, alpha: 0.2 },
-  skyLantern: { dx: 8, dy: -6, rad: 26, alpha: 0.3 },
-  sparklers: { dx: 8, dy: 0, rad: 20, alpha: 0.25 },
-  garbaLamp: { dx: 8, dy: 6, rad: 24, alpha: 0.3 },
-  bonfire: { dx: 8, dy: 4, rad: 34, alpha: 0.4 },
-  eidLantern: { dx: 8, dy: 4, rad: 26, alpha: 0.3 },
-  crescentLamp: { dx: 8, dy: -4, rad: 24, alpha: 0.25 },
-  lotusLamp: { dx: 8, dy: 6, rad: 18, alpha: 0.25 },
+  lamp: { dx: 8, dy: -4, rad: 30, alpha: 0.5 },
+  fireplace: { dx: 16, dy: 6, rad: 38, alpha: 0.58 },
+  pumpkin: { dx: 8, dy: 8, rad: 18, alpha: 0.45 },
+  christmasTree: { dx: 8, dy: -6, rad: 22, alpha: 0.38 },
+  tv: { dx: 16, dy: -6, rad: 24, alpha: 0.32 },
+  arcade: { dx: 8, dy: -8, rad: 20, alpha: 0.34 },
+  aquarium: { dx: 16, dy: -4, rad: 20, alpha: 0.28 },
+  gamingDesk: { dx: 16, dy: -2, rad: 20, alpha: 0.32 },
+  arcLamp: { dx: 8, dy: -8, rad: 28, alpha: 0.47 },
+  bedsideLamp: { dx: 8, dy: 4, rad: 18, alpha: 0.38 },
+  candles: { dx: 8, dy: 6, rad: 18, alpha: 0.38 },
+  neonHeart: { dx: 8, dy: -4, rad: 20, alpha: 0.38 },
+  fairyJar: { dx: 8, dy: 8, rad: 14, alpha: 0.34 },
+  floorCandle: { dx: 8, dy: 0, rad: 18, alpha: 0.38 },
+  snowflakeLamp: { dx: 8, dy: -6, rad: 20, alpha: 0.34 },
+  lanternString: { dx: 8, dy: -8, rad: 20, alpha: 0.38 },
+  diya: { dx: 8, dy: 8, rad: 14, alpha: 0.38 },
+  ghost: { dx: 8, dy: -2, rad: 16, alpha: 0.24 },
+  menorah: { dx: 8, dy: 4, rad: 20, alpha: 0.42 },
+  heater: { dx: 8, dy: 0, rad: 24, alpha: 0.42 },
+  discoBall: { dx: 8, dy: -6, rad: 26, alpha: 0.34 },
+  skyLantern: { dx: 8, dy: -6, rad: 26, alpha: 0.5 },
+  sparklers: { dx: 8, dy: 0, rad: 20, alpha: 0.42 },
+  garbaLamp: { dx: 8, dy: 6, rad: 24, alpha: 0.5 },
+  bonfire: { dx: 8, dy: 4, rad: 34, alpha: 0.6 },
+  eidLantern: { dx: 8, dy: 4, rad: 26, alpha: 0.5 },
+  crescentLamp: { dx: 8, dy: -4, rad: 24, alpha: 0.42 },
+  lotusLamp: { dx: 8, dy: 6, rad: 18, alpha: 0.42 },
 };
 
 const fmt = (ms: number) => {

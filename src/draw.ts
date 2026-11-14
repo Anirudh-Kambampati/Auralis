@@ -1137,17 +1137,18 @@ export function nightTint(progress: number): string {
 // Legacy per-bucket tint (kept for any external consumers; prefer nightTint(progress)).
 export const NIGHT_TINT: Record<Sky, string> = { day: '', dusk: 'rgba(90,60,120,0.16)', night: 'rgba(20,24,70,0.42)' };
 
-// Warm light added on top of the night tint ('lighter' blending brightens what is underneath).
+// Warm light added on top of the night tint. 'lighten' keeps the brighter pool where two meet instead of
+// adding them, so lamps near each other read as one wash of light rather than a hot spot where they overlap.
 // Light spreads well past its source (GLOW_REACH times the listed radius): bright near it, then a long soft falloff.
-export const GLOW_REACH = 4;
+export const GLOW_REACH = 5.5;
 export function drawGlow(c: Ctx, x: number, y: number, rad: number, alpha: number) {
   rad *= GLOW_REACH;
   const g = c.createRadialGradient(x, y, 1, x, y, rad);
   g.addColorStop(0, `rgba(255,196,120,${alpha})`);
-  g.addColorStop(0.3, `rgba(255,208,140,${alpha * 0.5})`);
+  g.addColorStop(0.28, `rgba(255,208,140,${alpha * 0.62})`);
   g.addColorStop(1, 'rgba(255,208,140,0)');
   c.save();
-  c.globalCompositeOperation = 'lighter';
+  c.globalCompositeOperation = 'lighten';
   c.fillStyle = g;
   c.fillRect(x - rad, y - rad, rad * 2, rad * 2);
   c.restore();
