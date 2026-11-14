@@ -11,7 +11,7 @@ export const WALL_H = 2; // back wall is two tiles tall so windows and wallpaper
 // top: small things (drinks, pet toys) that can stand on tables and rugs; they only collide with each other.
 export const ITEMS = {
   desk: { name: 'Desk', w: 2, h: 1, price: 0, solid: true, colors: 'wood', table: true },
-  chair: { name: 'Chair', w: 1, h: 1, price: 0, solid: true, colors: 'pastel', act: 'sit', chair: true },
+  chair: { name: 'Chair', w: 1, h: 1, price: 10, solid: true, colors: 'pastel', act: 'sit', chair: true, shelf: 'cozy' },
   books: { name: 'Book stack', w: 1, h: 1, price: 8, solid: true , use: 'read' },
   cactus: { name: 'Cactus', w: 1, h: 1, price: 9, solid: true , use: 'water' },
   plant: { name: 'Plant', w: 1, h: 1, price: 11, solid: true, colors: 'pastel', looks: ['Leafy', 'Monstera', 'Snake plant'] , use: 'water' },
@@ -470,14 +470,18 @@ export const FLOORS = ['#c8935f', '#b07a58', '#e0b382', '#9fae86', '#b3a2c9', '#
   '#c8a8e0', '#9ccab8', '#f0c8c8', '#4a4048'];
 export const FLOOR_STYLES = ['planks', 'tiles', 'carpet', 'herringbone', 'marble', 'parquet', 'stone', 'checker', 'terrazzo', 'woven', 'harlequin'];
 export const SKINS = ['#ffe0c8', '#f5c9a5', '#d9a07a', '#a8714f', '#6e4630', '#f8d4b4', '#e8b48a', '#c08a60', '#8a5a3a', '#4e3020'];
-export const HAIRS = ['#3a2a35', '#7a4a32', '#f2c46a', '#e8735a', '#8a7ad8', '#f4b6c8', '#7ec8c0', '#a8714f', '#f4e2b0', '#c8c0c8', '#c0483a', '#5a7ad0', '#6cae6a'];
+export const HAIRS = ['#2a1f27', '#5a3522', '#c89a3a', '#b8503a', '#5a4aa8', '#c8809a', '#4a9a8a', '#7a4a32', '#c8a870', '#9a90a0', '#8a3028', '#3a4a90', '#3a7a40'];
 export const SHIRTS = ['#f48a8a', '#7fb2e8', '#8fd0a8', '#ffd27a', '#b89af0', '#f4b6d0', '#3a3448', '#f4f2ee', '#e8d2b0', '#5a8a5a', '#a0704a', '#4a5a90'];
-export const STYLES = ['short', 'side part', 'buzz', 'spiky', 'curly', 'bob', 'long', 'ponytail', 'buns', 'messy', 'undercut', 'quiff', 'fauxhawk', 'topknot', 'slick', 'curtains', 'crop', 'mohawk', 'afro', 'wavy', 'shaggy', 'pixie', 'emo', 'bowl', 'twintails', 'halfup', 'manbun', 'wolf', 'sidelong', 'braids'];
+export const STYLES = ['short', 'side part', 'buzz', 'spiky', 'curly', 'bob', 'long', 'ponytail', 'buns', 'messy', 'undercut', 'quiff', 'fauxhawk', 'topknot', 'slick', 'curtains', 'crop', 'mohawk', 'afro', 'wavy', 'shaggy', 'pixie', 'emo', 'bowl', 'twintails', 'manbun', 'wolf', 'sidelong', 'braids'];
 export const FACES = ['happy', 'sleepy', 'wink', 'grin', 'cool', 'surprised', 'blush', 'smirk', 'fierce', 'silly', 'calm', 'laugh', 'sad', 'cry', 'angry', 'shy', 'pout', 'starry'];
 export const OUTFITS = ['tee', 'tie', 'sweater', 'jacket', 'hoodie', 'overalls', 'dress', 'skirt', 'striped', 'vest', 'tank', 'kimono', 'polo', 'suit', 'cardigan', 'apron', 'raincoat', 'sailor', 'hawaiian', 'puffer', 'flannel', 'varsity', 'denim', 'turtleneck'];
 export const BODIES = ['regular', 'lean', 'athletic', 'chubby', 'broad', 'stocky', 'petite', 'curvy'];
 export const SIZES = ['small', 'regular', 'tall']; // how big the character is drawn, relative to one tile
-export const ACCESSORIES = ['none', 'glasses', 'round', 'shades', 'bandage', 'mask', 'earring', 'headphones', 'cap', 'beanie', 'catears'];
+// Every entry but 'none' can be worn at the same time; 'none' is the empty slot that clears them.
+export const ACCESSORIES = ['none', 'glasses', 'round', 'mask', 'earring', 'headphones', 'cap', 'beanie', 'catears', 'scar', 'stitch'];
+// Scars are the one accessory kept to a wound palette: dark grey, dark red, or the wearer's own skin tone.
+export const SCAR_ACCS = ['scar', 'stitch'];
+export const SCAR_COLOURS = ['#4b4652', '#8c2b33'];
 
 export const FOCUS_LENGTHS = [15, 20, 25, 45, 60, 90]; // one-tap picks
 // Any length can be typed in too: a multiple of 5 minutes, from 10 minutes up to 3 hours.

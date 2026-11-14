@@ -20,11 +20,12 @@ export async function openPgStore(url, legacyJsonFile) {
     alter table accounts add column if not exists email text;
     create unique index if not exists accounts_email on accounts (lower(email)) where email is not null;
     alter table accounts add column if not exists coins integer;
-    create table if not exists messages (id bigint primary key, thread text not null, from_id text not null, by_name text not null, body text not null, img text, at bigint not null);
+    create table if not exists messages (id bigint primary key, thread text not null, from_id text not null, by_name text not null, body text not null, img text, reply_to text, at bigint not null);
     create index if not exists messages_thread on messages (thread, id);
     create index if not exists messages_img on messages (img) where img is not null;
     create index if not exists auth_player on auth (player_id);
     create table if not exists friends (a text not null, b text not null, status text not null, asked_by text not null, at bigint not null, primary key (a, b));
+    alter table messages add column if not exists reply_to text;
   `);
 
   const db = { players: {}, houses: {} };
@@ -99,8 +100,8 @@ export async function openPgStore(url, legacyJsonFile) {
     fs.renameSync(legacyJsonFile, `${legacyJsonFile}.imported`);
   }
 
-  const addMessage = (thread, m) => pool.query('insert into messages (id, thread, from_id, by_name, body, img, at) values ($1, $2, $3, $4, $5, $6, $7) on conflict (id) do nothing',
-    [m.id, thread, m.from ?? '', m.by ?? '', m.text ?? '', m.img ?? null, m.at ?? 0]).catch((err) => console.error('message save failed', err));
+  const addMessage = (thread, m) => pool.query('insert into messages (id, thread, from_id, by_name, body, img, reply_to, at) values ($1, $2, $3, $4, $5, $6, $7, $8) on conflict (id) do nothing',
+    [m.id, thread, m.from ?? '', m.by ?? '', m.text ?? '', m.img ?? null, m.replyTo ?? null, m.at ?? 0]).catch((err) => console.error('message save failed', err));
   // First run with the messages table: copy in the chat history the rows already hold.
   if (!(await pool.query('select 1 from messages limit 1')).rows.length) {
     const rows = [...savedMessages(db)];

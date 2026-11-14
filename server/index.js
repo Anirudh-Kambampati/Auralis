@@ -12,9 +12,12 @@ import {
   ITEMS, WALLPAPERS, FLOORS, SKINS, HAIRS, SHIRTS, STYLES, FACES, OUTFITS, BODIES, ACCESSORIES, isFocusLength, canPlace, placeSwaps, focusReward, quitReward, quitMinutes, focusEnd, streakDays, streakBonus,
   WALL_PATTERNS, FLOOR_STYLES, PETS, MAX_PETS, SIZES, bondLevel, NOTIFY, wantsNotify, EXPAND_COST, colorsFor, USES, PET_ACCS, MAX_ROOMS, ROOM_COST,
   isPlant, TASK_COINS, TASK_REWARDS_PER_DAY, discounted, GIFT_COINS, GIFTS_PER_DAY, nextRot, canRotate, sellPrice,
+  SCAR_ACCS, SCAR_COLOURS,
 } from '../shared/game.js';
 import { parseVideo } from '../shared/watch.js';
 import { CHAT_KEY, DOC_TYPES, safeDocName, attachLabel, docName, usernameProblem, emailProblem, passwordProblem } from '../shared/game.js';
+// The two scars are the only accessories kept to a wound palette: black, dark red, or one of the skin tones.
+const SCAR_KEYS = new Set(SCAR_ACCS.map((a) => `acc:${a}`));
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const DIST = path.join(root, 'dist');
@@ -50,6 +53,36 @@ for (const p of Object.values(db.players)) {
   }
 }
 if (cleanedRot) store.saveAll();
+// Skin is only ever one of the presets now, so a custom skin tint saved by an older build is dropped from every account.
+let cleanedSkin = false;
+for (const p of Object.values(db.players)) {
+  if (!p.look?.color || !('skin' in p.look.color)) continue;
+  delete p.look.color.skin;
+  if (!Object.keys(p.look.color).length) delete p.look.color;
+  cleanedSkin = true;
+}
+if (cleanedSkin) store.saveAll();
+// The single accessory an older save stored becomes a list of one, and its single tint key goes with it.
+let cleanedAcc = false;
+for (const p of Object.values(db.players)) {
+  if (p.look?.color && 'acc' in p.look.color) {
+    delete p.look.color.acc;
+    if (!Object.keys(p.look.color).length) delete p.look.color;
+    cleanedAcc = true;
+  }
+  // A scar saved before it had its own wound palette may hold any colour; it falls back to the default instead.
+  for (const k of SCAR_KEYS) {
+    const v = p.look?.color?.[k];
+    if (v === undefined || SCAR_COLOURS.includes(v) || SKINS.includes(v)) continue;
+    delete p.look.color[k];
+    cleanedAcc = true;
+  }
+  if (!('acc' in (p.look ?? {}))) continue;
+  p.look.accs = p.look.acc === 'none' ? [] : [p.look.acc];
+  delete p.look.acc;
+  cleanedAcc = true;
+}
+if (cleanedAcc) store.saveAll();
 let saveTimer = null;
 const save = () => {
   clearTimeout(saveTimer);
@@ -88,10 +121,32 @@ const lastChat = new Map(); // playerId -> ms, simple flood guard
 // house code -> the video it is watching together: { src, by, byName, playing, pos, at }. Not saved: a restart ends it.
 const watches = new Map();
 const lastDm = new Map(); // playerId -> ms, same guard for private messages
-const lastCheer = new Map(); // playerId -> ms, so cheers and high fives can't be spammed
-const lastInvite = new Map(); // 'from>to' -> ms: one study invite per pair every 30 s
-const MAX_EVENTS = 100; // per calendar; the earliest dates drop off first
-let nextId = Date.now();
+  const lastCheer = new Map(); // playerId -> ms, so cheers and high fives can't be spammed
+  const lastInvite = new Map(); // 'from>to' -> ms: one study invite per pair every 30 s
+  const MAX_EVENTS = 100; // per calendar; the earliest dates drop off first
+  let nextId = Date.now();
+  // A message someone is replying to, by id: the newest 50 of a thread live on player/house rows, so look there.
+  const findMsg = (thread, id) => {
+    if (!Number.isFinite(id)) return null;
+    if (thread.startsWith('h:')) {
+      const h = db.houses[thread.slice(2)];
+      return (h?.chat ?? []).find((m) => m.id === id) ?? null;
+    }
+    if (thread.startsWith('d:')) {
+      const [a, b] = thread.slice(2).split('|');
+      const list = db.players[a]?.dm?.[b] ?? db.players[b]?.dm?.[a] ?? [];
+      return list.find((m) => m.id === id) ?? null;
+    }
+    if (thread.startsWith('g:')) {
+      const gid = thread.slice(2);
+      for (const pid of Object.keys(db.players)) {
+        const qg = db.players[pid]?.groups?.[gid];
+        if (qg) return (qg.msgs ?? []).find((m) => m.id === id) ?? null;
+      }
+      return null;
+    }
+    return null;
+  };
 
 const newCode = () => {
   let code;
@@ -258,10 +313,10 @@ function newRoom() { return { wallpaper: WALLPAPERS[0], floor: FLOORS[0], furnit
 
 function handle(p, m) {
   const room = roomOf(p, m);
-  if (['place', 'move', 'pickup', 'room', 'flip', 'restyle', 'shape', 'expand', 'curtains', 'light', 'turn'].includes(m.t) && !room) return;
+  if (['place', 'move', 'pickup', 'room', 'flip', 'restyle', 'shape', 'expand', 'curtains', 'turn'].includes(m.t) && !room) return;
   // Furniture is addressed by position. Anything but a real integer fetches a built-in
   // (`furniture['toString']`) or nothing, so those messages only run for real indices.
-  if (['move', 'pickup', 'turn', 'flip', 'restyle', 'shape', 'light', 'water'].includes(m.t) && !Number.isInteger(m.index)) return;
+  if (['move', 'pickup', 'turn', 'flip', 'restyle', 'shape', 'light', 'paint', 'water'].includes(m.t) && !Number.isInteger(m.index)) return;
   if (m.t === 'water' && !Number.isInteger(m.r)) return;
   switch (m.t) {
     case 'look': {
@@ -286,8 +341,18 @@ function handle(p, m) {
         face: pick(FACES, m.look?.face, p.look.face ?? FACES[0]),
         outfit: pick(OUTFITS, m.look?.outfit, p.look.outfit ?? OUTFITS[0]),
         body: pick(BODIES, m.look?.body, p.look.body ?? BODIES[0]),
-        acc: pick(ACCESSORIES, m.look?.acc, p.look.acc ?? ACCESSORIES[0]),
+        // Accessories stack, so they arrive as a list, each with its own tint under look.color[`acc:<name>`]. An older
+        // client only knows the single acc, which becomes a list of one.
+        accs: (Array.isArray(m.look?.accs) ? m.look.accs
+          : typeof m.look?.acc === 'string' ? [m.look.acc] : p.look.accs ?? [])
+          .filter((a, i, list) => a !== 'none' && ACCESSORIES.includes(a) && list.indexOf(a) === i),
         size: pick(SIZES, m.look?.size, p.look.size ?? SIZES[1]),
+        // A custom tint overrides the swatch colour for hair and outfit. The client always sends the whole map, so a part
+        // set back to a swatch simply arrives without its tint and the override is dropped. A skin tint is never kept:
+        // skin has no custom colour any more, and an old client must not be able to put one back. A scar only ever takes
+        // black, dark red or one of the skin tones, whatever a client sends.
+        color: Object.fromEntries(Object.entries(m.look?.color ?? {}).filter(([k, v]) => k !== 'skin'
+          && (!SCAR_KEYS.has(k) || SCAR_COLOURS.includes(v) || SKINS.includes(v)))),
       };
       break;
     }
@@ -598,9 +663,10 @@ function handle(p, m) {
     case 'notes_read':
       p.notes = [];
       break;
-    case 'light': { // switch a lamp in your own room on or off
-      const f = room.furniture[m.index];
-      if (!f) return;
+    case 'light': { // switch a lamp on or off — anyone in the house can reach any room's lamps
+      const owner = db.houses[p.house].members.includes(m.owner) ? db.players[m.owner] : null;
+      const f = owner?.rooms[m.r ?? 0]?.furniture[m.index];
+      if (!f || !LIGHTS.has(f.item)) return;
       f.off = !f.off || undefined;
       break;
     }
@@ -614,12 +680,20 @@ function handle(p, m) {
       f.wateredAt = Date.now();
       break;
     }
-    case 'room':
-      room.wallpaper = pick(WALLPAPERS, m.wallpaper, room.wallpaper);
-      room.floor = pick(FLOORS, m.floor, room.floor);
+    case 'room': {
+      // A new wallpaper or floor takes over from a custom paint of that surface; repainting the custom colour, or changing
+      // only the pattern or floor style, leaves it alone.
+      const wall = pick(WALLPAPERS, m.wallpaper, room.wallpaper), floor = pick(FLOORS, m.floor, room.floor);
+      room.wallpaper = wall;
+      room.floor = floor;
       room.pattern = pick(WALL_PATTERNS, m.pattern, room.pattern ?? WALL_PATTERNS[0]);
       room.floorStyle = pick(FLOOR_STYLES, m.floorStyle, room.floorStyle ?? FLOOR_STYLES[0]);
+      // An empty value means "back to the preset", so picking the preset already stored behind a custom paint still
+      // restores it. Pattern and floor-style changes leave both keys out, so a custom paint survives those.
+      if ('wallColor' in m) room.wallColor = m.wallColor || undefined;
+      if ('floorColor' in m) room.floorColor = m.floorColor || undefined;
       break;
+    }
     case 'turn': { // face the next way (side, back, other side); only bed can rotate
       const f = room.furniture[m.index];
       if (!f || !canRotate(f.item)) return;
@@ -638,6 +712,13 @@ function handle(p, m) {
       const f = room.furniture[m.index];
       if (!f || !Number.isInteger(m.v) || m.v < 0 || m.v >= colorsFor(f.item).length) return;
       f.v = m.v;
+      f.col = undefined; // a swatch pick replaces any custom colour
+      break;
+    }
+    case 'paint': {
+      const f = room.furniture[m.index];
+      if (!f || !/^#[0-9a-fA-F]{6}$/.test(String(m.col ?? ''))) return;
+      f.col = m.col;
       break;
     }
     case 'shape': {
@@ -774,7 +855,7 @@ function handle(p, m) {
     }
     // Private messages: the newest 50 ride on both players' records; every one is kept in the messages table.
     // You can message housemates and friends.
-    case 'dm': {
+case 'dm': {
       const to = db.players[m.to];
       const text = cleanText(m.text, 200);
       const img = chatImg(p, m.img);
@@ -782,14 +863,15 @@ function handle(p, m) {
       const now = Date.now();
       if (now - (lastDm.get(p.id) ?? 0) < 600) return send(sockets.get(p.id), { t: 'error', text: 'Slow down a little — that message was not sent.' });
       lastDm.set(p.id, now);
-      const msg = { id: nextId++, from: p.id, by: p.name, text, at: now, ...(img && { img }) };
+      const thread = dmThread(p.id, to.id), reply = findMsg(thread, m.replyTo);
+      const msg = { id: nextId++, from: p.id, by: p.name, text, at: now, ...(img && { img }), ...(reply ? { replyTo: reply.id, replyBy: reply.by } : {}) };
       p.dm ??= {};
       to.dm ??= {};
       p.dm[to.id] = [...(p.dm[to.id] ?? []), msg].slice(-50);
       to.dm[p.id] = [...(to.dm[p.id] ?? []), msg].slice(-50);
       trimDmThreads(p.dm);
       trimDmThreads(to.dm);
-      store.addMessage(dmThread(p.id, to.id), msg);
+      store.addMessage(thread, msg);
       if (to.house !== p.house) broadcastHouse(to.house);
       if (!sockets.has(to.id)) push(to, { title: p.name, body: text || attachLabel(img), tag: `dm-${p.id}` }, 'dm');
       break;
@@ -889,7 +971,8 @@ function handle(p, m) {
       if (!g || !(text || img)) return;
       if (now - (lastDm.get(p.id) ?? 0) < 600) return send(sockets.get(p.id), { t: 'error', text: 'Slow down a little — that message was not sent.' });
       lastDm.set(p.id, now);
-      const msg = { id: nextId++, from: p.id, by: p.name, text, at: now, ...(img && { img }) };
+      const thread = `g:${m.g}`, reply = findMsg(thread, m.replyTo);
+      const msg = { id: nextId++, from: p.id, by: p.name, text, at: now, ...(img && { img }), ...(reply ? { replyTo: reply.id, replyBy: reply.by } : {}) };
       store.addMessage(`g:${m.g}`, msg);
       for (const id of g.members) {
         const q = db.players[id], qg = q?.groups?.[m.g];
@@ -922,8 +1005,9 @@ function handle(p, m) {
       if (!text && !img) return;
       if (now - (lastChat.get(p.id) ?? 0) < 600) return send(sockets.get(p.id), { t: 'error', text: 'Slow down a little — that message was not sent.' });
       lastChat.set(p.id, now);
+      const thread = `h:${h.code}`, reply = findMsg(thread, m.replyTo);
       h.chat ??= [];
-      h.chat.push({ id: nextId++, from: p.id, by: p.name, text, at: now, ...(img && { img }) });
+      h.chat.push({ id: nextId++, from: p.id, by: p.name, text, at: now, ...(img && { img }), ...(reply ? { replyTo: reply.id, replyBy: reply.by } : {}) });
       store.addMessage(`h:${h.code}`, h.chat.at(-1));
       h.chat = h.chat.slice(-50);
       for (const id of h.members) if (id !== p.id && !sockets.has(id)) push(db.players[id], { title: `${p.name} · house chat`, body: text || attachLabel(img), tag: `house-${h.code}` }, 'house');

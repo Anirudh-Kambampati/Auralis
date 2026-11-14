@@ -1,12 +1,12 @@
 import {
   SHELVES, buildGrid, walkable, canPlace, placeSwaps,roomSize, MAX_ROOMS, ROOM_COST, colorsFor, ITEMS, PETS, PET_ACCS, MAX_PETS, bondLevel, NOTIFY, wantsNotify, EXPAND_COST, ROOM_SIZES,
-  WALLPAPERS, WALL_PATTERNS, FLOORS, FLOOR_STYLES, SKINS, HAIRS, SHIRTS, STYLES, FACES, OUTFITS, BODIES, SIZES, ACCESSORIES, FOCUS_LENGTHS, isFocusLength,
+  WALLPAPERS, WALL_PATTERNS, FLOORS, FLOOR_STYLES, SKINS, HAIRS, SHIRTS, STYLES, FACES, OUTFITS, BODIES, SIZES, ACCESSORIES, FOCUS_LENGTHS, isFocusLength, SCAR_ACCS, SCAR_COLOURS,
   WALL_H, WALL, FLOOR, DOOR, BLOCKED, VOID, buddyMultiplier, focusEnd, streakDays, streakBonus, sellPrice, footprint, lying, canRotate, THIRSTY_MS, isPlant, discounted, GIFT_COINS, activeEvents, nextEvent,
   docName, attachLabel, DOC_TYPES, usernameProblem, emailProblem, passwordProblem,
 } from '../shared/game.js';
 import {
-  T, OVERHANG, SURFACE, AVATAR_H, avatarScale, drawSeated, drawActing, drawSeam, drawFloor, drawWall, drawWallFace, drawWallTop, drawDoor, drawWindow, drawPainting, drawFurniture, drawAvatar, drawDeskLamp, drawGlow, drawUsing, skyNow, weatherNow, NIGHT_TINT,
-  coinURL, uiIconURL, AV, drawPaper, isDark, paintBlockText, drawWindow as drawWin, drawDroplet, drawHeart, tileURL, type Look,
+  T, OVERHANG, SURFACE, AVATAR_H, avatarScale, lookKey, drawSeated, drawActing, drawSeam, drawFloor, drawWall, drawWallFace, drawWallTop, drawDoor, drawWindow, drawPainting, drawFurniture, drawAvatar, drawDeskLamp, drawGlow, drawUsing, skyNow, weatherNow, NIGHT_TINT,
+  coinURL, uiIconURL, AV, drawPaper, isDark, paintBlockText, drawWindow as drawWin, drawDroplet, drawHeart, tileURL, ACC_COL, ACC_COLORS, ACC_TINT, type Look,
 } from './draw';
 import { drawPet, petPos, petIconURL, seedOf } from './pets';
 import { toggleSound, soundName, chime, ping, stopAllSounds, setVolume } from './sounds';
@@ -16,8 +16,8 @@ import { parseVideo } from '../shared/watch.js';
 import { chart, streak, rangeTitle, shift, hm, RANGES } from '../shared/stats.js';
 import './style.css';
 
-type Furniture = { item: string; x: number; y: number; v?: number; s?: number; flip?: boolean; rot?: number; wateredAt?: number; off?: boolean };
-type Room = { wallpaper: string; floor: string; pattern?: string; floorStyle?: string; level?: number; curtains?: boolean; furniture: Furniture[] };
+type Furniture = { item: string; x: number; y: number; v?: number; s?: number; flip?: boolean; rot?: number; wateredAt?: number; off?: boolean; col?: string };
+type Room = { wallpaper: string; floor: string; pattern?: string; floorStyle?: string; level?: number; curtains?: boolean; wallColor?: string; floorColor?: string; furniture: Furniture[] };
 type Member = {
   id: string; name: string; look: Look; rooms: Room[]; focus: Focus | null;
   totalMinutes: number; online: boolean; pos: { x: number; y: number } | null; pets: { kind: string; name?: string; coat?: number; acc?: string; away?: boolean; follow?: boolean; bond?: number }[]; fedAt?: number;
@@ -25,7 +25,7 @@ type Member = {
 };
 // all: everyone has to tick it. to: who it's for (older ones have neither). at: reminder time. mine: one of my older private to-dos.
 type Todo = { id: number; text: string; done: boolean; by: string; byId?: string; all?: boolean; to?: string[]; ticks?: string[]; at?: number; mine?: boolean };
-type Chat = { id: number; from: string; by: string; text: string; at: number; img?: string }; // img: key of a picture
+type Chat = { id: number; from: string; by: string; text: string; at: number; img?: string; replyTo?: number }; // img: key of a picture
 type CalEvent = { id: number; date: string; time?: string; text: string; by?: string }; // date YYYY-MM-DD, time HH:MM
 type Focus = { minutes: number; endsAt: number; tag?: string; pausedAt?: number | null };
 type Session = { at: number; minutes: number; tag: string; early?: boolean };
@@ -333,7 +333,7 @@ let editRoom = 0; // which of my rooms Decorate and the room shop work on
 const slotOf = (id: string, ri = 0) => slots.findIndex((x) => x.m.id === id && x.ri === ri);
 const mySlot = () => slotOf(myId, editRoom);
 const myRoom = () => myMember()?.rooms[editRoom] ?? myMember()?.rooms[0];
-const furnColor = (f: Furniture) => (f.v === undefined ? undefined : colorsFor(f.item)[f.v]);
+const furnColor = (f: Furniture) => f.col || (f.v === undefined ? undefined : colorsFor(f.item)[f.v]);
 
 // Tiles of furniture a character can use (chairs, sofas, gym balls, treadmills...) and what they do there.
 // Tiles you can use by standing on them; z = where that piece sorts when drawn, so whoever uses it is drawn on top.
@@ -603,14 +603,16 @@ function interact(si: number, fi: number) {
 // Light pouring in through the windows, widening as it falls ( / \ ): sunny white by day, golden at dusk, faint
 // moonlight at night, dimmer when it isn't clear, none behind closed curtains. Top-row rooms have their windows on
 // the back wall; any room whose front wall faces outside gets the same light coming up from the front.
-const BEAM: Record<string, [string, number]> = { day: ['255,246,220', 0.2], dusk: ['255,190,120', 0.18], night: ['175,195,255', 0.09] };
+// The pools are soft and low-contrast: they tint the floor rather than drawing a bright wedge, so they blend into the room.
+const BEAM: Record<string, [string, number]> = { day: ['255,246,220', 0.10], dusk: ['255,190,120', 0.09], night: ['175,195,255', 0.05] };
 // Window light falls a little shorter than it used to, so a sunlit room doesn't wash out the whole floor.
-const BEAM_LEN = 0.82;
+const BEAM_LEN = 0.78;
 function drawWindowLight(sky: string, weather: string, onScreen: (x: number, y: number, w: number, h: number) => boolean) {
   const [rgb, a0] = BEAM[sky], a = weather === 'clear' ? a0 : a0 * 0.5;
   const beam = (xl: number, xr: number, y: number, dir: 1 | -1, len: number) => {
     const end = y + dir * len, spread = len * 0.4, g = ctx.createLinearGradient(0, y, 0, end);
     g.addColorStop(0, `rgba(${rgb},${a})`);
+    g.addColorStop(0.5, `rgba(${rgb},${a * 0.5})`);
     g.addColorStop(1, `rgba(${rgb},0)`);
     ctx.fillStyle = g;
     ctx.beginPath();
@@ -863,8 +865,9 @@ function tapAt(e: PointerEvent) {
   if (clicked?.item === 'deskCalendar') { if (hit.m.id === myId) setPanel('calendar'); else toast(esc(examLabel(hit.m))); return; }
   // A housemate's desk: leave them a note. A lamp in my own room: switch it on or off.
   if (clicked && hit.m.id !== myId && (ITEMS[clicked.item as ItemKey] as { table?: boolean }).table) { writeNote(hit.m.id); return; }
-  if (clicked && hit.m.id === myId && LIGHTS.has(clicked.item)) {
-    send({ t: 'light', r: hit.ri, index: fi });
+  // Anyone in the house can reach any room's lamps: click one to switch it on or off.
+  if (clicked && members.some((m) => m.id === hit.m.id) && LIGHTS.has(clicked.item)) {
+    send({ t: 'light', owner: hit.m.id, r: hit.ri, index: fi });
     toast(`💡 ${ITEMS[clicked.item as ItemKey].name} ${clicked.off ? 'on' : 'off'}.`);
     return;
   }
@@ -1081,7 +1084,7 @@ function render(t: number, dt: number) {
       const room = (dy: number) => slots[grid.owner[(y + dy) * grid.w + x]]?.room;
       if (k === FLOOR || k === BLOCKED) {
         const r = room(0);
-        drawFloor(ctx, px, py, r?.floor ?? FLOORS[0], x, y, r?.floorStyle);
+        drawFloor(ctx, px, py, r?.floorColor ?? r?.floor ?? FLOORS[0], x, y, r?.floorStyle);
       } else if (k === DOOR) {
         // An opening shows the floors on either side meeting in the middle. Between rows it's a few tiles deep:
         // each tile takes the nearer room's floor, and the middle one is split.
@@ -1100,8 +1103,8 @@ function render(t: number, dt: number) {
         const paper = (cx: number) => {
           const own = (dy: number) => (y + dy < grid.h ? slots[grid.owner[(y + dy) * grid.w + cx]]?.room : undefined);
           const below = own(1), below2 = grid.at(x, y + 1) === WALL ? own(2) : undefined;
-          if (below) drawWallFace(ctx, px, py, below.wallpaper, below.pattern);
-          else if (below2) drawWallTop(ctx, px, py, below2.wallpaper, below2.pattern);
+          if (below) drawWallFace(ctx, px, py, below.wallColor ?? below.wallpaper, below.pattern);
+          else if (below2) drawWallTop(ctx, px, py, below2.wallColor ?? below2.wallpaper, below2.pattern);
           return !!(below || below2);
         };
         // Over the opening between side-by-side rooms, each half carries on its own room's wallpaper.
@@ -1302,7 +1305,7 @@ function render(t: number, dt: number) {
     // rather than a hot spot right on the desk, which used to glare at the person studying.
     if (seated && dark) {
       sprites.push({ y: a.y + 1.6, draw: () => drawDeskLamp(ctx, ax + 10, ay + T + 4) });
-      lights.push({ x: ax + 15, y: ay + T - 4, rad: 30, alpha: 0.22 });
+      lights.push({ x: ax + 15, y: ay + T - 4, rad: 24, alpha: 0.2 });
     }
   }
   sprites.sort((p, q) => p.y - q.y).forEach((s) => s.draw());
@@ -1426,25 +1429,26 @@ function render(t: number, dt: number) {
 const LIGHTS = new Set(['lamp', 'arcLamp', 'bedsideLamp', 'candles', 'neonHeart', 'fairyJar', 'floorCandle', 'snowflakeLamp', 'lanternString', 'diya', 'menorah', 'discoBall',
   'skyLantern', 'sparklers', 'garbaLamp', 'bonfire', 'eidLantern', 'crescentLamp', 'lotusLamp']);
 // Things that light up the room at night: offset of the light from the item's top-left, size and strength.
+// The pools are small and amber rather than wide and yellow: a lamp lights the thing under it, not the whole room.
 const GLOWS: Record<string, { dx: number; dy: number; rad: number; alpha: number }> = {
-  lamp: { dx: 8, dy: -4, rad: 40, alpha: 0.32 },
-  fireplace: { dx: 16, dy: 6, rad: 48, alpha: 0.4 },
-  pumpkin: { dx: 8, dy: 8, rad: 22, alpha: 0.3 },
-  christmasTree: { dx: 8, dy: -6, rad: 28, alpha: 0.25 },
-  tv: { dx: 16, dy: -6, rad: 30, alpha: 0.2 },
-  arcade: { dx: 8, dy: -8, rad: 24, alpha: 0.22 },
-  aquarium: { dx: 16, dy: -4, rad: 26, alpha: 0.18 },
-  gamingDesk: { dx: 16, dy: -2, rad: 26, alpha: 0.2 },
-  arcLamp: { dx: 8, dy: -8, rad: 36, alpha: 0.3 },
-  bedsideLamp: { dx: 8, dy: 4, rad: 22, alpha: 0.25 },
-  candles: { dx: 8, dy: 6, rad: 22, alpha: 0.25 },
-  neonHeart: { dx: 8, dy: -4, rad: 26, alpha: 0.25 },
-  fairyJar: { dx: 8, dy: 8, rad: 18, alpha: 0.22 },
-  floorCandle: { dx: 8, dy: 0, rad: 22, alpha: 0.25 },
-  snowflakeLamp: { dx: 8, dy: -6, rad: 24, alpha: 0.22 },
-  lanternString: { dx: 8, dy: -8, rad: 26, alpha: 0.25 },
-  diya: { dx: 8, dy: 8, rad: 18, alpha: 0.25 },
-  ghost: { dx: 8, dy: -2, rad: 20, alpha: 0.15 },
+  lamp: { dx: 8, dy: -4, rad: 30, alpha: 0.3 },
+  fireplace: { dx: 16, dy: 6, rad: 38, alpha: 0.38 },
+  pumpkin: { dx: 8, dy: 8, rad: 18, alpha: 0.28 },
+  christmasTree: { dx: 8, dy: -6, rad: 22, alpha: 0.22 },
+  tv: { dx: 16, dy: -6, rad: 24, alpha: 0.18 },
+  arcade: { dx: 8, dy: -8, rad: 20, alpha: 0.2 },
+  aquarium: { dx: 16, dy: -4, rad: 20, alpha: 0.16 },
+  gamingDesk: { dx: 16, dy: -2, rad: 20, alpha: 0.18 },
+  arcLamp: { dx: 8, dy: -8, rad: 28, alpha: 0.28 },
+  bedsideLamp: { dx: 8, dy: 4, rad: 18, alpha: 0.22 },
+  candles: { dx: 8, dy: 6, rad: 18, alpha: 0.22 },
+  neonHeart: { dx: 8, dy: -4, rad: 20, alpha: 0.22 },
+  fairyJar: { dx: 8, dy: 8, rad: 14, alpha: 0.2 },
+  floorCandle: { dx: 8, dy: 0, rad: 18, alpha: 0.22 },
+  snowflakeLamp: { dx: 8, dy: -6, rad: 20, alpha: 0.2 },
+  lanternString: { dx: 8, dy: -8, rad: 20, alpha: 0.22 },
+  diya: { dx: 8, dy: 8, rad: 14, alpha: 0.22 },
+  ghost: { dx: 8, dy: -2, rad: 16, alpha: 0.13 },
   menorah: { dx: 8, dy: 4, rad: 20, alpha: 0.25 },
   heater: { dx: 8, dy: 0, rad: 24, alpha: 0.25 },
   discoBall: { dx: 8, dy: -6, rad: 26, alpha: 0.2 },
@@ -1614,8 +1618,32 @@ function avatarPreview(look: Look) {
   return `<img class="preview" src="${url}" style="${style}" alt="Your character">`;
 }
 
-const swatches = (act: string, list: string[], current: string | number | undefined, byIndex = false) =>
-  `<div class="swatches">${list.map((c, i) => `<button class="swatch${(byIndex ? i : c) === current ? ' on' : ''}" style="background:${c}" data-act="${act}" data-v="${byIndex ? i : c}" aria-label="${c}"></button>`).join('')}</div>`;
+const CUSTOM_SWATCH = 'conic-gradient(red,yellow,green,cyan,blue,magenta,red)';
+// Swatch rows. A custom colour gets its own selected swatch, and the rainbow that opens the picker stays rainbow and in
+// place, so there is always a way back to the picker after one has been chosen.
+// acc names the accessory a row belongs to: several can be worn at once, so each colour row has to say which one it paints.
+const swatches = (act: string, list: string[], current: string | number | undefined, byIndex = false, pickable = true, acc?: string) => {
+  const custom = !byIndex && typeof current === 'string' && !list.includes(current) ? current : undefined;
+  const tag = acc ? ` data-acc="${acc}"` : '';
+  return `<div class="swatches">${list.map((c, i) => `<button class="swatch${(byIndex ? i : c) === current ? ' on' : ''}" style="background:${c}" data-act="${act}" data-v="${byIndex ? i : c}"${tag} aria-label="${c}"></button>`).join('')}${custom ? `<button class="swatch on" style="background:${custom}" data-act="noop" title="Your custom colour" aria-label="Your custom colour"></button>` : ''}${pickable ? `<button class="swatch custom" data-act="${acc ? 'accpick' : 'pickcolor'}" data-v="${acc ?? act}"${tag} title="Custom colour" aria-label="Custom colour" style="background:${CUSTOM_SWATCH}"></button>` : ''}</div>`;
+};
+// One colour dialog at a time. The panel is rebuilt from scratch on every update, and a picker whose input lives in the
+// swatch row is thrown away by that rebuild, which closes the OS dialog after the first colour. Its handle lives on the
+// page instead, so the dialog survives for as long as the pick lasts.
+let colorPick: HTMLInputElement | null = null;
+function pickColor(start: string, onPick: (hex: string) => void) {
+  colorPick?.remove(); // a second pick replaces the first rather than stacking dialogs
+  const input = ui.createElement('input') as HTMLInputElement;
+  input.type = 'color'; input.value = start; input.className = 'colorpick';
+  const done = () => { input.remove(); if (colorPick === input) colorPick = null; };
+  const picked = () => { if (input.value) onPick(input.value); };
+  input.addEventListener('input', picked);
+  input.addEventListener('change', () => { picked(); done(); });
+  input.addEventListener('cancel', done); // dismissed without choosing
+  ui.body.appendChild(input);
+  colorPick = input;
+  input.click();
+}
 
 // Wall pattern and floor style buttons show what they look like, in the room's own colour.
 const tilePicker = (act: string, list: string[], current: string, kind: 'floor' | 'wall', color: string) =>
@@ -1638,12 +1666,34 @@ function againButton() {
   return isFocusLength(len) ? `<div class="center"><button data-act="focus" data-v="${len}">▶ Again: ${len} min${lastTag ? ` of ${esc(lastTag)}` : ''}</button></div>` : '';
 }
 // Character options as pictures: my character wearing each choice, the whole body or just the head.
-const LOOK_LABEL: Record<string, string> = { halfup: 'half up', twintails: 'twin tails', manbun: 'man bun', sidelong: 'side long', catears: 'cat ears', round: 'round glasses', chubby: 'plus' };
+const LOOK_LABEL: Record<string, string> = { twintails: 'twin tails', manbun: 'man bun', sidelong: 'side long', catears: 'cat ears', round: 'round glasses', chubby: 'plus', scar: 'eye scar', stitch: 'cheek stitches' };
 const lookPics = new Map<string, { url: string; style: string }>();
+// One colour row per worn accessory. A scar only ever takes black, dark red or the wearer's own skin tone, so its row
+// offers those three and no picker; every other accessory gets the full palette plus a custom colour.
+function accColourRow(a: string, look: Look) {
+  const scar = SCAR_ACCS.includes(a);
+  const list = scar ? [...new Set([...SCAR_COLOURS, look.skin])] : ACC_COLORS;
+  const stored = look.color?.[`acc:${a}`];
+  const current = stored && list.includes(stored) ? stored : ACC_COL[a] ?? list[0];
+  return `<h3>${LOOK_LABEL[a] ?? a} colour</h3>${swatches('acccol', list, current, false, !scar, a)}`;
+}
+// Accessories stack: every tile toggles one on or off, and 'none' clears the lot.
+function accTiles(list: string[], look: Look) {
+  const worn = look.accs ?? [];
+  return `<div class="row tile-picks">${list.map((v) => {
+    const on = v === 'none' ? worn.length === 0 : worn.includes(v);
+    const preview = { ...look, accs: v === 'none' ? [] : on ? worn : [...worn, v] };
+    const key = `acc|${devicePixelRatio}|${lookKey(preview)}`;
+    let pic = lookPics.get(key);
+    if (!pic) { pic = crispAvatar(preview, 3, true, 4); lookPics.set(key, pic); }
+    return `<button class="tile-pick ${on ? 'on' : 'off'}" data-act="acc" data-v="${v}" aria-label="${LOOK_LABEL[v] ?? v}" aria-pressed="${on}">
+      <img class="head" src="${pic.url}" style="${pic.style}" alt=""><small>${LOOK_LABEL[v] ?? v}</small></button>`;
+  }).join('')}</div>`;
+}
 function lookTiles(act: keyof Look, list: string[], look: Look, head = false) {
   const current = look[act] ?? list[0];
   return `<div class="row tile-picks">${list.map((v) => {
-    const key = `${head}|${devicePixelRatio}|${Object.values({ ...look, [act]: v }).join()}`;
+    const key = `${head}|${devicePixelRatio}|${lookKey({ ...look, [act]: v })}`;
     let pic = lookPics.get(key);
     if (!pic) { pic = crispAvatar({ ...look, [act]: v }, head ? 3 : 2, head, 4); lookPics.set(key, pic); }
     return `<button class="tile-pick ${v === current ? 'on' : 'off'}" data-act="${act}" data-v="${v}" aria-label="${LOOK_LABEL[v] ?? v}" aria-pressed="${v === current}">
@@ -1652,7 +1702,7 @@ function lookTiles(act: keyof Look, list: string[], look: Look, head = false) {
 }
 const randomLook = (): Look => ({
   skin: pickOne(SKINS), hair: pickOne(HAIRS), shirt: pickOne(SHIRTS), style: pickOne(STYLES), face: pickOne(FACES), outfit: pickOne(OUTFITS),
-  body: pickOne(BODIES), acc: Math.random() < 0.5 ? 'none' : pickOne(ACCESSORIES),
+  body: pickOne(BODIES), accs: Math.random() < 0.6 ? [] : [pickOne(ACCESSORIES.filter((a) => a !== 'none'))],
 });
 
 const esc = (s: string) => s.replace(/[&<>"]/g, (ch) => `&#${ch.charCodeAt(0)};`);
@@ -1736,7 +1786,9 @@ function decorateBody(mine: Member) {
       <button class="off" data-act="putaway">Put away</button><button data-act="deselect">Done</button></div>
       ${looks.length ? `<h3>Style</h3><div class="row styles">${looks.map((name, k) =>
         `<button class="${(sel.s ?? 0) === k ? 'on' : 'off'}" data-act="shape" data-v="${k}">${icon(sel.item, 'chip-icon', k)}${name}</button>`).join('')}</div>` : ''}
-      ${palette.length ? `<h3>Colour</h3>${swatches('recolor', palette, sel.v ?? -1, true)}` : ''}` : '';
+      ${palette.length ? `<h3>Colour</h3><div class="swatches">${palette.map((c: string, k: number) =>
+        `<button class="swatch${!sel.col && (sel.v ?? -1) === k ? ' on' : ''}" style="background:${c}" data-act="recolor" data-v="${k}" aria-label="${c}"></button>`).join('')}${sel.col
+        ? `<button class="swatch on" style="background:${sel.col}" data-act="noop" title="Your custom colour" aria-label="Your custom colour"></button>` : ''}<button class="swatch custom" data-act="paintfurn" title="Custom colour" aria-label="Custom colour" style="background:${CUSTOM_SWATCH}"></button></div>` : ''}` : '';
   const hint = placing ? `Tap a spot in your room to place the <b>${ITEMS[placing].name}</b>.`
     : sel ? (canRot ? 'Drag it, or tap a new spot to move it there. Keys: arrows move · R rotate · F flip · Delete put away · Esc done.' : 'Drag it, or tap a new spot to move it there. Keys: arrows move · F flip · Delete put away · Esc done.')
     : 'Drag any furniture to move it, or tap it for more options.';
@@ -1747,9 +1799,9 @@ function decorateBody(mine: Member) {
     `<button class="small-chip ${storeShelf === sh.id ? 'on' : 'off'}" data-act="storeShelf" data-v="${sh.id}">${sh.label}</button>`).join('')}</div>` : '';
   return `${roomPicker(mine)}${selBar}<p class="hint">${hint}</p>
     ${inv.length ? `<h3>Storage</h3>${filter}<div class="grid">${shown.map(([k, n]) => `<div class="card${placing === k ? ' on' : ''}"><b>${ITEMS[k as ItemKey].name} ×${n}</b>${icon(k)}<button data-act="place" data-v="${k}">Place</button>${sellPrice(k) ? `<button class="off small" data-act="sell" data-v="${k}">Sell ${coin()} ${sellPrice(k)}</button>` : ''}</div>`).join('')}</div>` : '<p class="hint">Storage is empty. Visit the Shop!</p>'}
-    <h3>Wallpaper</h3>${swatches('wallpaper', WALLPAPERS, myRoom()!.wallpaper)}
+    <h3>Wallpaper</h3>${swatches('wallpaper', WALLPAPERS, myRoom()!.wallColor ?? myRoom()!.wallpaper, false, false)}<button class="swatch custom" data-act="paintroom" data-v="wall" title="Custom wall colour" aria-label="Custom wall colour" style="background:${CUSTOM_SWATCH}"></button>
     <h3>Pattern</h3>${tilePicker('pattern', WALL_PATTERNS, myRoom()!.pattern ?? 'plain', 'wall', myRoom()!.wallpaper)}
-    <h3>Floor</h3>${swatches('floor', FLOORS, myRoom()!.floor)}
+    <h3>Floor</h3>${swatches('floor', FLOORS, myRoom()!.floorColor ?? myRoom()!.floor, false, false)}<button class="swatch custom" data-act="paintroom" data-v="floor" title="Custom floor colour" aria-label="Custom floor colour" style="background:${CUSTOM_SWATCH}"></button>
     <h3>Floor style</h3>${tilePicker('floorStyle', FLOOR_STYLES, myRoom()!.floorStyle ?? 'planks', 'floor', myRoom()!.floor)}
     <p class="hint">Want more space? Get a bigger room in the Shop.</p>
     <h3>Snapshots</h3>
@@ -1857,13 +1909,14 @@ function panelBody(mine: Member) {
       <div class="center"><button class="off" data-act="randomlook">🎲 Randomize look</button></div>
       <h3>Body type</h3>${lookTiles('body', BODIES, mine.look)}
       <h3>Height</h3>${lookTiles('size', SIZES, mine.look)}
-      <h3>Skin tone</h3>${swatches('skin', SKINS, mine.look.skin)}
+      <h3>Skin tone</h3>${swatches('skin', SKINS, mine.look.skin, false, false)}
       <h3>Hair style</h3>${lookTiles('style', STYLES, mine.look, true)}
-      <h3>Hair colour</h3>${swatches('hair', HAIRS, mine.look.hair)}
+      <h3>Hair colour</h3>${swatches('hair', HAIRS, mine.look.color?.hair ?? mine.look.hair)}
       <h3>Face</h3>${lookTiles('face', FACES, mine.look, true)}
-      <h3>Accessory</h3>${lookTiles('acc', ACCESSORIES, mine.look, true)}
+      <h3>Accessories</h3>${accTiles(ACCESSORIES, mine.look)}
+      ${(mine.look.accs ?? []).filter((a) => ACC_TINT.includes(a)).map((a) => accColourRow(a, mine.look)).join('')}
       <h3>Outfit</h3>${lookTiles('outfit', OUTFITS, mine.look)}
-      <h3>Outfit colour</h3>${swatches('shirt', SHIRTS, mine.look.shirt)}`;
+      <h3>Outfit colour</h3>${swatches('shirt', SHIRTS, mine.look.color?.shirt ?? mine.look.shirt)}`;
   }
   // house
   const away = !!me.home && me.home !== houseCode;
@@ -2006,11 +2059,60 @@ panel.addEventListener('click', (e) => {
       }
       break;
     case 'recolor': if (moving !== null) send({ t: 'restyle', r: editRoom, index: moving, v: Number(v) }); break;
+    case 'paintfurn': {
+      const index = moving;
+      const cur = (index !== null ? myRoom()!.furniture[index] : null)?.col ?? '#ffffff';
+      pickColor(cur, (hex) => { if (index !== null) send({ t: 'paint', r: editRoom, index, col: hex }); });
+      break;
+    }
+    case 'paintroom': {
+      const wall = b.dataset.v === 'wall';
+      const cur = wall ? (myRoom()!.wallColor ?? '#ffffff') : (myRoom()!.floorColor ?? '#ffffff');
+      pickColor(cur, (hex) => {
+        const r = myRoom()!; // read fresh: the panel may have been rebuilt while the picker was open
+        send({ t: 'room', r: editRoom, wallpaper: r.wallpaper, floor: r.floor, pattern: r.pattern, floorStyle: r.floorStyle, [wall ? 'wallColor' : 'floorColor']: hex });
+      });
+      break;
+    }
     case 'shape': if (moving !== null) send({ t: 'shape', r: editRoom, index: moving, s: Number(v) }); break;
     case 'wallpaper': case 'floor': case 'pattern': case 'floorStyle':
-      send({ t: 'room', r: editRoom, wallpaper: room.wallpaper, floor: room.floor, pattern: room.pattern, floorStyle: room.floorStyle, [b.dataset.act]: v }); break;
-    case 'skin': case 'hair': case 'shirt': case 'style': case 'face': case 'outfit': case 'body': case 'acc': case 'size':
-      send({ t: 'look', name: mine.name, look: { ...mine.look, [b.dataset.act]: v } }); break;
+      // A preset replaces any custom paint of that surface; a pattern or floor-style change keeps it. Empty string
+      // tells the server to drop the custom colour, which must happen even when the preset is the one already stored.
+      send({ t: 'room', r: editRoom, wallpaper: room.wallpaper, floor: room.floor, pattern: room.pattern, floorStyle: room.floorStyle, [b.dataset.act]: v,
+        ...(b.dataset.act === 'wallpaper' ? { wallColor: '' } : b.dataset.act === 'floor' ? { floorColor: '' } : {}) }); break;
+    case 'skin': case 'hair': case 'shirt': {
+      // A swatch replaces any custom tint on that one part; hair and outfit keep theirs.
+      const color = { ...mine.look.color };
+      delete color[b.dataset.act as string];
+      send({ t: 'look', name: mine.name, look: { ...mine.look, [b.dataset.act]: v, color } });
+      break;
+    }
+    case 'style': case 'face': case 'outfit': case 'body': case 'size':
+      send({ t: 'look', name: mine.name, look: { ...mine.look, [b.dataset.act]: v, color: mine.look.color } }); break;
+    case 'acc': { // several can be worn at once; 'none' clears them
+      const worn = mine.look.accs ?? [];
+      const accs = v === 'none' ? [] : worn.includes(v) ? worn.filter((a) => a !== v) : [...worn, v];
+      send({ t: 'look', name: mine.name, look: { ...mine.look, accs, color: mine.look.color } }); break;
+    }
+    case 'acccol': // a shade for this one accessory
+      send({ t: 'look', name: mine.name, look: { ...mine.look, color: { ...mine.look.color, [`acc:${b.dataset.acc}`]: v } } }); break;
+    case 'accpick': {
+      const a = b.dataset.v!;
+      pickColor(mine.look.color?.[`acc:${a}`] ?? ACC_COL[a] ?? '#5a5070', (hex) => {
+        const m = myMember()!;
+        send({ t: 'look', name: m.name, look: { ...m.look, color: { ...m.look.color, [`acc:${a}`]: hex } } });
+      });
+      break;
+    }
+    case 'pickcolor': {
+      const key = b.dataset.v!;
+      const cur = mine.look.color?.[key] ?? (key === 'skin' ? SKINS[0] : key === 'hair' ? HAIRS[0] : SHIRTS[0]);
+      pickColor(cur, (hex) => {
+        const m = myMember()!; // read fresh: another shade may have been sent while the picker was open
+        send({ t: 'look', name: m.name, look: { ...m.look, color: { ...m.look.color, [key]: hex } } });
+      });
+      break;
+    }
     case 'randomlook': send({ t: 'look', name: mine.name, look: randomLook() }); break;
     case 'copy': copyCode(); break;
     case 'join': send({ t: 'join', code: panel.querySelector<HTMLInputElement>('#join')!.value.trim() }); break;
@@ -2109,7 +2211,7 @@ function clickLabel(tx: number, ty: number): string | null {
   const sound = soundName(f.item) ? ` · 🔊 ${soundName(f.item)}` : '';
   if (f.item === 'deskCalendar') return examLabel(hit.m);
   if (hit.m.id !== myId && it.table) return `Leave ${hit.m.name} a note`;
-  if (hit.m.id === myId && LIGHTS.has(f.item)) return f.off ? 'Lights on' : 'Lights off';
+  if (LIGHTS.has(f.item) && members.some((m) => m.id === hit.m.id)) return f.off ? 'Lights on' : 'Lights off';
   if (f.item === 'giftBox') return 'Send a gift';
   if (f.item === 'whiteboard') return 'House to-dos';
   if (TVS.has(f.item)) return 'Watch together';
@@ -2323,14 +2425,17 @@ function threadMsgs(peer: string | null): Chat[] {
 // Someone I can message: a housemate or a friend.
 const friendsOnly = () => (me.friends ?? []).filter((f) => f.status === 'friend');
 const person = (id: string | null) => members.find((m) => m.id === id) ?? friendsOnly().find((f) => f.id === id);
+$('#chatUnreply').addEventListener('click', () => { replyTo = null; renderSide(); $('#chatInput').focus(); });
 // The message to send in the open thread: the house, a group, or one person.
-const chatMsg = (x: { text: string; img?: string }) => (groupOf(dmPeer) ? { t: 'gmsg', g: dmPeer!.slice(2), ...x } : dmPeer ? { t: 'dm', to: dmPeer, ...x } : { t: 'chat', ...x });
-let staged: File | null = null, stagedUrl = '', sending = false; // the chat attachment waiting for Send (see stage())
+  const chatMsg = (x: { text: string; img?: string; replyTo?: number }) => (groupOf(dmPeer) ? { t: 'gmsg', g: dmPeer!.slice(2), ...x } : dmPeer ? { t: 'dm', to: dmPeer, ...x } : { t: 'chat', ...x });
+  let staged: File | null = null, stagedUrl = '', sending = false; // the chat attachment waiting for Send (see stage())
+  let replyTo: { id: number; by: string; text: string } | null = null; // the message being quoted in my next send
 const syncUnread = () => { unread = houseUnread > 0 || Object.values(dmUnread).some(Boolean); tickTimers(); };
 // Is this thread (null = the house) on screen right now?
 const viewing = (peer: string | null) => chatOpen && dmPeer === peer && ui.body.dataset.side === 'chat' && !ui.hidden;
 function openThread(peer: string | null) {
   stage(null); // an attachment waiting in one conversation must never go out in another
+  replyTo = null; // a reply belongs to one thread
   dmPeer = peer;
   chatOpen = true;
   if (peer) dmUnread[peer] = 0; else houseUnread = 0;
@@ -2361,14 +2466,14 @@ function syncChatList() {
   $('#chatForm').hidden = !chatOpen;
   if (chatOpen) return;
   const lastAt = (l: Chat[]) => l[l.length - 1]?.at ?? 0;
-  const rows = [{ id: '', name: 'House chat', pic: uiIconURL('house'), list: chat, n: houseUnread, dm: false },
+  const rows: { id: string; name: string; pic: string; list: Chat[]; n: number; dm: boolean; on?: boolean; pal?: boolean }[] = [{ id: '', name: 'House chat', pic: uiIconURL('house'), list: chat, n: houseUnread, dm: false },
     ...Object.entries(me.groups ?? {}).map(([gid, g]) => ({ id: `g:${gid}`, name: g.name, pic: uiIconURL('chat'), list: g.msgs, n: dmUnread[`g:${gid}`] ?? 0, dm: false })),
-    ...[...others, ...pals.filter((f) => me.dm?.[f.id]?.length)].map((m) => ({ id: m.id, name: m.name, pic: faceURL(m.look), list: me.dm?.[m.id] ?? [], n: dmUnread[m.id] ?? 0, dm: true, on: pals.includes(m as Friend) && m.online }))]
+    ...[...others, ...pals].map((m) => ({ id: m.id, name: m.name, pic: faceURL(m.look), list: me.dm?.[m.id] ?? [], n: dmUnread[m.id] ?? 0, dm: true, on: pals.includes(m as Friend) && m.online, pal: pals.includes(m as Friend) }))]
     .sort((x, y) => lastAt(y.list) - lastAt(x.list)); // newest first; nobody-said-anything-yet at the bottom
   const rowsHTML = rows.map((r) => {
     const c = r.list[r.list.length - 1];
     const who = !c ? '' : c.from === myId ? 'You: ' : r.dm || !c.by ? '' : `${esc(c.by)}: `; // group notes ("made the group") have no speaker
-    const preview = c ? `${who}${c.img ? esc(attachLabel(c.img)) : esc(c.text)}` : r.dm ? 'Say hi 👋' : 'Talk to the whole house';
+    const preview = c ? `${who}${c.img ? esc(attachLabel(c.img)) : esc(c.text)}` : r.dm ? (r.pal ? 'Say hi 👋' : 'Say hi 👋') : 'Talk to the whole house';
     return `<li><button class="chat-row${r.n ? ' unread' : ''}" data-peer="${r.id}"><span class="chat-face-wrap${'on' in r && r.on ? ' on' : ''}"><img class="chat-face${r.dm ? '' : ' house'}" src="${r.pic}" alt=""></span>
       <span class="chat-mid"><b>${esc(r.name)}</b><small>${preview}</small></span>
       <span class="chat-end">${c ? `<small>${ago(c.at)}</small>` : ''}${r.n ? `<i>${r.n > 99 ? '99+' : r.n}</i>` : ''}</span></button></li>`;
@@ -2383,7 +2488,7 @@ function syncChatList() {
         : `<button class="off" data-peer="${f.id}" title="Message">💬</button>${f.here ? '' : `<button data-visit="${f.id}"${f.asked || !f.online ? ' disabled' : ''}>${f.asked ? 'Asked' : 'Visit'}</button>`}`;
   const what = (f: Friend) => f.status === 'incoming' ? 'wants to be friends' : f.status === 'outgoing' ? 'Friend request sent'
     : f.visit ? 'wants to visit you' : f.here ? 'In your house' : f.focus ? '📚 Studying' : f.online ? 'Online' : 'Offline';
-  const reqs = !fr.length ? '' : '<li class="chat-sec">Friends</li>' + [...fr].sort((a, b) => Number(b.status !== 'friend' || !!b.visit) - Number(a.status !== 'friend' || !!a.visit) || Number(b.online) - Number(a.online))
+  const reqs = !fr.length ? '' : '<li class="chat-sec">Friends</li>' + [...fr].filter((f) => f.status !== 'friend' || f.visit).sort((a, b) => Number(b.status !== 'friend' || !!b.visit) - Number(a.status !== 'friend' || !!a.visit) || Number(b.online) - Number(a.online))
     .map((f) => `<li><div class="chat-row req"><span class="chat-face-wrap${f.online && f.status === 'friend' ? ' on' : ''}"><img class="chat-face" src="${faceURL(f.look)}" alt=""></span>
       <span class="chat-mid"><b>${esc(f.name)}</b><small>${what(f)}</small></span><span class="chat-end">${act(f)}</span></div></li>`).join('') + '<li class="chat-sec">Chats</li>';
   const html = reqs + rowsHTML
@@ -2413,9 +2518,11 @@ function renderSide() {
     chatSig = cSig;
     const atBottom = log.scrollHeight - log.scrollTop - log.clientHeight < 40, fromBottom = log.scrollHeight - log.scrollTop;
     const more = msgs.length >= 50 && !historyDone.has(threadKey(dmPeer)) ? '<p class="more">Scroll up for older messages</p>' : '';
+    const byId = new Map<number, Chat>(msgs.map((c) => [c.id, c]));
+    const quoteOf = (c: Chat) => { const q = c.replyTo ? byId.get(c.replyTo) : null; return q ? `<span class="quote"><b>${esc(q.by)}</b> <span class="qt">${esc(q.text) || 'Picture'}</span></span>` : ''; };
     log.innerHTML = msgs.length
-      ? more + msgs.map((c) => !c.from ? `<p class="note">${esc(c.text)}</p>` : `<p class="${c.from === myId ? 'mine' : ''}"><b>${esc(c.by)}</b>${linkify(c.text)}${c.img ? `<span class="chat-att">${docName(c.img) ? `<button type="button" class="chat-doc" data-key="${esc(c.img)}">📎 <span>${esc(docName(c.img)!)}</span></button>` : `<img class="chat-img" data-key="${esc(c.img)}" alt="Picture from ${esc(c.by)}">`}`
-        + `<button type="button" class="chat-dl" data-dl="${esc(c.img)}" title="Download" aria-label="Download ${esc(docName(c.img) ?? 'picture')}">⬇</button></span>` : ''}</p>`).join('')
+      ? more + msgs.map((c) => !c.from ? `<p class="note">${esc(c.text)}</p>` : `<p class="${c.from === myId ? 'mine' : ''}" data-quote="${c.id}"><b>${esc(c.by)}</b>${quoteOf(c)}${linkify(c.text)}${c.img ? `<span class="chat-att">${docName(c.img) ? `<button type="button" class="chat-doc" data-key="${esc(c.img)}">📎 <span>${esc(docName(c.img)!)}</span></button>` : `<img class="chat-img" data-key="${esc(c.img)}" alt="Picture from ${esc(c.by)}">`}`
+        + `<button type="button" class="chat-dl" data-dl="${esc(c.img)}" title="Download" aria-label="Download ${esc(docName(c.img) ?? 'picture')}">⬇</button></span>` : ''}<button type="button" class="chat-reply" title="Reply" aria-label="Reply to ${esc(c.by)}">↩</button></p>`).join('')
       : dmPeer
         ? `<p class="empty">${group ? `Just the people in ${esc(peerName)}.` : `Just you and ${esc(peerName)} — nobody else can see this.`}</p>`
         : '<p class="empty">Say hi to your housemates 👋</p>';
@@ -2425,6 +2532,15 @@ function renderSide() {
   }
   const box = $<HTMLTextAreaElement>('#chatInput'), ph = dmPeer ? `Message ${peerName}…` : 'Say something…';
   if (box.placeholder !== ph) box.placeholder = ph;
+  // The message I'm replying to: show it above the box, or clear it when the thread changes.
+  const rep = $('#chatReply'), q = rep.querySelector('.quote')!;
+  if (replyTo) {
+    rep.hidden = false;
+    q.innerHTML = `Replying to <b>${esc(replyTo.by)}</b> <span class="qt">${esc(replyTo.text) || 'Picture'}</span>`;
+  } else {
+    rep.hidden = true;
+    q.innerHTML = '';
+  }
   if (viewing(dmPeer)) { if (dmPeer) dmUnread[dmPeer] = 0; else houseUnread = 0; }
 }
 const scrollChat = () => { const log = $('#chatLog'); log.scrollTop = log.scrollHeight; };
@@ -2462,6 +2578,14 @@ $('#chatLog').addEventListener('click', (e) => {
   if (doc) return openDoc(doc.dataset.key!);
   const img = (e.target as HTMLElement).closest<HTMLImageElement>('img.chat-img');
   if (img?.src) open(img.src, '_blank', 'noopener');
+  // Tap a message to quote it in your reply; tap the reply strip (or its ✕) to drop it.
+  const quote = (e.target as HTMLElement).closest<HTMLElement>('[data-quote]');
+  if (quote) {
+    if (quote.closest('#chatReply')) return replyTo = null;
+    const c = threadMsgs(dmPeer).find((x) => x.id === Number(quote.dataset.quote));
+    if (c) replyTo = { id: c.id, by: c.by, text: c.text };
+    return;
+  }
 });
 // A picked or pasted picture or file waits above the box (with a preview and a ✕) until Send, and whatever is typed
 // goes along as its caption. One attachment per message: picking another replaces it.
@@ -2613,21 +2737,23 @@ $('#chatForm').addEventListener('submit', (e) => {
     return;
   }
   if (staged) return sendStaged(input);
-  if (input.value.trim()) send(chatMsg({ text: input.value }));
+  if (input.value.trim()) send(chatMsg({ text: input.value, ...(replyTo ? { replyTo: replyTo.id } : {}) }));
   input.value = '';
+  replyTo = null;
 });
 // The message goes to the thread that was open when Send was pressed, even if the upload takes a while.
 // If the upload fails, the attachment and caption stay in the box to try again.
 async function sendStaged(input: HTMLTextAreaElement) {
   if (sending || !token || !staged) return;
   sending = true;
-  const file = staged, msg = chatMsg({ text: input.value });
+  const file = staged, msg = chatMsg({ text: input.value, ...(replyTo ? { replyTo: replyTo.id } : {}) });
   $('#chatStaged').classList.add('busy');
   if (!isPic(file)) toast(`Sending <b>${esc(file.name)}</b>…`);
   try {
     const img = await upload(file);
     send({ ...msg, img });
     if (staged === file) { stage(null); input.value = ''; input.dispatchEvent(new Event('input')); }
+    replyTo = null;
   } catch (err) {
     toast(esc((err as Error).message), 'error');
   } finally {

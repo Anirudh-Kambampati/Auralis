@@ -4,12 +4,18 @@ export const T = 16;
 const OUT = '#3a2633';
 
 type Ctx = CanvasRenderingContext2D;
-export type Look = { skin: string; hair: string; shirt: string; style?: string; face?: string; outfit?: string; body?: string; acc?: string; size?: string };
+export type Look = { skin: string; hair: string; shirt: string; style?: string; face?: string; outfit?: string; body?: string; accs?: string[]; size?: string; color?: Record<string, string> };
 
 // How much bigger (or smaller) than the standard tile figure a person is drawn. Their feet stay where they stand,
 // so a taller character simply reaches further up the room.
 const SIZE_SCALE: Record<string, number> = { small: 0.75, regular: 1, tall: 1.5 };
 export const avatarScale = (look: Look) => SIZE_SCALE[look.size ?? ''] ?? 1;
+// Everything that changes how a character is drawn, custom tints included. Sprites are cached by this key, so the tints
+// have to be part of it: a plain Object.values(look) turns the colour map into "[object Object]", and a recolour would
+// quietly redraw from the sprite painted in the old colour.
+export const lookKey = (look: Look) =>
+  [look.skin, look.hair, look.shirt, look.style, look.face, look.outfit, look.body, (look.accs ?? []).join('+'), look.size,
+    ...Object.keys(look.color ?? {}).sort().map((k) => `${k}=${look.color![k]}`)].join('|');
 // Runs drawing code in sprite pixels, scaled about a point (ax, ay) that must not move.
 function scaledAt(c: Ctx, k: number, ax: number, ay: number, paint: () => void) {
   if (k === 1) { paint(); return; }
@@ -162,7 +168,7 @@ const HEAD_BACK = [
   '..oHHhhhhhhHHo..',
 ];
 const BODY_FRONT = [
-  '..otttccccttto..',
+  '..o' + 't'.repeat(10) + 'o..',
   '.osttttttttttso.',
   '.osTttttttttTso.',
   '..oTTTTTTTTTTo..',
@@ -180,77 +186,92 @@ export const AVATAR_H = 21;
 type Overlay = Record<number, string>;
 const rows = (from: number, to: number, row: string): Overlay => Object.fromEntries(Array.from({ length: to - from + 1 }, (_, i) => [from + i, row]));
 // Hairstyles: each draws its own top of the head and fringe (rows 0-9) and, for longer styles, hair down the sides.
+// Every style has a distinct silhouette — a fringe, a part, a crest, a tie — so no two read as the same dark cap.
 const STYLE_OVERLAY: Record<string, Overlay> = {
-  short: { 2: '.....oooooo.....', 3: '...oohhhhhhoo...', 4: '..ohhhhhhhhhho..', 5: '.ohhhhhhhhhhhho.', 6: '.ohhhhhhhhhhhho.', 7: '.ohhhhhhhhhhhho.', 8: '.ohhhhhhhhhhhho.', 9: '.ohHshHhhsHhsho.' },
-  'side part': { 2: '.....oooooo.....', 3: '...oohhhhhhoo...', 4: '..ohhhhHhhhhhho.', 5: '.ohhhhhHhhhhhho.', 6: '.ohhhhhHhhhhhho.', 7: '.ohhhhhhhhhhhho.', 8: '.ohhhhhhhhhhhho.', 9: '.ossssHhhhhhhho.' },
+  short: { 2: '.....oooooo.....', 3: '...oohhhhhhoo...', 4: '..ohhhhhhhhhho..', 5: '.ohhhhhhhhhhhho.', 6: '.ohhhhhhhhhhhho.', 7: '.ohhhhhhhhhhhho.', 8: '.ohhhhhhhhhhhho.', 9: '.oHsHshHsshHhso.' },
+  'side part': { 2: '.....oooooo.....', 3: '...oohhhhhhoo...', 4: '..ohhhhHhhhhhho.', 5: '.ohhhhHhhhhhho..', 6: '.ohhhhHhhhhhho..', 7: '.ohhhhhhhhhhhho.', 8: '.ohhhhhhhhhhhho.', 9: '.ossssHhhhhhhho.' },
   buzz: { 2: '.....oooooo.....', 3: '...ooHhHHhHoo...', 4: '..ohHhHhhHhHho..', 5: '.ohHhHhHHhHhHho.', 6: '.ohhHhHhhHhHhho.', 7: '.osssssssssssso.', 8: '.osssssssssssso.', 9: '.osssssssssssso.' },
   spiky: { 0: '...o..o...o..o..', 1: '..oho.oho.ohoho.', 2: '.ohhhohhhohhhho.', 3: '.ohhhhhhhhhhhho.', 4: 'ohhhhhhhhhhhhhho', 5: 'ohhhhhhhhhhhhhho', 6: '.ohhhhhhhhhhhho.', 7: '.ohhhhhhhhhhhho.', 8: '.ohHhHhhHhhHhho.', 9: '.ohsHsshsHsshho.' },
   messy: { 1: '....o.ooo.o.....', 2: '...ohohhhoho.o..', 3: '..ohhhhhhhhhhoho', 4: '.ohhhhhhhhhhhhho', 5: 'ohhhhhhhhhhhhho.', 6: 'ohhhhhhhhhhhhhho', 7: '.ohhhhhhhhhhhho.', 8: '.ohhHhhhhHhhhho.', 9: '.ohsHhshHsshHho.' },
-  undercut: { 2: '.....oooooo.....', 3: '...oohhhhhhoo...', 4: '..ohhhhhhhhhhho.', 5: '.ohhhhhhhhhhhhho', 6: '.ohhhhhhhhhhhhHo', 7: '.osHhhhhhhhhhHso', 8: '.osssHhhhhhHssso', 9: '.osssssssssssso.' },
-  quiff: { 0: '......oooo......', 1: '....oohhhho.....', 2: '...ohhhhhhhoo...', 3: '..ohhhhhhhhhho..', 4: '.ohhhhhhhhhhhho.', 5: '.ohhhhhhhhhhhho.', 6: '.ohhhhhhhhhhhho.', 7: '.ohhhhhhhhhhhho.', 8: '.oHhhhhhhhhhhHo.', 9: '.osssssssssssso.' },
-  fauxhawk: { 0: '......o..o......', 1: '.....ohooho.....', 2: '....ohhhhhho....', 3: '...oHhhhhhhHo...', 4: '..oHHhhhhhhHHo..', 5: '.ohHhhhhhhhhHho.', 6: '.ohhhhhhhhhhhho.', 7: '.ohhhhhhhhhhhho.', 8: '.ohhhhhhhhhhhho.', 9: '.osshssssshssso.' },
-  topknot: { 0: '......oooo......', 1: '.....ohhhho.....', 2: '.....oHhhHo.....', 3: '...oohhhhhhoo...', 4: '..ohhhhhhhhhho..', 5: '.ohhhhhhhhhhhho.', 6: '.ohhhhhhhhhhhho.', 7: '.ohhhhhhhhhhhho.', 8: '.oHhhhhhhhhhhHo.', 9: '.osssssssssssso.' },
-  slick: { 2: '.....oooooo.....', 3: '...oohhhhhhoo...', 4: '..ohhHhhhHhhho..', 5: '.ohhHhhhHhhhhho.', 6: '.ohHhhhHhhhhhho.', 7: '.oHhhhHhhhhhhho.', 8: '.osssssssssssso.', 9: '.osssssssssssso.' },
-  curtains: { 2: '.....oooooo.....', 3: '...oohhhhhhoo...', 4: '..ohhhhhhhhhho..', 5: '.ohhhhhhhhhhhho.', 6: '.ohhhhhhhhhhhho.', 7: '.ohhhhhhhhhhhho.', 8: '.ohhhhhssshhhho.', 9: '.ohhhhsssssshho.' },
-  crop: { 2: '.....oooooo.....', 3: '...oohhhhhhoo...', 4: '..ohhhhhhhhhho..', 5: '.ohhhhhhhhhhhho.', 6: '.ohhhhhhhhhhhho.', 7: '.ohhhhhhhhhhhho.', 8: '.ohhhhhhhhhhhho.', 9: '.oHHHHHHHHHHHHo.' },
+  undercut: { 2: '.....oooooo.....', 3: '...oohhhhhhoo...', 4: '..ohhhhhhhhhhho.', 5: '.ohhhhhhhhhhhhho', 6: '.ohhhhhhhhhhhhHo', 7: '.osHhhhhhhhhhHso', 8: '.osssHhhhhHssso.', 9: '.osssssssssssso.' },
+  quiff: { 0: '......oooo......', 1: '....oohhhho.....', 2: '...ohhhhhhhoo...', 3: '..oHhhhhhhHHo...', 4: '.oHHhhhhhhHHho..', 5: '.oHhhhhhhhhhHo..', 6: '.ohhhhhhhhhhHo..', 7: '.ohhhhhhhhhhHo..', 8: '.oHhhhhhhhhhhHo.', 9: '.osssssssssssso.' },
+  fauxhawk: { 0: '......o..o......', 1: '.....ohooho.....', 2: '....ohhhhhho....', 3: '...oHhhhhhhHo...', 4: '..oHHhhhhhhHHo..', 5: '.oHhHhhhhhhHhHo.', 6: '.ohHhhhhhhhhHho.', 7: '.ohHhhhhhhhhHho.', 8: '.ohHhhhhhhhhHho.', 9: '.osshssssshssso.' },
+  topknot: { 0: '......oooo......', 1: '.....ohhhho.....', 2: '.....oHhhHo.....', 3: '...ooHhhHHoo....', 4: '..oHhhhhhhHho...', 5: '.oHhhhhhhhHhHo..', 6: '.ohhhhhhhhhho...', 7: '.ohhhhhhhhhho...', 8: '.oHhhhhhhhhhhHo.', 9: '.osssssssssssso.' },
+  slick: { 2: '.....oooooo.....', 3: '...ooHhhhHoo....', 4: '..oHHhhhHHho....', 5: '.oHHhhhHHhho....', 6: '.oHHhhhHHhho....', 7: '.oHHhhhHHhho....', 8: '.oHHhhhHHhho....', 9: '.osssssssssssso.' },
+  curtains: { 2: '.....oooooo.....', 3: '...oohhhhhhoo...', 4: '..ohhhhhhhhhho..', 5: '.ohhhhhhhhhhhho.', 6: '.ohhhhhhhhhhhho.', 7: '.ohhhhhhhhhhhho.', 8: '.ohhhhhssshhhho.', 9: '.ohhhhsssssshho.', 10: '.ohhhHsssssHhho.', 11: '.ohhhHsssssHhho.' },
+  crop: { 2: '.....oooooo.....', 3: '...oohhhhhhoo...', 4: '..ohhhhhhhhhho..', 5: '.ohhhhhhhhhhhho.', 6: '.ohhhhhhhhhhhho.', 7: '.ohhhhhhhhhhhho.', 8: '.oHHHHHHHHHHHHo.', 9: '.oHHHHHHHHHHHHo.' },
   mohawk: { 0: '......oooo......', 1: '.....ohhhho.....', 2: '....ohhhhhho....', 3: '...osshhhhsso...', 4: '..osssHhhHssso..', 5: '.ossssHhhHsssso.', 6: '.ossssHhhHsssso.', 7: '.osssssHHssssso.', 8: '.osssssssssssso.', 9: '.osssssssssssso.' },
-  pixie: { 2: '.....oooooo.....', 3: '...oohhhhhhoo...', 4: '..ohhhhhhhhhho..', 5: '.ohhhhhhhhhhhho.', 6: '.ohhhhhhhhhhhho.', 7: '.ohhhhhhhhhhhho.', 8: '.ohhhhhhhhhhhho.', 9: '.ohhhhHhssssHso.', 10: '.oh.............', 11: '.oo.............' },
-  bowl: { 2: '....oooooooo....', 3: '..oohhhhhhhhoo..', 4: '..ohhhhhhhhhho..', 5: '.ohhhhhhhhhhhho.', 6: '.ohhhhhhhhhhhho.', 7: '.ohhhhhhhhhhhho.', 8: '.ohhhhhhhhhhhho.', 9: '.oHHHHHHHHHHHHo.', 10: 'o..............o' },
-  manbun: { 0: '......ooo.......', 1: '.....ohhho......', 2: '.....oHhHoo.....', 3: '...oohhhhhhoo...', 4: '..ohhHhhhHhhho..', 5: '.ohhHhhhhhHhhho.', 6: '.ohhhhhhhhhhhho.', 7: '.ohhhhhhhhhhhho.', 8: '.oHhhhhhhhhhhHo.', 9: '.osssssssssssso.' },
-  emo: { 2: '.....oooooo.....', 3: '...oohhhhhhoo...', 4: '..ohhhhhhhhhho..', 5: '.ohhhhhhhhhhhho.', 6: '.ohhhhhhhhhhhho.', 7: '.ohhhhhhhhhhhho.', 8: '.ohhhhhhhhhhhho.', 9: '.ohhhhhhhhhssho.', 10: '.ohhhhhH........', 11: '.ohhhH..........' },
+  pixie: { 2: '.....oooooo.....', 3: '...oohhhhhhoo...', 4: '..ohhhhhhhhhho..', 5: '.ohhhhhhhhhhhho.', 6: '.ohhhhhhhhhhhho.', 7: '.ohhhhhhhhhhhho.', 8: '.ohhhhHhssssHso.', 9: '.ohhhhHhssssHso.', 10: '.ohHhhssssHhso..', 11: '.ooHhssssHhso...' },
+  bowl: { 2: '....oooooooo....', 3: '..oohhhhhhhhoo..', 4: '..ohhhhhhhhhho..', 5: '.ohhhhhhhhhhhho.', 6: '.ohhhhhhhhhhhho.', 7: '.ohhhhhhhhhhhho.', 8: '.ohhhhhhhhhhhho.', 9: '.oHHHHHHHHHHHHo.', 10: 'oHHHHHHHHHHHHHHo' },
+  manbun: { 0: '......ooo.......', 1: '.....ohhho......', 2: '.....oHhHoo.....', 3: '...oohhhhhhoo...', 4: '..oHhHhhhHhHo...', 5: '.oHhHhhhhhHhHo..', 6: '.ohhhhhhhhhhhho.', 7: '.osHhhhhhhHhHso.', 8: '.osssHhhhhHssso.', 9: '.osssssssssssso.' },
+  emo: { 2: '.....oooooo.....', 3: '...oohhhhhhoo...', 4: '..ohhhhhhhhhho..', 5: '.ohhhhhhhhhhhho.', 6: '.ohhhhhhhhhhhho.', 7: '.ohhhhhhhhhhhho.', 8: '.ohhhhhhhhhhhho.', 9: '.ohhhhhhhhhssho.', 10: '.ohhhhHsssssHho.', 11: '.ohhhHsHsssshHo.', 12: '.ohHsHsssssshHo.' },
   curly: { 1: '...oo.oo.oo.oo..', 2: '..ohhohhohhohho.', 3: '.ohhhhhhhhhhhhho', 4: 'ohhhhhhhhhhhhhho', 5: 'ohHhhHhhHhhHhhHo', 6: 'ohhhhhhhhhhhhhho', 7: 'ohhhhhhhhhhhhhho', 8: 'oHhhHhhHhhHhhHho', 9: 'ohHsHssHssHssHho', 10: 'oho..........oho', 11: 'ohho........ohho', 12: '.oho........oho.', 13: '..o..........o..' },
-  bob: { 2: '.....oooooo.....', 3: '...oohhhhhhoo...', 4: '..ohhhhhhhhhho..', 5: '.ohhhhhhhhhhhho.', 6: '.ohhhhhhhhhhhho.', 7: '.ohhhhhhhhhhhho.', 8: '.ohhhhhhhhhhhho.', 9: 'ohhHsssssssHhho.', 10: 'ohh..........hho', 11: 'ohh..........hho', 12: 'ohH..........Hho', 13: '.oo..........oo.' },
-  long: { 2: '.....oooooo.....', 3: '...oohhhhhhoo...', 4: '..ohhhhhhhhhho..', 5: '.ohhhhhhhhhhhho.', 6: '.ohhhhhhhhhhhho.', 7: '.ohhhhhhhhhhhho.', 8: '.ohhhhhhhhhhhho.', 9: '.ohhssssssshhho.', 10: 'ohh..........hho', 11: 'ohh..........hho', 12: 'ohh..........hho', 13: 'ohh..........hho', 14: 'ohh..........hho', 15: 'ohh..........hho', 16: '.oo..........oo.' },
+  bob: { 2: '.....oooooo.....', 3: '...oohhhhhhoo...', 4: '..ohhhhhhhhhho..', 5: '.ohhhhhhhhhhhho.', 6: '.ohhhhhhhhhhhho.', 7: '.ohhhhhhhhhhhho.', 8: '.ohhhhhhhhhhhho.', 9: 'ohhHsssssssHhho.', 10: 'ohHsHssssssHho..', 11: 'ohHsHssssssHho..', 12: 'ohHsHssssssHho..', 13: 'ohHsHssssssHho..', 14: '.ooHsssssHhoo...' },
+  long: { 2: '.....oooooo.....', 3: '...oohhhhhhoo...', 4: '..ohhhhhhhhhho..', 5: '.ohhhhhhhhhhhho.', 6: '.ohhhhhhhhhhhho.', 7: '.ohhhhhhhhhhhho.', 8: '.ohhhhhhhhhhhho.', 9: '.ohhHssssssHhho.', 10: '.ohHsHssssssHho.', 11: '.ohHsHssssssHho.', 12: '.ohHsHssssssHho.', 13: '.ohHsHssssssHho.', 14: '.ohHsHssssssHho.', 15: '.ohHsHssssssHho.', 16: '.ooHsssssHhoo...' },
   ponytail: { 2: '.....oooooo.oo..', 3: '...oohhhhhhoho..', 4: '..ohhhhhhhhhohho', 5: '.ohhhhhhhhhhhoho', 6: '.ohhhhhhhhhhhoho', 7: '.ohhhhhhhhhhhoho', 8: '.oHhhhhhhhhhHoho', 9: '.ossssssssssso.o', 10: '..............oh', 11: '..............oh', 12: '..............o.' },
   buns: { 0: '.ooo........ooo.', 1: 'ohhho......ohhho', 2: 'ohlho.oooo.ohlho', 3: '.ooohhhhhhhhooo.', 4: '..ohhhhhhhhhho..', 5: '.ohhhhhhhhhhhho.', 6: '.ohhhhhhhhhhhho.', 7: '.ohhhhhhhhhhhho.', 8: '.ohhhhhhhhhhhho.', 9: '.ohhssssssshhho.' },
   afro: { 0: '...oooooooooo...', 1: '..ohhhhhhhhhho..', 2: '.ohhhhhhhhhhhho.', 3: 'ohhhhhhhhhhhhhho', 4: 'ohHhhhHhhhHhhhHo', 5: 'ohhhhhhhhhhhhhho', 6: 'ohhHhhhhhHhhhhho', 7: 'ohhhhhhhhhhhhhho', 8: 'ohHhhhhhhhhhhHho', 9: 'ohhssssssssssHho', 10: 'oh............ho', 11: 'oho..........oho', 12: '.o............o.' },
-  wavy: { 2: '.....oooooo.....', 3: '...oohhhhhhoo...', 4: '..ohhhhhhhhhho..', 5: '.ohhhhhhhhhhhho.', 6: '.ohhhhhhhhhhhho.', 7: '.ohhhhhhhhhhhho.', 8: '.ohhhhhhhhhhhho.', 9: 'ohhHssssssssHhho', 10: 'ohH..........Hho', 11: 'oHh..........hHo', 12: 'ohH..........Hho', 13: '.oh..........ho.', 14: '..o..........o..' },
-  shaggy: { 1: '....o.o..o.o....', 2: '...ohohhhohoo...', 3: '..ohhhhhhhhhhho.', 4: '.ohhhhhhhhhhhhho', 5: 'ohhhhhhhhhhhhhho', 6: 'ohhhhhhhhhhhhhho', 7: 'ohHhhhhhhhhhhHho', 8: 'ohhHhhhHhhhHhhho', 9: '.ohsHshsHsshsho.', 10: 'oho..........oho', 11: 'oh............ho', 12: '.o............o.' },
+  wavy: { 2: '.....oooooo.....', 3: '...oohhhhhhoo...', 4: '..ohhhhhhhhhho..', 5: '.ohhhhhhhhhhhho.', 6: '.ohhhhhhhhhhhho.', 7: '.ohhhhhhhhhhhho.', 8: '.ohhhhhhhhhhhho.', 9: 'ohhHssssssssHhho', 10: 'ohHsHssssssHho..', 11: 'oHhHsHssssshHo..', 12: 'ohHsHssssssHho..', 13: '.ohHsHsssssHho..', 14: '..oHsHssssHhoo..' },
+  shaggy: { 1: '....o.o..o.o....', 2: '...ohohhhohoo...', 3: '..ohhhhhhhhhhho.', 4: '.ohhhhhhhhhhhhho', 5: 'ohhhhhhhhhhhhhho', 6: 'ohhhhhhhhhhhhhho', 7: 'ohHhhhhhhhhhhHho', 8: 'ohhHhhhHhhhHhhho', 9: '.ohsHshsHsshsho.', 10: 'ohoHsHssssHho...', 11: 'ohHsHssssshHo...', 12: '.oHsHssssshHo...' },
   twintails: { 2: '.....oooooo.....', 3: '...oohhhhhhoo...', 4: 'o.ohhhhhhhhhho.o', 5: 'hoohhhhhhhhhhooh', 6: 'hhohhhhhhhhhhohh', 7: 'hhohhhhhhhhhhohh', 8: '.ohhhhhhhhhhhho.', 9: '.ohhsssssssshho.', 10: 'hho..........ohh', 11: 'hho..........ohh', 12: 'Hho..........ohH', 13: 'oHo..........oHo', 14: '.o............o.' },
-  halfup: { 0: '.......ooo......', 1: '......ohhho.....', 2: '.....ooHhoo.....', 3: '...oohhhhhhoo...', 4: '..ohhhhhhhhhho..', 5: '.ohhhhhhhhhhhho.', 6: '.ohhhhhhhhhhhho.', 7: '.ohhhhhhhhhhhho.', 8: '.ohhhhhhhhhhhho.', 9: '.ohhssssssshhho.', 10: 'ohh..........hho', 11: 'ohh..........hho', 12: 'ohh..........hho', 13: 'ohh..........hho', 14: 'ohh..........hho', 15: '.oo..........oo.' },
-  wolf: { 1: '.....oooooo.....', 2: '...oohhhhhhoo...', 3: '..ohhhhhhhhhho..', 4: '.ohhhhhhhhhhhho.', 5: '.ohhhhhhhhhhhho.', 6: 'ohhhhhhhhhhhhhho', 7: 'ohhHhhhhhhhhHhho', 8: 'ohHhhhHhhHhhhHho', 9: 'ohhsHsssssHsshho', 10: 'oHo..........oHo', 11: 'ohho........ohho', 12: '.oho........oho.', 13: '..o..........o..' },
+  wolf: { 1: '.....oooooo.....', 2: '...oohhhhhhoo...', 3: '..ohhhhhhhhhho..', 4: '.ohhhhhhhhhhhho.', 5: '.ohhhhhhhhhhhho.', 6: 'ohhhhhhhhhhhhhho', 7: 'ohhHhhhhhhhhHhho', 8: 'ohHhhhHhhHhhhHho', 9: 'ohhsHsssssHsshho', 10: 'oHoHsHssssHhHo..', 11: 'ohhoHsHsssshHo..', 12: '.ohoHsHsssssho..', 13: '..oHsHssssshoo..' },
   sidelong: { 2: '.....oooooo.....', 3: '...oohhhhhhoo...', 4: '..ohhhhhhhhhho..', 5: '.ohhhhhhhhhhhho.', 6: '.ohhhhhhhhhhhho.', 7: '.ohhhhhhhhhhhho.', 8: '.ohhhhhhhhhhhho.', 9: '.ohhhhhhhsssssho', 10: 'ohhhhH..........', 11: 'ohhhH...........', 12: 'ohhh............', 13: 'ohhh............', 14: 'oHho............', 15: '.oo.............' },
   braids: { 2: '.....oooooo.....', 3: '...oohhhhhhoo...', 4: '..ohhhhhhhhhho..', 5: '.ohhhhhhhhhhhho.', 6: '.ohhhhhhhhhhhho.', 7: '.ohhhhhhhhhhhho.', 8: '.ohhhhhhhhhhhho.', 9: '.ohhssssssshhho.', 10: 'ohh..........hho', 11: 'ohh..........hho', 12: 'oHh..........hHo', 13: 'ohH..........Hho', 14: 'oHh..........hHo', 15: '.y............y.', 16: '.o............o.' },
 };
+// Styles whose whole character is one side: a fringe swept across, a tail on one shoulder. Their hair stays lopsided so
+// a symmetric version never turns them into something else.
+const LOP = new Set(['side part', 'emo', 'sidelong', 'ponytail', 'twintails', 'braids', 'curly']);
 // Short styles keep the hair off the cheeks: no long sideburns down the face.
 const CROPPED = new Set(['buzz', 'crop', 'curtains', 'fauxhawk', 'manbun', 'messy', 'mohawk', 'ponytail', 'quiff', 'short', 'side part', 'slick', 'spiky', 'topknot', 'undercut']);
+// Eyes are the same two-by-two on every open-eyed face: a white catchlight at the top-left of each eye with the dark
+// pupil under and beside it (x4/x5 and x10/x11, rows 10-11). A face changes the brows, mouth, cheeks and extras, and only
+// closes, winks or sparkles the eyes it is meant to; it never repaints them in another shape.
+// Mouths sit centred on x7-x8, with the frown corners on the chin row (row 13) and everything joined pixel to pixel.
 const FACE_OVERLAY: Record<string, Overlay> = {
   happy: {},
-  sleepy: { 10: '.oh' + 'ssssssssss' + 'ho.' },
+  sleepy: { 10: '.oh' + 'ssssssssss' + 'ho.' }, // lids down: the pupil row reads as the closed line
   wink: { 10: '.oh' + 'swesssssss' + 'ho.' },
-  grin: { 12: '.oh' + 'sbsmmmmsbs' + 'ho.' },
-  // proper shades: a frame across, two lenses with a glint, and a smirk below
-  cool: { 10: '.oheeeeeeeeeeho.', 11: '.oheweesseweeho.', 12: '.ohseesssseesho.', 13: '..oSssssmmssSo..' },
-  surprised: { 9: '.oh' + 'seessssees' + 'ho.', 13: '..oSsssmmsssSo..' },
+  grin: { 12: '.oh' + 'sbmmmmmmbs' + 'ho.' },
+  // shades: a frame with a lens hole around each eye, and the mouth below it
+  cool: { 10: '.oh' + 'eweeeeewee' + 'ho.', 11: '.oh' + 'eeesssseee' + 'ho.', 12: '.oh' + 'seeeeeeees' + 'ho.', 13: '..oS' + 'ssmmmmss' + 'So..' },
+  surprised: { 12: '.oh' + 'sssmmmmsss' + 'ho.', 13: '..oSssssmmssSo..' }, // open "o"
   // happy closed eyes (^ ^) and big rosy cheeks
   blush: { 10: '.ohssessssessho.', 11: '.ohsesessesesho.', 12: '.ohbbssmmssbbho.' },
   smirk: { 12: '.oh' + 'sbsssmmmbs' + 'ho.' },
-  fierce: { 9: '.oh' + 'seessssees' + 'ho.', 12: '.oh' + 'sbsmmmmsbs' + 'ho.' },
+  fierce: { 9: '.oh' + 'seeesseees' + 'ho.', 12: '.oh' + 'smccccccms' + 'ho.' }, // brows down, teeth gritted
   // a wink, a wide grin and the tongue poking out
-  silly: { 10: '.ohswesssssssho.', 12: '.ohsbsmmmmsbsho.', 13: '..oSssssbbssSo..' },
-  calm: { 12: '.ohssssmmssssho.' },
-  laugh: { 10: '.ohssessssessho.', 11: '.ohsesessesesho.', 12: '.ohbbsmmmmsbbho.', 13: '..oSssmmmmssSo..' },
-  sad: { 12: '.ohssssssssssho.', 13: '..oSssmssmssSo..' },
-  cry: { 12: '.ohsqssssssqsho.', 13: '..oSqsmssmsqSo..' },
-  angry: { 9: '.ohseeesseeesho.', 12: '.ohssssssssssho.', 13: '..oSssmmmmssSo..' },
-  shy: { 10: '.ohsewssssewsho.', 12: '.ohbbssmsssbbho.' },
-  pout: { 12: '.ohsbssssssbsho.', 13: '..oSssssmsssSo..' },
-  starry: { 10: '.ohsyessssyesho.', 12: '.ohsbsmmmmsbsho.' },
+  silly: { 10: '.ohswesssssssho.', 12: '.ohsbmmmmmmbsho.', 13: '..oS' + 'sssbbsss' + 'So..' },
+  calm: { 12: '.oh' + 'sssmmmmsss' + 'ho.' },
+  laugh: { 10: '.ohssessssessho.', 11: '.ohsesessesesho.', 12: '.ohbbsmmmmsbbho.', 13: '..oS' + 'ssmmmmss' + 'So..' },
+  // a joined frown: the middle of the mouth on the lip row, its corners one row down
+  sad: { 12: '.oh' + 'ssssmmssss' + 'ho.', 13: '..oSssmssmssSo..' },
+  cry: { 12: '.oh' + 'sqssmmssqs' + 'ho.', 13: '..oSqsmssmsqSo..' }, // the same frown, with tears on both cheeks
+  angry: { 9: '.ohseeesseeesho.', 12: '.oh' + 'ssssssssss' + 'ho.', 13: '..oS' + 'ssmmmmss' + 'So..' },
+  // bashful: lids down and a wide blush, so it never reads as a pout
+  shy: { 10: '.ohssssssssssho.', 12: '.ohbbssmmssbbho.' },
+  // lips pushed out: a light upper lip over the mouth line, with the normal eyes
+  pout: { 12: '.oh' + 'ssssbbssss' + 'ho.', 13: '..oSsssmmsssSo..' },
+  starry: { 10: '.ohsyessssyesho.', 12: '.ohsbsmmmmsbsho.' }, // a star over each catchlight
 };
 const OUTFIT_OVERLAY: Record<string, Overlay> = {
   tee: {},
   tie: { 14: '..o' + 'tttcrrcttt' + 'o..', 15: '.os' + 'ttttrrtttt' + 'so.', 16: '.os' + 'TtttrrtttT' + 'so.' },
   sweater: { 15: '.ot' + 'cccccccccc' + 'to.', 16: '.ot' + 'TttttttttT' + 'to.' },
   jacket: { 15: '.os' + 'tttTccTttt' + 'so.', 16: '.os' + 'TttTccTttT' + 'so.', 17: '..oTTTTccTTTTo..' },
-  skirt: { 17: '.oTTToTTTToTTTo.', 18: 'oTTTToTTTToTTTTo' },
-  dress: { 17: '.o' + 't'.repeat(12) + 'o.', 18: 'o' + 'T'.repeat(14) + 'o' },
+  // Skirt and dress are cut from the same cloth as the top: base tone for the body, a darker tone for the fold shadows
+  // and the waistband, and never a fixed colour, so both follow whatever colour the outfit is given.
+  skirt: { 17: '..o' + 'TttttttttT' + 'o..', 18: '.ott' + 'TttttttT' + 'tto.' },
+  dress: { 17: '..o' + 'TTTTTTTTTT' + 'o..', 18: 'ott' + 'TttttttttT' + 'tto' },
   hoodie: { 14: '..o' + 'tttcttcttt' + 'o..', 15: '.ot' + 'tttcttcttt' + 'to.', 16: '.ot' + 'tTTTTTTTTt' + 'to.' },
   striped: { 14: '..otttccccttto..', 15: '.osccccccccccso.', 16: '.osttttttttttso.', 17: '..occcccccccco..' },
-  vest: { 14: '..otttccccttto..', 15: '.osTTTccccTTTso.', 16: '.osTTTcyccTTTso.', 17: '..oTTTTccTTTTo..' },
+  vest: { 14: '..o' + 'TtttttttT' + 'o...', 15: '.os' + 'TttttttttT' + 'so.', 16: '.os' + 'TttttttttT' + 'so.', 17: '..o' + 'TTTTTTTTTT' + 'o..' },
   tank: { 14: '..ossttttttsso..', 15: '.osttttttttttso.', 16: '.osttttttttttso.', 17: '..oTTTTTTTTTTo..' },
-  kimono: { 14: '..otttcsscttto..', 15: '.osttttcTTTTTso.', 16: '.osyyyyyyyyyyso.', 17: '..ottttTTTTTTo..' },
+  // A kimono reads at this size by its crossed collar, its wide sleeves reaching over the arms and the obi at the waist.
+  kimono: { 13: '....oTTTTTTo....', 14: '..oTTTTTTTTTTo..', 15: '.oTTTTTTTTTTTo.', 16: '.oTTTTTTTTTTTo.', 17: '..oTTTTTTTTTTo..' },
   polo: { 14: '..ottccttcctto..', 15: '.osttttccttttso.', 16: '.osttttccttttso.', 17: '..oTTTTTTTTTTo..' },
-  suit: { 14: '..okkkcrrckkko..', 15: '.oskkkcrrckkkso.', 16: '.oskkkkcckkkkso.', 17: '..okkkkkkkkkko..' },
+  // The jacket takes the colour: base tone for the body, darker for the lapels and hem, a shirt and a tie in the
+  // same colour's light tone, so nothing on it is a fixed colour.
+  suit: { 14: '..o' + 'TtttttttT' + 'o...', 15: '.os' + 'TttttttttT' + 'so.', 16: '.os' + 'TttttttttT' + 'so.', 17: '..o' + 'TTTTTTTTTT' + 'o..' },
   cardigan: { 14: '..otttccccttto..', 15: '.ostttyccytttso.', 16: '.ostttcccctttso.', 17: '..oTTTccccTTTo..' },
   apron: { 14: '..otttccccttto..', 15: '.osttccccccttso.', 16: '.osttccrrccttso.', 17: '..oTTccccccTTo..' },
   raincoat: { 14: '..oyyyccccyyyo..', 15: '.osyyyyykyyyyso.', 16: '.osyyyyykyyyyso.', 17: '..oyyyyyyyyyyo..' },
@@ -259,25 +280,47 @@ const OUTFIT_OVERLAY: Record<string, Overlay> = {
   puffer: { 14: '..otttTTTTttto..', 15: '.osttttttttttso.', 16: '.osTTTTTTTTTTso.', 17: '..otttttttttto..' },
   overalls: { 15: '.os' + 'tvttttttvt' + 'so.', 16: '.os' + 'vvvvvvvvvv' + 'so.', 17: '..o' + 'VVVVVVVVVV' + 'o..' },
   flannel: { 14: '..otTtccctTto...', 15: '.osTtTttTtTtTso.', 16: '.ostTtTTtTtTtso.', 17: '..oTtTtTtTtTto..' },
-  varsity: { 14: '..occtccccctcco.', 15: '.occtttcctttcco.', 16: '.occttttttttcco.', 17: '..occcccccccco..' },
+  // Sleeves and collar are always white, whatever colour the body is, with a zip line down the middle.
+  varsity: { 14: '..o' + 'wwtttttww' + 'o...', 15: '.owwtttcttttwwo.', 16: '.owwtttcttttwwo.', 17: '..owwTTcTTTwwo..' },
   denim: { 14: '..ovvvccccvvvo..', 15: '.osvvvttttvvvso.', 16: '.osvvvttttvvvso.', 17: '..oVVVttttVVVo..' },
   turtleneck: { 13: '....oTTTTTTo....', 14: '..otttTTTTttto..', 15: '.osttttttttttso.', 16: '.osttttttttttso.', 17: '..oTTTTTTTTTTo..' },
 };
 // Accessories go on top of everything; hats, headphones and ears also show from behind. a = the accessory's colour.
+// Frames ring the eyes, which are the four pixels at columns 4-5 and 10-11: the top rim sits on the brow line, a post
+// runs down each side of an eye, the bridge crosses the nose, and the bottom rim closes the lens on the mouth row. Lenses
+// are five wide (the eye, plus skin either side of it) and four tall, so they read as big frames, and every lens mirrors
+// across the face. The top rim starts on row 9 because a fringe has already reached that far; below it the lens is open.
 const ACC_OVERLAY: Record<string, Overlay> = {
-  glasses: { 10: '...kwekkkkwek...', 11: '...keeksskeek...' },
-  round: { 9: '....kk....kk....', 10: '...kwek..kwek...', 11: '...keekkkkeek...' },
-  shades: { 10: '..kkkkkkkkkkkk..', 11: '...kwkk..kwkk...' },
-  bandage: { 11: '..........c.....', 12: '.........cbc....', 13: '..........c.....' },
-  mask: { 11: '..c..........c..', 12: '..cccccccccccc..', 13: '...cccccccccc...' },
+  glasses: { 9: '..aaaaa..aaaaa..', 10: '..a...aaaa...a..', 11: '..a...a..a...a..' },
+  round: { 9: '...aaa....aaa...', 10: '..a...aaaa...a..', 11: '..a...a..a...a..', 12: '...aaa....aaa...' },
+  mask: { 11: '..a..........a..', 12: '..aaaaaaaaaaaa..', 13: '...aaaaaaaaaa...' },
   earring: { 13: '.y..............', 14: '.y..............' },
-  headphones: { 2: '....oaaaaaao....', 3: '...oa......ao...', 4: '..oa........ao..', 5: '.oa..........ao.', 6: '.oa..........ao.', 7: '.oa..........ao.', 8: '.oa..........ao.', 9: 'oaao........oaao', 10: 'oAbo........obAo', 11: 'oaao........oaao' },
+  headphones: { 2: '....oaaaaaao....', 3: '...oa......ao...', 4: '..oa........ao..', 5: '.oa..........ao.', 6: '.oa..........ao.', 7: '.oa..........ao.', 8: '.oa..........ao.', 9: 'oaao........oaao', 10: 'oAAo........oAAo', 11: 'oaao........oaao' },
   cap: { 2: '.....oooooo.....', 3: '...ooaaaaaaoo...', 4: '..oaaaaaaaaaao..', 5: '.oaalaaaaaaaaao.', 6: '.oaaaaaaaaaaaao.', 7: '.oAAAAAAAAAAAAo.', 8: 'oAAAAAAAAAAAAAo.' },
   beanie: { 0: '......owwo......', 1: '.....owwwwo.....', 2: '....ooaaaaoo....', 3: '...oaaaaaaaao...', 4: '..oaaaaaaaaaao..', 5: '.oaaaaaaaaaaaao.', 6: '.oaaaaaaaaaaaao.', 7: '.oAaAaAaAaAaAAo.', 8: '.oAAAAAAAAAAAAo.' },
   catears: { 0: '...o........o...', 1: '..oao......oao..', 2: '..oabo....obao..' },
+  // A slash across the right eye, three pixels from brow to cheek.
+  scar: { 9: '...........a....', 10: '..........a.....', 11: '..........a.....', 12: '.........a......' },
+  // A stitched cut on the left cheek: a short vertical line with a cross-thread at each end, the threads in its light tone.
+  stitch: { 10: '..ba............', 11: '...a............', 12: '..ba............' },
 };
 const ACC_BACK = new Set(['headphones', 'cap', 'beanie', 'catears']);
-const ACC_COL: Record<string, string> = { glasses: '#3a3448', round: '#b07a4e', shades: '#2b2530', headphones: '#e8e3dc', cap: '#e06a5a', beanie: '#5a5070', catears: '#3a3448', bandage: '#f2d8c0', mask: '#fffaf3', earring: '#ffd34d' };
+// Frames sit in front of the eyes, so their colour is what separates a lens from the pupil behind it: charcoal acetate
+// reads as a dark bar at this size, a lighter grey keeps the eye visible inside its rim.
+// These take a colour of their own from Me → Accessory colour (look.color.acc); the rest keep the shade below.
+export const ACC_TINT = ['glasses', 'round', 'mask', 'earring', 'headphones', 'cap', 'beanie', 'catears', 'scar', 'stitch'];
+export const ACC_COL: Record<string, string> = { glasses: '#6b6478', round: '#b07a4e', headphones: '#e8e3dc', cap: '#e06a5a', beanie: '#5a5070', catears: '#3a3448', bandage: '#f2d8c0', mask: '#fffaf3', earring: '#ffd34d', scar: '#8c2b33', stitch: '#8c2b33' };
+// Each accessory painted on 16 pixels needs its own three tones, so every one gets a palette letter triple: the colour
+// itself, a darker rim and a lighter shine. Overlay rows only say a/A, plus a few detail letters (a cap's shine, a
+// beanie's pom, a cat ear's inside, the earring itself), and all of those are rewritten to that accessory's own tones as
+// it is stamped. That is what lets several accessories be worn at once, each in the colour it was given.
+export const ACC_LETTERS: Record<string, [string, string, string]> = {
+  glasses: ['1', 'A', '@'], round: ['2', 'B', '#'], mask: ['3', 'C', '$'], headphones: ['4', 'D', '%'],
+  cap: ['5', 'E', '&'], beanie: ['6', 'F', '*'], catears: ['7', 'G', '?'], earring: ['8', 'J', '!'], scar: ['9', 'I', '^'],
+  stitch: ['0', 'K', ':'],
+};
+// The shades offered for those accessories; each one's own default is in ACC_COL, so it shows as a swatch too.
+export const ACC_COLORS = ['#6b6478', '#3a3448', '#5a5070', '#b07a4e', '#e06a5a', '#c05a6a', '#ffd34d', '#8fd0a8', '#6a8ad0', '#8a6ad0', '#e8e3dc', '#fffaf3', '#ffffff', '#f7a0a8'];
 // Body types reshape the torso a pixel at a time, so they work with every outfit.
 const edges = (row: string) => [row.search(/[^.]/), row.length - 1 - [...row].reverse().join('').search(/[^.]/)];
 function widen(row: string) {
@@ -341,7 +384,6 @@ const HAIRLINE: Record<string, [string, string]> = {
   long: ['hhhjhhhhjhhH', 'hhhshhhhshhH'], // parted down the middle
   wavy: ['hhhjhhhhjhhH', 'hshshhhhshsh'], // parted, soft at the edges
   shaggy: ['hhHhhhHhhhHh', 'sHshHsshHssh'], // choppy layers
-  halfup: ['sshhhhhhhhss', 'sshhshhshhss'], // the front swept up into the tie
   wolf: ['hHhhHhhHhhHh', 'hsHsshHssHsh'], // choppy, strands over the brows
   sidelong: ['hhhhhhhhhhhH', 'hhhhhhhsssss'], // one long fringe to the side
 };
@@ -376,7 +418,6 @@ const HAIR_FLOW: Record<string, HairFlow> = {
   wavy: { part: 7, sweep: 0.2, depth: 0.6 },
   shaggy: { sweep: -0.5, depth: 0.7 },
   twintails: { sweep: 0.2, depth: 0.4 },
-  halfup: { sweep: -0.2, depth: 0.4 },
   wolf: { sweep: 0.4, depth: 0.7 },
   sidelong: { sweep: 1, depth: 0.5 },
   braids: { sweep: 0.2, depth: 0.5 },
@@ -399,17 +440,28 @@ function shadeHair(rows: string[], style = '', up = false) {
     if (ch !== 'h') return ch; // tones painted on purpose stay put
     const above = rows[y - 1]?.[x], below = rows[y + 1]?.[x], left = row[x - 1], right = row[x + 1];
     const d = y - top[x]; // how far down the hair this pixel sits
-    if ([above, below, left, right].some((n) => n === 's' || n === 'S')) return 'j'; // the fold onto the face
-    if (!isHair(below)) return 'j'; // the lowest edge of the hair
-    if (d <= 1 && !isHair(above)) return 'l'; // the lit rim along the crown
-    if (depth > 0.35 && !isHair(rows[y + 2]?.[x])) return 'H'; // one row above the edge
+    // The fold onto the face and the lowest edge of the hair are the darkest.
+    // Any face pixel counts as the face here, so changing expression never reshades the hair next to it.
+    if ([above, below, left, right].some((n) => n === 's' || n === 'S' || n === 'e' || n === 'w' || n === 'm' || n === 'b' || n === 'q')) return 'j';
+    if (!isHair(below)) return 'j';
+    // A bright rim along the crown, and along every layer's lip where a row carries on past the one below it.
+    if (d <= 1 && !isHair(above)) return 'L';
     if (flow.part !== undefined && Math.abs(x - flow.part) < 1 && y < crown + 7) return 'j'; // the parting
+    // Hair falls in strands that part along the style's own sweep: a highlight along the crown of each lock and a
+    // shadow in the trough between them, so the head reads as hair and not as a smooth ball.
     const round = ((Math.atan2(x - mid, y + 0.5 - crown) * 180) / Math.PI + sweep * 45 + 720) % 360;
-    const lock = (round / 22) % 1; // where across its lock this pixel sits
-    if (gloss !== 'none' && d >= 1 && d <= 2 && Math.abs(lock - 0.5) < 0.3) return 'l'; // the shine
-    if (Math.abs(lock - 0.5) < 0.11 && d >= 3) return 'H'; // where two locks part
-    if ((!isHair(left) || !isHair(right)) && d > 2) return 'H'; // the outer edge, turning away
-    return ch;
+    const lock = (round / 16) % 1; // where across its lock this pixel sits
+    const atCenter = Math.abs(lock - 0.5);
+    if (gloss !== 'none' && d >= 1 && d <= 4 && atCenter < 0.24) return 'L'; // the shine on glossy styles
+    if (d >= 2 && atCenter < 0.06) return 'H'; // the trough between two locks
+    if (d >= 2 && isHair(below) && !isHair(rows[y + 2]?.[x]) && depth > 0.3) return 'l'; // a layer's lip
+    if (d >= 3 && isHair(rows[y - 1]?.[x]) && !isHair(rows[y - 2]?.[x])) return 'l'; // the lip of the layer above
+    if ((!isHair(left) || !isHair(right)) && d > 2) return 'H'; // the outer edge, turning away from the light
+    // Volume: lit at the crown, shading down to the underside.
+    if (d <= 2) return 'L';
+    if (d <= 4) return 'h';
+    if (d <= 6) return 'H';
+    return 'j';
   }).join(''));
 }
 // The mohawk from behind: its crest runs down the back of the head, shaved either side.
@@ -418,54 +470,169 @@ const MOHAWK_BACK: Overlay = {
   13: '..osssHhhHssso..',
 };
 
+// A face is eyes and a mouth, so it has to stay on the head. Rows below the mouth row would paint over the neck and the
+// collar of the outfit (a hoodie's collar sits on the row under the mouth), so a face's lower rows move up onto the mouth
+// row, taking the head's own hair and outline at the temples rather than its neck outline.
+// Pixels a face is allowed to change: the skin itself and the features already on it. Hair, outline and clothing are
+// never touched, so a fringe, a side lock or a collar keeps its shape whatever face is picked.
+const FACE_PX = new Set(['s', 'S', 'e', 'w', 'b', 'm', 'q', 'y']);
+// The head's own eyes, blush and mouth. A long style that lays skin across rows 10-12 erases them, so they are stamped
+// back on top of that skin (never on hair).
+const FACE_MARKS: Overlay = { 10: '....we....we....', 11: '....ee....ee....', 12: '....b..mm..b....' };
+// The four eye pixels of each eye row. A fringe that reaches into them is cut back to skin, so the eyes always read and
+// the hair keeps its shape everywhere else instead of being painted over.
+const EYE_COLS = { 10: [4, 5, 10, 11], 11: [4, 5, 10, 11] } as Record<number, number[]>;
+// The scars pass behind the eye: their pixels never paint over an eye, so the cut stops at the eye and the face reads.
+const BEHIND_EYE = new Set(['scar', 'stitch']);
+const EYE_PX = new Set(['w', 'e', 'y']);
+function clearEyes(rows: string[]) {
+  return rows.map((row, y) => {
+    const cols = EYE_COLS[y];
+    if (!cols) return row;
+    const s = [...row];
+    for (const x of cols) if ('hHjlL'.includes(s[x])) s[x] = 's';
+    return s.join('');
+  });
+}
+function stampFace(rows: string[]) {
+  return rows.map((row, y) => {
+    const marks = FACE_MARKS[y];
+    if (!marks) return row;
+    return [...row].map((ch, x) => (marks[x] !== '.' && FACE_PX.has(ch) ? marks[x] : ch)).join('');
+  });
+}
+
+// Face rows are absolute, the same shape as every other overlay: row 12 is the lip line under the eyes and row 13 the
+// jaw, which is where a frown's corners or an open mouth go. Nothing is folded back up onto the lip row, so a mouth can
+// span the two rows instead of being squashed into one.
+const faceOverlay = (face?: string): Overlay | undefined => FACE_OVERLAY[face ?? ''];
+
 function avatarRows(look: Look, step: number, up: boolean) {
   let rows = [BLANK, BLANK, ...(up ? HEAD_BACK : HEAD_FRONT), ...(up ? BODY_BACK : BODY_FRONT), ...LEGS[step]];
-  const key = look.style ?? '';
+  // A retired style in a saved look falls back to the default rather than leaving the head bare.
+  const key = look.style && STYLE_OVERLAY[look.style] ? look.style : 'short';
   const base = STYLE_OVERLAY[key];
   const line = HAIRLINE[key];
   const style = base && line ? { ...base, 8: '.o' + line[0] + 'o.', 9: '.o' + line[1] + 'o.' } : base;
   const backStyle = !up || !style ? style : key === 'mohawk' ? { ...style, ...MOHAWK_BACK } : fromBehind(style);
-  const layers = [OUTFIT_OVERLAY[look.outfit ?? ''], backStyle, up ? null : FACE_OVERLAY[look.face ?? '']];
+  const layers = [OUTFIT_OVERLAY[look.outfit ?? ''], backStyle];
   for (const over of layers) {
     if (!over) continue;
     rows = rows.map((row, y) => (over[y] ? [...row].map((ch, x) => (over[y][x] !== '.' ? over[y][x] : ch)).join('') : row));
   }
+  // No style may hang hair across the face. A fringe stops at the brow, so below it the face opening (columns 4-11, rows
+  // 10-13) is skin: a lock drawn a column too far in can never drop a strand over a cheek, an eye or the mouth.
+  if (!up) rows = rows.map((row, y) => {
+    if (y < 10 || y > 13) return row;
+    const s = [...row];
+    for (let x = 4; x <= 11; x++) if ('hHjlL'.includes(s[x])) s[x] = 's';
+    return s.join('');
+  });
+  // The wolf's fur is drawn with outline lines as well as fill, and those cut across the cheek: inside the face they go.
+  if (!up && key === 'wolf') rows = rows.map((row, y) => (y >= 10 && y <= 12
+    ? [...row].map((ch, x) => (x >= 2 && x <= 12 && ch === 'o' ? 's' : ch)).join('') : row));
+  // The locks framing the cheeks are evened up: a row drawn a column off centre is shifted back onto the head, and the
+  // two sides are mirrored, so no style has hair on one cheek and skin on the other. The crown keeps its own sweep.
+  if (!up) rows = rows.map((row, y) => {
+    if (y < 10 || y > 13) return row;
+    let r = [...row];
+    const first = r.findIndex((ch) => ch !== '.');
+    const last = 15 - [...row].reverse().join('').search(/[^.]/);
+    if (first >= 0 && last - first >= 9) {
+      const shift = Math.floor((16 - (last - first + 1)) / 2) - first;
+      for (let k = 0; k < Math.abs(shift); k++) {
+        if (shift > 0) { r.pop(); r.unshift('.'); } else { r.shift(); r.push('.'); }
+      }
+    }
+    if (!LOP.has(key)) {
+      for (let x = 0; x <= 7; x++) {
+        const m = 15 - x;
+        const hair = 'hHjlsSo';
+        if (hair.includes(r[x]) && (hair.includes(r[m]) || r[m] === '.')) r[m] = r[x];
+      }
+    }
+    return r.join('');
+  });
+  // Hairstyles that reach down over the face must not take the eyes and mouth with them.
+  if (!up) rows = stampFace(clearEyes(rows));
+  const face = up ? undefined : faceOverlay(look.face);
+  // A face only paints the face opening (columns 3-12) and only over skin or an existing feature, so it can never bleed
+  // onto the hair, the outline, or the collar under the chin.
+  if (face) rows = rows.map((row, y) => (face[y] ? [...row].map((ch, x) => (face[y][x] !== '.' && x >= 3 && x <= 12 && FACE_PX.has(ch) ? face[y][x] : ch)).join('') : row));
   if (!up && CROPPED.has(look.style ?? 'short')) rows = rows.map((row, y) => (y >= 9 && y <= 12 ? `${row.slice(0, 2)}s${row.slice(3, 13)}s${row.slice(14)}` : row));
-  const acc = ACC_OVERLAY[look.acc ?? ''];
-  if (acc && (!up || ACC_BACK.has(look.acc!))) rows = rows.map((row, y) => (acc[y] ? [...row].map((ch, x) => (acc[y][x] !== '.' ? acc[y][x] : ch)).join('') : row));
+  // Every worn accessory is stamped in turn, each with its own colour letters, so they stack.
+  for (const name of look.accs ?? []) {
+    const acc = ACC_OVERLAY[name];
+    if (!acc || (up && !ACC_BACK.has(name))) continue;
+    const [base, dark, light] = ACC_LETTERS[name] ?? ['1', 'A', '@'];
+    rows = rows.map((row, y) => (acc[y] ? [...row].map((ch, x) => {
+      const v = acc[y][x];
+      if (v === '.') return ch;
+      if (BEHIND_EYE.has(name) && EYE_COLS[y]?.includes(x) && EYE_PX.has(ch)) return ch; // the eye stays on top
+      if (v === 'a' || v === 'y') return base; // 'y' is the earring's own body
+      if (v === 'A') return dark;
+      // Details that used to borrow another part's shade: a cap's shine, a beanie's pom, a cat ear's inside.
+      return v === 'l' || v === 'w' || v === 'b' ? light : v;
+    }).join('') : row));
+  }
+  // Shading folds a strand onto the cheek beside the hair, so the face is cleared once more after it.
+  if (!up) rows = rows.map((row, y) => (y < 10 || y > 13 ? row : [...row].map((ch, x) => (x >= 4 && x <= 11 && 'hHjlL'.includes(ch) ? 's' : ch)).join('')));
   const shape = BODY_SHAPE[look.body ?? ''];
   if (shape) rows = rows.map((row, y) => shape[y]?.(row) ?? row);
   return shadeHair(shadeBody(rows), key, up);
 }
 
 // Volume across the torso: light down the left edge and shadow down the right, the same light as the hair and the
-// furniture. Only the plain shirt pixels are touched, so printed outfits keep their own detail.
+// furniture. Only the plain garment pixels are touched, so printed outfits keep their own detail.
 function shadeBody(rows: string[]) {
   return rows.map((row, y) => {
     if (y < 14 || y > 17) return row;
     const s = [...row];
-    const span = (ch: string) => s.reduce<number[]>((xs, c, x) => (c === ch ? [...xs, x] : xs), []);
-    const shirt = span('t');
-    if (shirt.length >= 3) { s[shirt[0]] = 'u'; s[shirt[shirt.length - 1]] = 'T'; }
-    const skin = span('s');
+    // The garment is whatever letter fills the middle of the row (t, T, v, k, Y, c...); skin (s/S) and outline (o) stay.
+    const counts: Record<string, number> = {};
+    // w is pure white trim (a fixed colour, not the garment), so it is never shaded with the shirt colour.
+    for (let x = 2; x < 14; x++) { const ch = s[x]; if (ch && ch !== 's' && ch !== 'S' && ch !== 'o' && ch !== 'w') counts[ch] = (counts[ch] ?? 0) + 1; }
+    const garment = Object.entries(counts).sort((a, b) => b[1] - a[1])[0]?.[0];
+    if (!garment) return row;
+    const xs = s.reduce<number[]>((xs, c, x) => (c === garment ? [...xs, x] : xs), []);
+    if (xs.length >= 3) { s[xs[0]] = 'u'; s[xs[xs.length - 1]] = 'T'; }
+    const skin = s.reduce<number[]>((xs, c, x) => (c === 's' || c === 'S' ? [...xs, x] : xs), []);
     if (skin.length >= 2) s[skin[skin.length - 1]] = 'S';
     return s.join('');
   });
 }
 
+// One colour, many tones: lighten or darken a colour in place, never mixing towards another hue, so hair strands and an
+// accessory's rim and shine stay in the colour that was picked.
+const toneOf = (hex: string, k: number) => {
+  const n = parseInt(tone(hex).slice(1, 7), 16);
+  const ch = (v: number) => Math.max(0, Math.min(255, Math.round(k < 0 ? v * (1 + k) : v + (255 - v) * k))).toString(16).padStart(2, '0');
+  return `#${ch(n >> 16)}${ch((n >> 8) & 255)}${ch(n & 255)}`;
+};
 // x, y = top-left of the tile the avatar stands on; the sprite overhangs the tile above.
 const lookPal = (look: Look): Record<string, string> => {
-  const acc = ACC_COL[look.acc ?? ''] ?? '#5a5070';
+  const tint = (k: string, base: string) => (look.color?.[k] || base);
+  // Three palette entries per accessory, under the letters that accessory is painted with: its colour, a darker rim and
+  // a lighter shine, so nothing borrows another part's tone.
+  const accPal: Record<string, string> = {};
+  for (const [name, [base, dark, light]] of Object.entries(ACC_LETTERS)) {
+    const col = look.color?.[`acc:${name}`] || ACC_COL[name] || '#5a5070';
+    accPal[base] = col;
+    accPal[dark] = toneOf(col, -0.28);
+    accPal[light] = toneOf(col, 0.22);
+  }
   return {
-    o: OUT, h: look.hair, H: shade(look.hair, -0.24), j: shade(look.hair, -0.42), l: shade(look.hair, 0.3),
-    s: look.skin, S: shade(look.skin, -0.1), e: '#2a1e26', w: '#ffffff', b: '#f7a0a8', m: '#c8606a', q: '#7fc4f0',
-    t: look.shirt, T: shade(look.shirt, -0.15), u: shade(look.shirt, 0.15), c: '#fff4e6', d: '#7a5040', a: acc, A: shade(acc, -0.15),
+    o: OUT, h: tint('hair', look.hair), H: toneOf(tint('hair', look.hair), -0.34), j: toneOf(tint('hair', look.hair), -0.58), l: toneOf(tint('hair', look.hair), 0.05), L: toneOf(tint('hair', look.hair), 0.14),
+    s: look.skin, S: shade(look.skin, -0.1), // a skin tone is always one of the presets, never a tint
+    e: '#2a1e26', w: '#ffffff', b: '#f7a0a8', m: '#c8606a', q: '#7fc4f0',
+    t: tint('shirt', look.shirt), T: shade(tint('shirt', look.shirt), -0.15), u: shade(tint('shirt', look.shirt), 0.15), c: '#fff4e6', d: '#7a5040',
+    ...accPal,
     v: '#6a8ad0', V: '#5a78bc', r: '#e06a5a', y: '#ffd34d', k: '#3a3448', g: '#8fd0a8', p: look.outfit === 'overalls' ? '#5a78bc' : '#5a5080',
   };
 };
 export function drawAvatar(c: Ctx, look: Look, x: number, y: number, step: number, up: boolean) {
   const k = avatarScale(look);
-  const key = `av|${Object.values(look).join()}|${step}${up}`;
+  const key = `av|${lookKey(look)}|${step}${up}`;
   const sprite = baked(key, 16, AVATAR_H, (g) => paintRows(g, avatarRows(look, step, up), lookPal(look)));
   // Scaled from the feet, so a big character still stands squarely on their tile.
   const wide = 4 * k, wider = 5 * k;
@@ -537,7 +704,7 @@ const CHAIRS: Record<string, { col: string; back: ChairPart; seat: ChairPart }> 
 
 // Head and body only, for poses where something hides the legs.
 function seatedSprite(look: Look) {
-  return baked(`sit|${Object.values(look).join()}`, 16, 18, (g) => paintRows(g, avatarRows(look, 0, false).slice(0, 18), lookPal(look)));
+  return baked(`sit|${lookKey(look)}`, 16, 18, (g) => paintRows(g, avatarRows(look, 0, false).slice(0, 18), lookPal(look)));
 }
 // The seated sprite's top `rows` pixels (all of it by default) at x, y, scaled from the bottom of those rows.
 // fromTop pins the head where it is instead (a sleeper's head stays on the pillow, however tall they are).
@@ -622,7 +789,7 @@ export function drawActing(c: Ctx, look: Look, act: string, item: string, x: num
     r(c, x + 4, y + 14, 8, 2, 'rgba(58,38,51,0.18)'); // shadow stays on the floor
     // Hanging from the bar, so the hands stay on it and a taller body simply reaches further down.
     scaledAt(c, avatarScale(look), x + 8, y - 18, () => {
-      c.drawImage(baked(`av|${Object.values(look).join()}|0true`, 16, AVATAR_H, (g) => paintRows(g, avatarRows(look, 0, true), lookPal(look))), x, ay);
+      c.drawImage(baked(`av|${lookKey(look)}|0true`, 16, AVATAR_H, (g) => paintRows(g, avatarRows(look, 0, true), lookPal(look))), x, ay);
       for (const ax of [2, 12]) r(c, x + ax, y - 17, 2, ay + 10 - (y - 17), look.skin); // arms up to the bar
       for (const ax of [1, 11]) r(c, x + ax, y - 18, 4, 2, shade(look.skin, -0.1)); // hands round it
     });
@@ -935,13 +1102,13 @@ export const NIGHT_TINT: Record<Sky, string> = { day: '', dusk: 'rgba(90,60,120,
 
 // Warm light added on top of the night tint ('lighter' blending brightens what is underneath).
 // Light spreads well past its source (GLOW_REACH times the listed radius): bright near it, then a long soft falloff.
-export const GLOW_REACH = 5;
+export const GLOW_REACH = 4;
 export function drawGlow(c: Ctx, x: number, y: number, rad: number, alpha: number) {
   rad *= GLOW_REACH;
   const g = c.createRadialGradient(x, y, 1, x, y, rad);
-  g.addColorStop(0, `rgba(255,214,140,${alpha})`);
-  g.addColorStop(0.35, `rgba(255,214,140,${alpha * 0.55})`);
-  g.addColorStop(1, 'rgba(255,214,140,0)');
+  g.addColorStop(0, `rgba(255,196,120,${alpha})`);
+  g.addColorStop(0.3, `rgba(255,208,140,${alpha * 0.5})`);
+  g.addColorStop(1, 'rgba(255,208,140,0)');
   c.save();
   c.globalCompositeOperation = 'lighter';
   c.fillStyle = g;
@@ -1385,13 +1552,13 @@ const DRAW: Record<string, Draw> = {
     box(c, x + 4, Y + 20, 8, 8, col);
     r(c, x + 5, Y + 21, 6, 1, shade(col, 0.15));
   },
-  lamp(c, x, y, t, col = '#ffd98a') {
+  lamp(c, x, y, t, col = '#ffb454') {
     const Y = y - 12;
-    const glow = c.createRadialGradient(x + 8, Y + 8, 1, x + 8, Y + 8, 26);
-    glow.addColorStop(0, `rgba(255,236,170,${0.32 + 0.05 * Math.sin(t / 600)})`);
-    glow.addColorStop(1, 'rgba(255,236,170,0)');
+    const glow = c.createRadialGradient(x + 8, Y + 8, 1, x + 8, Y + 8, 20);
+    glow.addColorStop(0, `rgba(255,196,120,${0.32 + 0.05 * Math.sin(t / 600)})`);
+    glow.addColorStop(1, 'rgba(255,196,120,0)');
     c.fillStyle = glow;
-    c.fillRect(x - 18, Y - 18, 52, 52);
+    c.fillRect(x - 14, Y - 14, 44, 44);
     box(c, x + 4, Y + 24, 8, 4, '#a08cc0');
     r(c, x + 7, Y + 11, 3, 14, OUT);
     r(c, x + 8, Y + 11, 1, 14, '#d8c8f0');
@@ -2835,13 +3002,13 @@ const HD: Record<string, HdDraw> = {
     R(c, 5, Y + 18, 6, 0.5, '#f2b48a');
     R(c, 5, Y + 20, 6, 0.5, shade('#e8956e', -0.08));
   },
-  lamp(c, t, col = '#ffd98a') {
+  lamp(c, t, col = '#ffb454') {
     const Y = -12;
-    const glow = c.createRadialGradient(8 * AV, (Y + 8) * AV, AV, 8 * AV, (Y + 8) * AV, 26 * AV);
-    glow.addColorStop(0, `rgba(255,236,170,${0.32 + 0.05 * Math.sin(t / 600)})`);
-    glow.addColorStop(1, 'rgba(255,236,170,0)');
+    const glow = c.createRadialGradient(8 * AV, (Y + 8) * AV, AV, 8 * AV, (Y + 8) * AV, 20 * AV);
+    glow.addColorStop(0, `rgba(255,196,120,${0.32 + 0.05 * Math.sin(t / 600)})`);
+    glow.addColorStop(1, 'rgba(255,196,120,0)');
     c.fillStyle = glow;
-    c.fillRect(-18 * AV, (Y - 18) * AV, 52 * AV, 52 * AV);
+    c.fillRect(-14 * AV, (Y - 14) * AV, 44 * AV, 44 * AV);
     B(c, 4, Y + 24, 8, 4, '#a08cc0');
     R(c, 5, Y + 24.5, 6, 0.5, '#c0b0e0');
     R(c, 7, Y + 11, 2, 14, OUT);

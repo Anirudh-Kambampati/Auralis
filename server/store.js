@@ -38,7 +38,7 @@ export function changedRows(db, lastJson) {
   for (const h of Object.values(db.houses)) { const j = JSON.stringify(h); if (lastJson.get(`h:${h.code}`) !== j) out.push([`h:${h.code}`, h, j]); }
   return out;
 }
-export const rowMessage = (r) => ({ id: Number(r.id), from: r.from_id, by: r.by_name, text: r.body, at: Number(r.at), ...(r.img && { img: r.img }) });
+export const rowMessage = (r) => ({ id: Number(r.id), from: r.from_id, by: r.by_name, text: r.body, at: Number(r.at), ...(r.img && { img: r.img }), ...(r.reply_to ? { replyTo: r.reply_to } : {}) });
 
 export function openStore(file, legacyJsonFile) {
   const sql = new DatabaseSync(file);
@@ -53,18 +53,21 @@ export function openStore(file, legacyJsonFile) {
       created integer not null
     );
     create table if not exists auth (token text primary key, player_id text not null, expires integer not null);
-    create table if not exists messages (id integer primary key, thread text not null, from_id text not null, by_name text not null, body text not null, img text, at integer not null);
+    create table if not exists messages (id integer primary key, thread text not null, from_id text not null, by_name text not null, body text not null, img text, reply_to text, at integer not null);
     create index if not exists messages_thread on messages (thread, id);
     create index if not exists auth_player on auth (player_id);
     create index if not exists messages_img on messages (img) where img is not null;
     -- One row per pair of players (a < b): 'pending' (asked_by sent the request) or 'accepted'.
     create table if not exists friends (a text not null, b text not null, status text not null, asked_by text not null, at integer not null, primary key (a, b));
+    create table if not exists reset_tokens (player_id text not null, token text primary key, expires integer not null);
   `);
   // Email arrived after the first accounts, so add it to older databases too.
   if (!sql.prepare("select 1 from pragma_table_info('accounts') where name = 'email'").get()) sql.exec('alter table accounts add column email text');
   sql.exec('create unique index if not exists accounts_email on accounts (lower(email)) where email is not null');
   // An account's coins live in their own column; it wins over the copy in the player's JSON.
   if (!sql.prepare("select 1 from pragma_table_info('accounts') where name = 'coins'").get()) sql.exec('alter table accounts add column coins integer');
+  // A message can quote another one in the same thread: who it's replying to.
+  if (!sql.prepare("select 1 from pragma_table_info('messages') where name = 'reply_to'").get()) sql.exec('alter table messages add column reply_to text');
 
   const db = { players: {}, houses: {} };
   for (const r of sql.prepare('select id, data from players').all()) db.players[r.id] = JSON.parse(r.data);
@@ -124,8 +127,8 @@ export function openStore(file, legacyJsonFile) {
     fs.renameSync(legacyJsonFile, `${legacyJsonFile}.imported`);
   }
 
-  const addMsg = sql.prepare('insert or ignore into messages (id, thread, from_id, by_name, body, img, at) values (?, ?, ?, ?, ?, ?, ?)');
-  const addMessage = (thread, m) => addMsg.run(m.id, thread, m.from ?? '', m.by ?? '', m.text ?? '', m.img ?? null, m.at ?? 0);
+  const addMsg = sql.prepare('insert or ignore into messages (id, thread, from_id, by_name, body, img, reply_to, at) values (?, ?, ?, ?, ?, ?, ?, ?)');
+  const addMessage = (thread, m) => addMsg.run(m.id, thread, m.from ?? '', m.by ?? '', m.text ?? '', m.img ?? null, m.replyTo ?? null, m.at ?? 0);
   // First run with the messages table: copy in the chat history the rows already hold.
   if (!sql.prepare('select 1 from messages limit 1').get()) {
     sql.exec('begin');
@@ -171,7 +174,27 @@ export function openStore(file, legacyJsonFile) {
       const row = sql.prepare('select player_id, expires from auth where token = ?').get(sha(token));
       return row && row.expires > Date.now() ? row.player_id : null;
     },
-    revokeToken: (token) => sql.prepare('delete from auth where token = ?').run(sha(String(token))),
+    setPassword: (playerId, password) => {
+        const hashed = hashPassword(password);
+        return sql.prepare('update accounts set pass = ? where player_id = ?').run(hashed, playerId).changes > 0;
+      },
+      // Create a password reset token (valid for 1 hour)
+      createResetToken: (playerId, token, expires) => {
+        return sql.prepare('insert or replace into reset_tokens (player_id, token, expires) values (?, ?, ?)').run(playerId, token, expires).changes > 0;
+      },
+      // Reset password using a valid token
+      resetPassword: (token, newPassword) => {
+        const row = sql.prepare('select player_id, expires from reset_tokens where token = ?').get(token);
+        if (!row || row.expires < Date.now()) return false;
+        const ok = sql.prepare('update accounts set pass = ? where player_id = ?').run(hashPassword(newPassword), row.player_id).changes > 0;
+        if (ok) sql.prepare('delete from reset_tokens where token = ?').run(token);
+        return ok;
+      },
+      setPassword: (playerId, password) => {
+        const hashed = hashPassword(password);
+        return sql.prepare('update accounts set pass = ? where player_id = ?').run(hashed, playerId).changes > 0;
+      },
+      revokeToken: (token) => sql.prepare('delete from auth where token = ?').run(sha(String(token))),
     close: () => sql.close(),
   };
 }
