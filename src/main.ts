@@ -2430,6 +2430,23 @@ $('#chatUnreply').addEventListener('click', () => { replyTo = null; renderSide()
   const chatMsg = (x: { text: string; img?: string; replyTo?: number }) => (groupOf(dmPeer) ? { t: 'gmsg', g: dmPeer!.slice(2), ...x } : dmPeer ? { t: 'dm', to: dmPeer, ...x } : { t: 'chat', ...x });
   let staged: File | null = null, stagedUrl = '', sending = false; // the chat attachment waiting for Send (see stage())
   let replyTo: { id: number; by: string; text: string } | null = null; // the message being quoted in my next send
+
+// Quote a message for my next reply: show the strip above the box and pull its text
+// into the composer so it travels with the reply being written.
+function setReply(c: Chat) {
+  replyTo = { id: c.id, by: c.by, text: c.text };
+  const box = $<HTMLTextAreaElement>('#chatInput');
+  const body = (c.text || 'Picture').replace(/\n/g, ' ');
+  let prefix = `> ${c.by}: ${body}\n\n`;
+  const MAX = box.maxLength || 200;
+  if (prefix.length > MAX) prefix = `> ${c.by}: ${body.slice(0, Math.max(0, MAX - 12))}…\n\n`;
+  const current = box.value.trim();
+  box.value = current ? prefix + current : prefix;
+  if (box.value.length > MAX) box.value = box.value.slice(0, MAX);
+  box.dispatchEvent(new Event('input'));
+  renderSide();
+  box.focus();
+}
 const syncUnread = () => { unread = houseUnread > 0 || Object.values(dmUnread).some(Boolean); tickTimers(); };
 // Is this thread (null = the house) on screen right now?
 const viewing = (peer: string | null) => chatOpen && dmPeer === peer && ui.body.dataset.side === 'chat' && !ui.hidden;
@@ -2578,12 +2595,13 @@ $('#chatLog').addEventListener('click', (e) => {
   if (doc) return openDoc(doc.dataset.key!);
   const img = (e.target as HTMLElement).closest<HTMLImageElement>('img.chat-img');
   if (img?.src) open(img.src, '_blank', 'noopener');
-  // Tap a message to quote it in your reply; tap the reply strip (or its ✕) to drop it.
-  const quote = (e.target as HTMLElement).closest<HTMLElement>('[data-quote]');
-  if (quote) {
-    if (quote.closest('#chatReply')) return replyTo = null;
-    const c = threadMsgs(dmPeer).find((x) => x.id === Number(quote.dataset.quote));
-    if (c) replyTo = { id: c.id, by: c.by, text: c.text };
+  // One click on the reply button quotes the message and pulls its text into the composer.
+  const replyBtn = (e.target as HTMLElement).closest<HTMLButtonElement>('.chat-reply');
+  if (replyBtn) {
+    const quote = replyBtn.closest<HTMLElement>('[data-quote]');
+    const c = quote ? threadMsgs(dmPeer).find((x) => x.id === Number(quote.dataset.quote)) : null;
+    if (c) setReply(c);
+    e.stopPropagation();
     return;
   }
 });
