@@ -2475,14 +2475,14 @@ function syncChatList() {
   const lastAt = (l: Chat[]) => l[l.length - 1]?.at ?? 0;
   const rows: { id: string; name: string; pic: string; list: Chat[]; n: number; dm: boolean; on?: boolean; pal?: boolean }[] = [{ id: '', name: 'House chat', pic: uiIconURL('house'), list: chat, n: houseUnread, dm: false },
     ...Object.entries(me.groups ?? {}).map(([gid, g]) => ({ id: `g:${gid}`, name: g.name, pic: uiIconURL('chat'), list: g.msgs, n: dmUnread[`g:${gid}`] ?? 0, dm: false })),
-    ...[...others, ...pals].map((m) => ({ id: m.id, name: m.name, pic: faceURL(m.look), list: me.dm?.[m.id] ?? [], n: dmUnread[m.id] ?? 0, dm: true, on: pals.includes(m as Friend) && m.online, pal: pals.includes(m as Friend) }))]
+    ...[...others, ...pals].map((m) => ({ id: m.id, name: m.name, pic: faceURL(m.look), list: me.dm?.[m.id] ?? [], n: dmUnread[m.id] ?? 0, dm: true, on: m.online, pal: pals.includes(m as Friend) }))]
     .sort((x, y) => lastAt(y.list) - lastAt(x.list)); // newest first; nobody-said-anything-yet at the bottom
   const rowsHTML = rows.map((r) => {
     const c = r.list[r.list.length - 1];
     const who = !c ? '' : c.from === myId ? 'You: ' : r.dm || !c.by ? '' : `${esc(c.by)}: `; // group notes ("made the group") have no speaker
     const preview = c ? `${who}${c.img ? esc(attachLabel(c.img)) : esc(c.text)}` : r.dm ? (r.pal ? 'Say hi 👋' : 'Say hi 👋') : 'Talk to the whole house';
     return `<li><button class="chat-row${r.n ? ' unread' : ''}" data-peer="${r.id}"><span class="chat-face-wrap${'on' in r && r.on ? ' on' : ''}"><img class="chat-face${r.dm ? '' : ' house'}" src="${r.pic}" alt=""></span>
-      <span class="chat-mid"><b>${esc(r.name)}</b><small>${preview}</small></span>
+      <span class="chat-mid"><b>${esc(r.name)}</b>${r.dm ? `<span class="chat-online${r.on ? ' on' : ''}">${r.on ? 'Online' : 'Offline'}</span>` : ''}<small>${preview}</small></span>
       <span class="chat-end">${c ? `<small>${ago(c.at)}</small>` : ''}${r.n ? `<i>${r.n > 99 ? '99+' : r.n}</i>` : ''}</span></button></li>`;
   }).join('');
   // Friend requests on top: theirs to answer, mine waiting.
