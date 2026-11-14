@@ -767,7 +767,18 @@ export function drawActing(c: Ctx, look: Look, act: string, item: string, x: num
     r(c, x + 4, y + 3 + beat * 2, 3, 4, PANTS);
     r(c, x + 9, y + 5 - beat * 2, 3, 4, PANTS);
   } else if (act === 'stretch') {
-    drawAvatar(c, look, x, y - 2 + (Math.floor(t / 500) % 2) * 3, 0, false);
+    const bob = (Math.floor(t / 500) % 2) * 3;
+    const ay = y - 2 + bob;
+    drawAvatar(c, look, x, ay, 0, false);
+    // Resistance bands stretched between the hands, lengthening as they pull apart.
+    const stretch = Math.round(Math.abs(Math.sin(t / 450)) * 6);
+    const h1 = x + 4, h2 = x + 12 - stretch;
+    const mid = Math.round((h1 + h2) / 2);
+    const by = ay + 8;
+    r(c, h1, by, mid - h1, 1, '#f48a8a');
+    r(c, mid, by, h2 - mid, 1, '#8fd0a8');
+    r(c, h1 - 1, by - 1, 3, 3, OUT);
+    r(c, h2 - 2, by - 1, 3, 3, OUT);
   } else if (act === 'run') {
     drawAvatar(c, look, x, y - 3, 1 + (Math.floor(t / 110) % 2), false);
   } else if (act === 'lift') {
@@ -877,6 +888,41 @@ export function drawFloor(c: Ctx, x: number, y: number, color: string, tx: numbe
         if (across) { r(g, qx, qy + 3, 8, 1, line); r(g, qx, qy + 7, 8, 1, line); }
         else { r(g, qx + 3, qy, 1, 8, line); r(g, qx + 7, qy, 1, 8, line); }
       }
+    } else if (style === 'mosaic') { // small bold squares of a deeper tone
+      const d = shade(color, -0.30);
+      for (let i = 0; i < 4; i++) for (let j = 0; j < 4; j++) r(g, i * 4 + 1, j * 4 + 1, 2, 2, d);
+    } else if (style === 'bamboo') { // vertical bamboo segments with nodes
+      const d = shade(color, -0.25);
+      for (let x = 2; x < T; x += 4) { r(g, x, 0, 1, T, d); for (let y = 0; y < T; y += 6) r(g, x - 1, y, 3, 1, d); }
+    } else if (style === 'cobblestone') { // irregular stones with dark grout
+      const d = shade(color, -0.25);
+      for (let i = 0; i < 25; i++) { const x = (i * 7) % T, y = (i * 11) % T; r(g, x, y, 2, 2, d); r(g, x + 1, y + 1, 1, 1, shade(color, 0.10)); }
+      r(g, 0, 0, T, 1, line); r(g, 0, 15, T, 1, line); r(g, 0, 0, 1, T, line); r(g, 15, 0, 1, T, line);
+    } else if (style === 'hexfloor') { // hex tiles with dark edges
+      const d = shade(color, -0.25);
+      for (let y = 2; y < T; y += 9) for (let x = 0; x < T; x += 9) {
+        r(g, x + 4, y, 1, 1, d); r(g, x + 3, y + 1, 3, 1, d); r(g, x + 2, y + 2, 5, 1, d);
+        r(g, x + 1, y + 3, 7, 1, d); r(g, x + 2, y + 7, 5, 1, d); r(g, x + 3, y + 8, 3, 1, d); r(g, x + 4, y + 9, 1, 1, d);
+      }
+    } else if (style === 'grass') { // tufts of darker grass
+      const d = shade(color, -0.30);
+      for (let i = 0; i < 30; i++) { const x = (i * 13) % T, y = (i * 17) % T; r(g, x, y, 1, 3, d); r(g, x + 1, y + 1, 1, 2, d); }
+    } else if (style === 'ripple') { // water-like concentric rings
+      const d = shade(color, -0.25);
+      for (let cy = 0; cy < T; cy += 8) for (let cx = 0; cx < T; cx += 8) {
+        r(g, cx + 2, cy, 4, 1, d); r(g, cx + 1, cy + 1, 2, 1, d); r(g, cx + 1, cy + 2, 2, 1, d);
+        r(g, cx + 3, cy + 1, 2, 1, d); r(g, cx + 3, cy + 2, 2, 1, d);
+      }
+    } else if (style === 'neon') { // glowing grid lines on dark
+      const d = shade(color, -0.35), l = shade(color, 0.30);
+      r(g, 0, 0, T, T, shade(color, -0.20));
+      for (let i = 0; i < T; i += 4) { r(g, i, 0, 1, T, d); r(g, 0, i, T, 1, d); }
+      r(g, 8, 0, 1, T, l); r(g, 0, 8, T, 1, l);
+    } else if (style === 'cracks') { // lightning cracks across the floor
+      const d = shade(color, -0.40);
+      r(g, 0, 7, T, 1, d); r(g, 7, 0, 1, T, d);
+      for (let i = 0; i < 8; i++) r(g, i, 7 + (i % 3), 1, 2, d);
+      for (let i = 0; i < 8; i++) r(g, 7 + (i % 3), i, 2, 1, d);
     } else {
       // Calm planks: two gentle tones and one seam per plank, no grain noise.
       r(g, 0, 0, T, 8, shade(color, v ? 0.08 : 0));
@@ -935,6 +981,49 @@ function paintPattern(g: Ctx, paper: string, pattern: string, h: number) {
     for (const [a, b] of [[4, 4], [12, 11]]) if (b + 2 < h) { r(g, a - 1, b + 1, 3, 2, paw); r(g, a - 2, b - 1, 1, 1, paw); r(g, a, b - 2, 1, 1, paw); r(g, a + 2, b - 1, 1, 1, paw); }
   }
   else if (pattern === 'grid') { for (let yy = 7; yy < h; yy += 8) r(g, 0, yy, T, 1, ink); r(g, 7, 0, 1, h, ink); r(g, 15, 0, 1, h, ink); }
+  else if (pattern === 'chevrons') { // bold zigzag stripes
+    const d = shade(paper, -0.25);
+    for (let yy = 0; yy < h; yy += 6) for (let x = 0; x < T; x++) { const off = ((x + Math.floor(yy / 3)) % 6); if (off < 2 || off > 4) r(g, x, yy, 1, 2, d); }
+  }
+  else if (pattern === 'confetti') { // scattered colorful specks
+    const d = shade(paper, -0.22), l = shade(paper, 0.22);
+    for (let i = 0; i < 40; i++) r(g, (i * 37) % T, (i * 53) % h, 1, 1, i % 2 ? d : l);
+  }
+  else if (pattern === 'hexes') { // honeycomb-ish hexagons
+    const d = shade(paper, -0.20);
+    for (let y = 2; y + 8 < h; y += 9) for (let x = 0; x + 8 < T; x += 9) {
+      r(g, x + 4, y, 1, 1, d); r(g, x + 3, y + 1, 3, 1, d); r(g, x + 2, y + 2, 5, 1, d);
+      r(g, x + 1, y + 3, 7, 1, d); r(g, x, y + 4, 1, 1, d); r(g, x + 8, y + 4, 1, 1, d);
+    }
+  }
+  else if (pattern === 'triangles') { // overlapping triangles
+    const d = shade(paper, -0.25);
+    for (let y = 0; y + 8 < h; y += 10) for (let x = 0; x + 8 < T; x += 10) {
+      r(g, x + 4, y, 1, 4, d); r(g, x + 3, y + 1, 3, 4, d); r(g, x + 2, y + 2, 5, 4, d);
+    }
+  }
+  else if (pattern === 'spiral') { // a bold spiral arm
+    const d = shade(paper, -0.30);
+    for (let i = 0; i < Math.min(h, T); i++) r(g, i, h - 1 - i, 1, 1, d);
+    for (let i = 0; i < Math.min(h, T); i++) r(g, T - 1 - i, i, 1, 1, d);
+  }
+  else if (pattern === 'rain') { // vertical drips
+    const d = shade(paper, -0.25);
+    for (let x = 1; x < T; x += 4) for (let y = 0; y < h; y += 7) r(g, x, y, 1, 4, d);
+    for (let x = 3; x < T; x += 4) for (let y = 3; y < h; y += 7) r(g, x, y, 1, 4, d);
+  }
+  else if (pattern === 'cubes') { // isometric cubes floating
+    const d = shade(paper, -0.20), l = shade(paper, 0.12);
+    for (let y = 0; y < h; y += 10) for (let x = 0; x < T; x += 10) {
+      r(g, x + 2, y, 6, 2, d); r(g, x, y + 2, 2, 6, d); r(g, x + 8, y + 2, 2, 6, d);
+      r(g, x + 2, y + 8, 6, 2, l); r(g, x + 2, y + 2, 2, 4, l); r(g, x + 6, y + 2, 2, 4, l);
+    }
+  }
+  else if (pattern === 'camouflage') { // splotches of three tones
+    const a = shade(paper, -0.25), b = shade(paper, 0.18);
+    for (let i = 0; i < h; i++) for (let x = 0; x < T; x++) if ((x * 7 + i * 13) % 17 < 5) r(g, x, i, 2, 2, a);
+    for (let i = 0; i < h; i++) for (let x = 0; x < T; x++) if ((x * 5 + i * 11) % 13 < 4) r(g, x + 3, i + 3, 2, 2, b);
+  }
 }
 
 // A 2x2 preview of a floor style or wall pattern in some colour, for Decorate's pickers.
@@ -1148,7 +1237,8 @@ export const OVERHANG: Record<string, number> = {
   bathtub: 6, toilet: 8, vanity: 14, towelRack: 10, nightstand: 4, dresser: 6, clothesRack: 14,
   tv: 14, fireplace: 20, floorCushion: 0, standingFan: 12, grandClock: 20, sideTable: 2,
   arcade: 18, gameConsole: 0, speaker: 10, drumKit: 10, synth: 8, djDeck: 6, telescope: 14, poolTable: 6, foosball: 8, trampoline: 0,
-  palm: 16, tulips: 10, fig: 16, terrarium: 0, succulent: 0, pumpkin: 0, christmasTree: 21, snowman: 12, giftBox: 0,
+  palm: 16, tulips: 10, fig: 16, terrarium: 0, succulent: 0,   pumpkin: 0, christmasTree: 21, snowman: 12, giftBox: 0,
+  projectorScreen: 10, acUnit: -20,
 };
 // How far a tabletop item is lifted when it stands on one of these.
 export const SURFACE: Record<string, number> = { desk: 9, workTable: 9, pcDesk: 9, gamingDesk: 9, coffeeTable: 7, miniFridge: 19, counter: 10, sideTable: 7, diningTable: 9, nightstand: 10, dresser: 10, island: 13, consoleTable: 11, standingDesk: 13 };
@@ -2282,6 +2372,49 @@ const DRAW: Record<string, Draw> = {
 const ALT: Record<string, Draw[]> = {
   guitar: [(c, x, y) => pix(c, x, y - 12, ELECTRIC_ROWS, { ...STRINGED, R: '#e06a5a', D: '#a04a3a', p: '#a8a0b8', B: '#3a3448' })],
   piano: [(c, x, y, _t, col = '#8a5a3c') => pix(c, x, y - 12, GRAND_ROWS, { ...keysPal(col), G: '#e8b43c', s: '#a8a0b8' })],
+  tv: [
+    (c, x, y, _t, col = '#b07a4e') => { // modern: thin black frame, slim splayed metal legs, glowing screen
+      const Y = y - 16;
+      box(c, x + 4, Y + 20, 40, 4, '#2b2530');
+      r(c, x + 4, Y + 18, 2, 4, '#5a5070');
+      r(c, x + 42, Y + 18, 2, 4, '#5a5070');
+      box(c, x + 2, Y + 2, 44, 16, '#1a1620');
+      const glow = ['#7fb2e8', '#f7b58a', '#b89af0'][Math.floor(_t / 3000) % 3];
+      box(c, x + 5, Y + 4, 38, 12, shade(glow, 0.3));
+      r(c, x + 6, Y + 6, 36, 4, shade(glow, -0.2));
+      r(c, x + 6, Y + 10, 36, 2, shade(col, -0.1));
+      disc(c, x + 21, Y + 7, 2, '#ffd34d');
+      r(c, x + 8, Y + 4, 1, 4, 'rgba(255,255,255,0.5)');
+    },
+    (c, x, y, _t, col = '#b07a4e') => { // entertainment center: tall wood unit, side shelves, speakers
+      const Y = y - 20;
+      box(c, x, Y, 48, 34, col);
+      r(c, x + 1, Y + 1, 46, 2, shade(col, 0.15));
+      // left shelf
+      box(c, x + 2, Y + 6, 18, 20, shade(col, -0.1));
+      r(c, x + 3, Y + 7, 16, 1, shade(col, -0.2));
+      r(c, x + 3, Y + 14, 16, 1, shade(col, -0.2));
+      // right shelf
+      box(c, x + 28, Y + 6, 18, 20, shade(col, -0.1));
+      r(c, x + 29, Y + 7, 16, 1, shade(col, -0.2));
+      r(c, x + 29, Y + 14, 16, 1, shade(col, -0.2));
+      // center screen
+      box(c, x + 10, Y + 8, 28, 20, '#2b2530');
+      const glow = ['#7fb2e8', '#f7b58a', '#b89af0'][Math.floor(_t / 3000) % 3];
+      box(c, x + 12, Y + 10, 24, 14, shade(glow, 0.3));
+      r(c, x + 14, Y + 12, 20, 4, shade(glow, -0.2));
+      r(c, x + 14, Y + 16, 20, 2, shade(col, -0.1));
+      disc(c, x + 22, Y + 13, 2, '#ffd34d');
+      // speakers flanking the screen
+      r(c, x + 5, Y + 12, 4, 4, '#2b2530');
+      r(c, x + 39, Y + 12, 4, 4, '#2b2530');
+      r(c, x + 6, Y + 13, 2, 2, shade(col, 0.1));
+      r(c, x + 40, Y + 13, 2, 2, shade(col, 0.1));
+      // base plinth
+      box(c, x + 4, Y + 28, 40, 6, shade(col, -0.15));
+      r(c, x + 4, Y + 28, 40, 1, shade(col, -0.25));
+    },
+  ],
   sofa: [
     (c, x, y, _t, col = '#9db4ee') => { // modern: low, square, dark legs
       const Y = y - 6;
@@ -2736,6 +2869,9 @@ const RECIPES: Record<string, [number, string, string]> = {
   hotCrossBuns: [0, '', 'r1,12,14,2,#e8e3dc|o4,10,3,#d9a06a|o11,10,3,#d9a06a|r2,10,5,1,#fffaf3|r4,8,1,5,#fffaf3|r9,10,5,1,#fffaf3|r11,8,1,5,#fffaf3'],
   lotusLamp: [0, '', 'r4,13,8,1,#8fd0a8|r3,10,10,3,#f4a6c8|r2,9,2,2,#f4a6c8|r12,9,2,2,#f4a6c8|r5,7,2,4,#f7c0c8|r9,7,2,4,#f7c0c8|r7,6,2,5,#fbd8e0|f7,3,2,3,#ffd34d|r7,5,2,1,#c8805a'],
   deskCalendar: [0, '', 'b3,4,10,10,#fffaf3|r3,4,10,3,#e06a5a|r5,2,1,3,#3a3448|r10,2,1,3,#3a3448|r5,9,1,1,#a8a0b8|r7,9,1,1,#a8a0b8|r9,9,1,1,#e06a5a|r5,11,1,1,#a8a0b8|r7,11,1,1,#a8a0b8|r9,11,1,1,#a8a0b8'],
+  resistanceBands: [0, '#ffd27a', 'o6,4,4,#f48a8a|d6,4,3,#ffd34d|o6,10,4,#8fd0a8|d6,10,3,#b89af0'],
+  projectorScreen: [0, '#c58b5a', 'b0,0,48,16,$|b2,2,44,12,#ffffff|r4,4,10,4,#e8e3dc|r18,4,10,4,#e8e3dc|r4,10,10,4,#e8e3dc|r18,10,10,4,#e8e3dc|b0,12,48,2,$d|r2,14,2,1,#8a5a3c|r44,14,2,1,#8a5a3c'],
+  acUnit: [0, '#8fd0a8', 'b0,0,16,16,$|r1,1,14,14,#5a5070|r2,2,12,1,#ffffff|r2,4,12,1,#ffffff|r2,6,12,1,#ffffff|r2,8,12,1,#ffffff|r2,10,12,1,#ffffff|d8,12,2,#ffffff|b4,14,8,2,$d'],
 };
 type Shape = { k: string; n: number[]; col: string };
 const parsed = new Map<string, Shape[]>();
