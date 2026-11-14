@@ -708,3 +708,60 @@ export function safeDocName(name) {
   const base = String(name).slice(0, -ext.length - 1).normalize('NFKD').replace(/[^\w.-]+/g, '_').replace(/^[_.]+|_+$/g, '').slice(0, 60) || 'file';
   return `${base}.${ext}`;
 }
+
+// Smooth day/night helpers: pure functions of time, no dependencies.
+// skyProgress: 0..1 through the day; night=0, dawn=0.25, day=0.5, dusk=0.75, night wraps to 1.
+export function skyProgress(d = new Date()) {
+  const h = d.getHours() + d.getMinutes() / 60;
+  if (h < 6) return (h / 6) * 0.25;
+  if (h < 12) return 0.25 + ((h - 6) / 6) * 0.25;
+  if (h < 18) return 0.5 + ((h - 12) / 6) * 0.25;
+  return 0.75 + ((h - 18) / 6) * 0.25;
+}
+
+// lerpColor: linear interpolate between two #RRGGBB hex colors, t clamped to [0,1].
+export function lerpColor(a, b, t) {
+  t = Math.min(1, Math.max(0, t));
+  const na = parseInt(a.slice(1, 7), 16);
+  const nb = parseInt(b.slice(1, 7), 16);
+  const f = (va, vb) => Math.max(0, Math.min(255, Math.round(va + (vb - va) * t))).toString(16).padStart(2, '0');
+  return `#${f(na >> 16, nb >> 16)}${f((na >> 8) & 255, (nb >> 8) & 255)}${f(na & 255, nb & 255)}`;
+}
+
+// skyColor: interpolated sky fill color for a given weather and time-of-day progress.
+const SKY_KEYFRAMES = {
+  clear: ['#3a4280', '#f7e8c8', '#a8dcf5', '#f7b58a'],
+  clouds: ['#2f3558', '#eadfd0', '#b9cad8', '#cfa092'],
+  rain: ['#262b48', '#d0c8c8', '#92a6b8', '#9a8086'],
+  snow: ['#363c62', '#e8e0d8', '#cdd8e4', '#c2aeb6'],
+};
+export function skyColor(weather, progress) {
+  const k = SKY_KEYFRAMES[weather];
+  const i = Math.floor(progress * 4) % 4;
+  const t = (progress * 4) % 1;
+  return lerpColor(k[i], k[(i + 1) % 4], t);
+}
+
+// tintAlpha: night-tint alpha; 0.0 at day progress (0.5), ~0.42 at night progress (0 or 1).
+export function tintAlpha(progress) {
+  const dist = Math.abs(progress - 0.5);
+  return dist * 0.84;
+}
+
+// moonPhase: 0..1 lunar phase over ~29.53 days from a reference new moon (2000-01-06).
+export function moonPhase(d = new Date()) {
+  const ref = new Date(2000, 0, 6);
+  const days = (d - ref) / (1000 * 60 * 60 * 24);
+  const cycle = 29.53058867;
+  return ((days / cycle) % 1 + 1) % 1;
+}
+
+// nightBrightness: 0..1 night brightness modifier; 0.4 at new moon (0/1), 1.0 at full moon (0.5).
+export function nightBrightness(phase) {
+  return 0.7 - 0.3 * Math.cos(Math.PI * 2 * phase);
+}
+
+// weatherIntensity: current weather ramp value, managed by the transition scheduler in src/main.ts.
+export function weatherIntensity() {
+  return 1;
+}
