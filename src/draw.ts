@@ -818,30 +818,30 @@ export const coinURL = () => coinCanvas().toDataURL();
 // ---------- room tiles ----------
 export function drawFloor(c: Ctx, x: number, y: number, color: string, tx: number, ty: number, style = 'planks') {
   const v = (tx + ty * 3) % 2;
-  const line = shade(color, -0.07);
+  const line = shade(color, -0.25);
   c.drawImage(baked(`fl|${color}|${style}|${v}|${(tx + ty) % 2}`, T, T, (g) => {
     r(g, 0, 0, T, T, color);
     if (style === 'tiles') {
       // Two-tone checker with soft grout.
-      r(g, 0, 0, 8, 8, shade(color, 0.05));
-      r(g, 8, 8, 8, 8, shade(color, 0.05));
+      r(g, 0, 0, 8, 8, shade(color, 0.15));
+      r(g, 8, 8, 8, 8, shade(color, 0.15));
       r(g, 0, 7, T, 1, line);
       r(g, 7, 0, 1, T, line);
       r(g, 0, 15, T, 1, line);
       r(g, 15, 0, 1, T, line);
     } else if (style === 'carpet') {
-      for (let i = 0; i < 8; i++) r(g, (i * 5 + v * 3) % 16, (i * 7) % 16, 1, 1, shade(color, i % 2 ? 0.04 : -0.04));
+      for (let i = 0; i < 8; i++) r(g, (i * 5 + v * 3) % 16, (i * 7) % 16, 1, 1, shade(color, i % 2 ? 0.10 : -0.10));
     } else if (style === 'marble') {
       // Polished slabs with a soft vein running across.
-      r(g, 0, 0, T, T, shade(color, 0.12));
-      for (let i = 0; i < T; i++) r(g, i, (3 + v * 6 + Math.floor(i / 2)) % T, 1, 1, shade(color, -0.06));
-      r(g, 0, 15, T, 1, shade(color, -0.04));
-      r(g, 15, 0, 1, T, shade(color, -0.04));
+      r(g, 0, 0, T, T, shade(color, 0.25));
+      for (let i = 0; i < T; i++) r(g, i, (3 + v * 6 + Math.floor(i / 2)) % T, 1, 1, shade(color, -0.20));
+      r(g, 0, 15, T, 1, shade(color, -0.15));
+      r(g, 15, 0, 1, T, shade(color, -0.15));
     } else if (style === 'parquet') {
       // Basket weave: four squares of three slats, alternating direction.
       for (let q = 0; q < 4; q++) {
         const qx = (q % 2) * 8, qy = Math.floor(q / 2) * 8, across = (q === 0 || q === 3);
-        r(g, qx, qy, 8, 8, shade(color, q % 3 ? 0.04 : -0.02));
+        r(g, qx, qy, 8, 8, shade(color, q % 3 ? 0.12 : -0.08));
         for (const k of [2, 5, 7]) across ? r(g, qx, qy + k, 8, 1, line) : r(g, qx + k, qy, 1, 8, line);
       }
     } else if (style === 'stone') {
@@ -850,20 +850,20 @@ export function drawFloor(c: Ctx, x: number, y: number, color: string, tx: numbe
       r(g, 0, 15, T, 1, line);
       r(g, v ? 5 : 10, 0, 1, 7, line);
       r(g, v ? 12 : 3, 8, 1, 7, line);
-      for (const [a, b] of [[2, 2], [8, 4], [13, 10], [6, 12]]) r(g, (a + v * 4) % 16, b, 1, 1, shade(color, (a + b) % 2 ? 0.08 : -0.08));
+      for (const [a, b] of [[2, 2], [8, 4], [13, 10], [6, 12]]) r(g, (a + v * 4) % 16, b, 1, 1, shade(color, (a + b) % 2 ? 0.20 : -0.20));
     } else if (style === 'terrazzo') {
       // Polished cream-ish slab with little pastel chips set in it.
-      r(g, 0, 0, T, T, shade(color, 0.08));
-      const chips = ['#f4a6b8', '#9db4ee', '#8fd0a8', '#ffd27a', shade(color, -0.15)];
+      r(g, 0, 0, T, T, shade(color, 0.20));
+      const chips = ['#f4a6b8', '#9db4ee', '#8fd0a8', '#ffd27a', shade(color, -0.25)];
       for (const [i, [a, b]] of [[2, 3], [9, 1], [13, 7], [5, 9], [11, 13], [1, 14], [7, 5]].entries()) r(g, (a + v * 5) % 15, b, i % 3 ? 1 : 2, 1, chips[(i + v) % chips.length]);
       r(g, 0, 15, T, 1, line);
       r(g, 15, 0, 1, T, line);
     } else if (style === 'woven') {
       // A soft woven mat: little stitches offset row by row.
-      for (let yy = 0; yy < T; yy += 4) for (let xx = 0; xx < T; xx += 4) r(g, xx + ((yy / 4) % 2) * 2, yy + 1, 2, 2, shade(color, -0.06));
+      for (let yy = 0; yy < T; yy += 4) for (let xx = 0; xx < T; xx += 4) r(g, xx + ((yy / 4) % 2) * 2, yy + 1, 2, 2, shade(color, -0.20));
     } else if (style === 'harlequin') {
       // One diamond per tile, darker than the corners, so they meet point to point.
-      for (let yy = 0; yy < T; yy++) { const w = yy < 8 ? yy + 1 : T - yy; r(g, 8 - w, yy, w * 2, 1, shade(color, -0.12)); }
+      for (let yy = 0; yy < T; yy++) { const w = yy < 8 ? yy + 1 : T - yy; r(g, 8 - w, yy, w * 2, 1, shade(color, -0.30)); }
     } else if (style === 'checker') {
       // Bold two-colour squares, a tile each.
       if ((tx + ty) % 2) r(g, 0, 0, T, T, shade(color, -0.22));
@@ -879,7 +879,7 @@ export function drawFloor(c: Ctx, x: number, y: number, color: string, tx: numbe
       }
     } else {
       // Calm planks: two gentle tones and one seam per plank, no grain noise.
-      r(g, 0, 0, T, 8, shade(color, v ? 0.02 : 0));
+      r(g, 0, 0, T, 8, shade(color, v ? 0.08 : 0));
       r(g, 0, 7, T, 1, line);
       r(g, 0, 15, T, 1, line);
       r(g, v ? 5 : 11, 0, 1, 7, line);
@@ -891,14 +891,14 @@ export function drawFloor(c: Ctx, x: number, y: number, color: string, tx: numbe
 // Wallpaper motif for one 16x16 tile; rows below `h` are left for trims.
 function paintPattern(g: Ctx, paper: string, pattern: string, h: number) {
   r(g, 0, 0, T, h, paper);
-  const ink = shade(paper, -0.07), light = shade(paper, 0.06);
+  const ink = shade(paper, -0.30), light = shade(paper, 0.25);
   if (pattern === 'stripes') { r(g, 2, 0, 3, h, light); r(g, 10, 0, 3, h, light); }
   else if (pattern === 'dots') { for (const [a, b] of [[3, 3], [11, 7], [3, 11], [11, 15]]) if (b < h) r(g, a, b, 2, 2, ink); }
   else if (pattern === 'hearts') { heart(g, 4, 2, ink); if (h > 12) heart(g, 12, 10, ink); else heart(g, 12, 7, ink); }
   else if (pattern === 'checks') { for (let yy = 0; yy < h; yy += 8) { r(g, 0, yy, 4, Math.min(4, h - yy), light); r(g, 8, yy, 4, Math.min(4, h - yy), light); r(g, 4, yy + 4, 4, Math.min(4, h - yy - 4), light); r(g, 12, yy + 4, 4, Math.min(4, h - yy - 4), light); } }
   else if (pattern === 'stars') {
     // Little five-point stars, darker than the paper so they read, with a twinkle between.
-    const star = shade(paper, -0.18);
+    const star = shade(paper, -0.40);
     for (const [a, b] of [[4, 5], [11, 9]]) if (b + 2 < h) {
       r(g, a, b - 2, 1, 1, star); r(g, a - 1, b - 1, 3, 1, star); r(g, a - 2, b, 5, 1, star);
       r(g, a - 1, b + 1, 3, 1, star); r(g, a - 1, b + 2, 1, 1, star); r(g, a + 1, b + 2, 1, 1, star);
@@ -909,7 +909,7 @@ function paintPattern(g: Ctx, paper: string, pattern: string, h: number) {
   }
   else if (pattern === 'flowers') {
     for (const [a, b] of [[4, 4], [12, 10]]) if (b + 1 < h) {
-      for (const [dx, dy] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) r(g, a + dx, b + dy, 1, 1, shade(paper, -0.16));
+      for (const [dx, dy] of [[-1, 0], [1, 0], [0, -1], [0, 1]])       r(g, a + dx, b + dy, 1, 1, shade(paper, -0.30));
       r(g, a, b, 1, 1, '#fffaf3');
     }
   }
@@ -931,7 +931,7 @@ function paintPattern(g: Ctx, paper: string, pattern: string, h: number) {
     }
   }
   else if (pattern === 'paws') { // paw prints: a pad and three toes
-    const paw = shade(paper, -0.14);
+    const paw = shade(paper, -0.30);
     for (const [a, b] of [[4, 4], [12, 11]]) if (b + 2 < h) { r(g, a - 1, b + 1, 3, 2, paw); r(g, a - 2, b - 1, 1, 1, paw); r(g, a, b - 2, 1, 1, paw); r(g, a + 2, b - 1, 1, 1, paw); }
   }
   else if (pattern === 'grid') { for (let yy = 7; yy < h; yy += 8) r(g, 0, yy, T, 1, ink); r(g, 7, 0, 1, h, ink); r(g, 15, 0, 1, h, ink); }
