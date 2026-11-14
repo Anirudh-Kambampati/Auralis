@@ -295,6 +295,9 @@ function onMessage(m: any) {
   } else if (m.t === 'inbox') {
     me.inbox = m.inbox;
     renderBell();
+  } else if (m.t === 'todo_assigned') {
+    notify(chime);
+    toast(`📋 <b>${esc(m.by)}</b> assigned you: ${esc(m.text)}`, 'reward', { ms: 10_000, onClick: () => setPanel('todos') });
   } else if (m.t === 'friend_matches') {
     $('#friendSuggest').innerHTML = m.names.map((n: string) => `<option value="${esc(n)}">`).join('');
   } else if (m.t === 'error') {

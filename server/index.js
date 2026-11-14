@@ -787,7 +787,19 @@ function handle(p, m) {
       const at = Number.isFinite(m.at) && m.at > Date.now() - 60_000 && m.at < Date.now() + 2 * 365 * 86_400_000 ? m.at : undefined;
       const to = m.all ? undefined : [...new Set(Array.isArray(m.to) ? m.to : [])].filter((id) => h.members.includes(id));
       if (to && !to.length) to.push(p.id);
-      h.todos.push({ id: nextId++, text, done: false, by: p.name, byId: p.id, ticks: [], ...(m.all ? { all: true } : { to }), ...(at ? { at } : {}) });
+      const newTodo = { id: nextId++, text, done: false, by: p.name, byId: p.id, ticks: [], ...(m.all ? { all: true } : { to }), ...(at ? { at } : {}) };
+      h.todos.push(newTodo);
+      // Notify assignees (but not the creator)
+      if (to) {
+        for (const id of to) {
+          if (id !== p.id) {
+            const assignee = db.players[id];
+            inbox(assignee, 'todo', p, `assigned you: “${text}”`);
+            if (sockets.has(id)) send(sockets.get(id), { t: 'todo_assigned', by: p.name, text, id: newTodo.id });
+            if (!sockets.has(id)) push(assignee, { title: '📋 Task assigned', body: `${p.name} assigned you: ${text}`, tag: `todo-${newTodo.id}` }, 'todo');
+          }
+        }
+      }
       break;
     }
     case 'notify_prefs': { // which notifications I want (only the kinds we know, as true/false)
@@ -806,6 +818,7 @@ function handle(p, m) {
       if (!t || t.byId !== p.id || !text) return;
       const at = m.at === t.at || (Number.isFinite(m.at) && m.at > Date.now() - 60_000 && m.at < Date.now() + 2 * 365 * 86_400_000) ? m.at : undefined;
       if (at !== t.at) delete t.reminded; // a new time gets its own reminder
+      const oldAssignees = t.to ? [...t.to] : [];
       t.text = text;
       if (at) t.at = at; else delete t.at;
       if (m.all) { t.all = true; delete t.to; }
@@ -815,6 +828,16 @@ function handle(p, m) {
         delete t.all;
       }
       t.ticks = (t.ticks ?? []).filter((id) => todoFor(t, h).includes(id));
+      // Notify newly added assignees
+      const newAssignees = t.to ? t.to.filter((id) => !oldAssignees.includes(id)) : [];
+      for (const id of newAssignees) {
+        if (id !== p.id) {
+          const assignee = db.players[id];
+          inbox(assignee, 'todo', p, `assigned you: “${text}”`);
+          if (sockets.has(id)) send(sockets.get(id), { t: 'todo_assigned', by: p.name, text, id: t.id });
+          if (!sockets.has(id)) push(assignee, { title: '📋 Task assigned', body: `${p.name} assigned you: ${text}`, tag: `todo-${t.id}` }, 'todo');
+        }
+      }
       if (t.all) settleTodos(h);
       else t.done = todoFor(t, h).every((id) => t.ticks.includes(id));
       break;
