@@ -578,13 +578,6 @@ li.done .check { background: #6fcf8a; color: #fff; }
   #chatLog p .chat-reply { position: absolute; top: 4px; right: 4px; width: 24px; height: 24px; padding: 0; font-size: 12px; line-height: 1; color: var(--ink); background: var(--gold); border: 2px solid var(--ink); border-radius: 50%; box-shadow: 0 2px 0 var(--ink); opacity: 0; transition: opacity .1s, transform .1s; cursor: var(--point); }
   #chatLog p:hover .chat-reply { opacity: 1; }
   #chatLog p .chat-reply:hover { transform: scale(1.1); }
-  /* Reaction bar below message text */
-  #chatLog .reactions { display: flex; gap: 4px; margin-top: 4px; padding-top: 4px; border-top: 1px solid var(--soft); }
-  #chatLog .reaction { display: inline-flex; align-items: center; gap: 2px; padding: 2px 6px; font-size: 13px; background: var(--paper); border: 2px solid var(--ink); border-radius: 12px; cursor: var(--point); transition: transform .1s; }
-  #chatLog .reaction:hover { transform: scale(1.1); }
-  #chatLog .reaction.on { background: var(--gold); border-color: var(--ink); }
-  #chatLog .reaction span { font-size: 11px; color: var(--muted); font-weight: 700; }
-  #chatLog .reaction.on span { color: var(--ink); }
 /* Mention picker for @mentions */
 #chatForm { position: relative; }
 #chatMentions { position: absolute; bottom: 100%; left: 60px; right: 60px; margin-bottom: 4px; background: #fff; border: 2px solid var(--ink); border-radius: 12px; padding: 4px; display: flex; flex-direction: column; gap: 2px; max-height: 200px; overflow-y: auto; box-shadow: 0 4px 12px rgba(0,0,0,.15); z-index: 10; }

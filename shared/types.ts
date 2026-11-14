@@ -163,7 +163,6 @@ export interface Chat {
   img?: string;
   replyTo?: number;
   replyBy?: string;
-  reactions?: Record<string, string[]>;
 }
 
 export interface Group {
@@ -286,7 +285,6 @@ export interface ClientMessages {
   chat: { t: 'chat'; text: string; img?: string; replyTo?: number };
   dm: { t: 'dm'; to: string; text: string; img?: string; replyTo?: number };
   gmsg: { t: 'gmsg'; g: string; text: string; img?: string; replyTo?: number };
-  chat_react: { t: 'chat_react'; id: number; emoji: string };
   // History
   history: { t: 'history'; k: 'h' | 'd' | 'g'; id?: string; before: number };
   // Friends
@@ -371,7 +369,6 @@ export interface ServerMessages {
   chat: Chat;
   dm: Chat;
   gmsg: Chat;
-  chat_react: { t: 'chat_react'; id: number; emoji: string; users: string[] };
   history: { t: 'history'; k: 'h' | 'd' | 'g'; id: string | null; msgs: Chat[] };
   // Friends
   friend_request: { t: 'friend_request'; from: string; name: string; look: Look };

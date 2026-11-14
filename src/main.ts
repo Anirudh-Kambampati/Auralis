@@ -25,7 +25,7 @@ type Member = {
 };
 // all: everyone has to tick it. to: who it's for (older ones have neither). at: reminder time. mine: one of my older private to-dos.
 type Todo = { id: number; text: string; done: boolean; by: string; byId?: string; all?: boolean; to?: string[]; ticks?: string[]; at?: number; mine?: boolean; repeat?: 'daily' | 'weekly' | 'monthly'; repeatUntil?: number; parentId?: number; priority?: 'low' | 'medium' | 'high' };
-type Chat = { id: number; from: string; by: string; text: string; at: number; img?: string; replyTo?: number; reactions?: Record<string, string[]> }; // img: key of a picture; reactions: emoji -> user ids
+type Chat = { id: number; from: string; by: string; text: string; at: number; img?: string; replyTo?: number }; // img: key of a picture
 type CalEvent = { id: number; date: string; time?: string; text: string; by?: string }; // date YYYY-MM-DD, time HH:MM
 type Announcement = { id: number; text: string; by: string; byId: string; at: number };
 type Focus = { minutes: number; endsAt: number; tag?: string; pausedAt?: number | null };
@@ -335,13 +335,6 @@ function onMessage(m: any) {
     toast(esc(m.text), 'error');
   } else if (m.t === 'info') { // news that isn't a refusal: a plain toast
     toast(esc(m.text));
-  } else if (m.t === 'chat_react') { // reactions updated for a message
-    const idx = chat.findIndex((c) => c.id === m.id);
-    if (idx >= 0) {
-      chat[idx] = { ...chat[idx], reactions: m.reactions };
-      if (dmPeer === null) renderSide(); // house chat
-      else if (chat[idx].from === dmPeer || dmPeer === null) renderSide(); // DM or group
-    }
   }
 }
 
@@ -2628,22 +2621,9 @@ function renderSide() {
     const more = msgs.length >= 50 && !historyDone.has(threadKey(dmPeer)) ? '<p class="more">Scroll up for older messages</p>' : '';
     const byId = new Map<number, Chat>(msgs.map((c) => [c.id, c]));
     const quoteOf = (c: Chat) => { const q = c.replyTo ? byId.get(c.replyTo) : null; return q ? `<span class="quote" data-reply-to="${q.id}"><b>${esc(q.by)}</b> <span class="qt">${esc(q.text) || 'Picture'}</span></span>` : ''; };
-    const reactionBar = (c: Chat) => {
-      if (!c.reactions) return '';
-      const emojis = Object.entries(c.reactions).map(([emoji, users]) => {
-        const count = users.length;
-        const meReacted = users.includes(myId);
-        return `<button class="reaction ${meReacted ? 'on' : ''}" data-react="${c.id}" data-emoji="${esc(emoji)}" title="${users.map((u) => person(u)?.name).filter(Boolean).join(', ')}">${emoji} <span>${count}</span></button>`;
-      }).join('');
-      return `<div class="reactions">${emojis}</div>`;
-    };
-    const reactionPicker = (msgId: number) => {
-      const emojis = ['👍', '❤️', '😂', '😮', '😢', '🔥', '✨', '👏', '💯', '🤔'];
-      return `<div class="reaction-picker" data-msg="${msgId}">${emojis.map((e) => `<button data-react-add="${msgId}" data-emoji="${e}" title="${e}">${e}</button>`).join('')}</div>`;
-    };
     log.innerHTML = msgs.length
       ? more + msgs.map((c) => !c.from ? `<p class="note">${esc(c.text)}</p>` : `<p class="${c.from === myId ? 'mine' : ''}" data-quote="${c.id}"><b>${esc(c.by)}</b>${quoteOf(c)}${linkify(c.text)}${c.img ? `<span class="chat-att">${docName(c.img) ? `<button type="button" class="chat-doc" data-key="${esc(c.img)}">📎 <span>${esc(docName(c.img)!)}</span></button>` : `<img class="chat-img" data-key="${esc(c.img)}" alt="Picture from ${esc(c.by)}">`}`
-        + `<button type="button" class="chat-dl" data-dl="${esc(c.img)}" title="Download" aria-label="Download ${esc(docName(c.img) ?? 'picture')}">⬇</button></span>` : ''}${reactionBar(c)}<button type="button" class="chat-reply" title="Reply" aria-label="Reply to ${esc(c.by)}">↩</button>${reactionPicker(c.id)}</p>`).join('')
+        + `<button type="button" class="chat-dl" data-dl="${esc(c.img)}" title="Download" aria-label="Download ${esc(docName(c.img) ?? 'picture')}">⬇</button></span>` : ''}<button type="button" class="chat-reply" title="Reply" aria-label="Reply to ${esc(c.by)}">↩</button></p>`).join('')
       : dmPeer
         ? `<p class="empty">${group ? `Just the people in ${esc(peerName)}.` : `Just you and ${esc(peerName)} — nobody else can see this.`}</p>`
         : '<p class="empty">Say hi to your housemates 👋</p>';
@@ -2722,18 +2702,6 @@ $('#chatLog').addEventListener('click', (e) => {
       }
     }
     e.stopPropagation();
-    return;
-  }
-  // Reaction: toggle existing reaction
-  const reactBtn = (e.target as HTMLElement).closest<HTMLButtonElement>('.reaction');
-  if (reactBtn) {
-    send({ t: 'chat_react', id: Number(reactBtn.dataset.react), emoji: reactBtn.dataset.emoji });
-    return;
-  }
-  // Add new reaction from picker
-  const addReactBtn = (e.target as HTMLElement).closest<HTMLButtonElement>('[data-react-add]');
-  if (addReactBtn) {
-    send({ t: 'chat_react', id: Number(addReactBtn.dataset.react), emoji: addReactBtn.dataset.emoji });
     return;
   }
 });

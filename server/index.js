@@ -1136,22 +1136,6 @@ case 'chat': {
       for (const id of h.members) if (id !== p.id && !mentionedIds.has(id) && !sockets.has(id)) push(db.players[id], { title: `${p.name} · house chat`, body: text || attachLabel(img), tag: `house-${h.code}` }, 'house');
       break;
     }
-    case 'chat_react': { // add or remove a reaction emoji to a chat message
-      const h = db.houses[p.house];
-      const msg = h.chat?.find((c) => c.id === m.id);
-      if (!msg) return;
-      msg.reactions ??= {};
-      const users = msg.reactions[m.emoji] ?? [];
-      const hasReacted = users.includes(p.id);
-      if (hasReacted) {
-        msg.reactions[m.emoji] = users.filter((id) => id !== p.id);
-        if (!msg.reactions[m.emoji].length) delete msg.reactions[m.emoji];
-      } else {
-        msg.reactions[m.emoji] = [...users, p.id];
-      }
-      broadcastHouse(h.code);
-      break;
-    }
     case 'watch': { // /watch <link> starts a watch party for the whole house; /watch stop ends it
       const h = db.houses[p.house];
       const stop = String(m.url ?? '').trim().toLowerCase() === 'stop';
