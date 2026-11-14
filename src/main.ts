@@ -1800,9 +1800,9 @@ function decorateBody(mine: Member) {
   return `${roomPicker(mine)}${selBar}<p class="hint">${hint}</p>
     ${inv.length ? `<h3>Storage</h3>${filter}<div class="grid">${shown.map(([k, n]) => `<div class="card${placing === k ? ' on' : ''}"><b>${ITEMS[k as ItemKey].name} ×${n}</b>${icon(k)}<button data-act="place" data-v="${k}">Place</button>${sellPrice(k) ? `<button class="off small" data-act="sell" data-v="${k}">Sell ${coin()} ${sellPrice(k)}</button>` : ''}</div>`).join('')}</div>` : '<p class="hint">Storage is empty. Visit the Shop!</p>'}
     <h3>Wallpaper</h3>${swatches('wallpaper', WALLPAPERS, myRoom()!.wallColor ?? myRoom()!.wallpaper, false, false)}<button class="swatch custom" data-act="paintroom" data-v="wall" title="Custom wall colour" aria-label="Custom wall colour" style="background:${CUSTOM_SWATCH}"></button>
-    <h3>Pattern</h3>${tilePicker('pattern', WALL_PATTERNS, myRoom()!.pattern ?? 'plain', 'wall', myRoom()!.wallpaper)}
+    <h3>Pattern</h3>${tilePicker('pattern', WALL_PATTERNS, myRoom()!.pattern ?? 'plain', 'wall', myRoom()!.wallColor ?? myRoom()!.wallpaper)}
     <h3>Floor</h3>${swatches('floor', FLOORS, myRoom()!.floorColor ?? myRoom()!.floor, false, false)}<button class="swatch custom" data-act="paintroom" data-v="floor" title="Custom floor colour" aria-label="Custom floor colour" style="background:${CUSTOM_SWATCH}"></button>
-    <h3>Floor style</h3>${tilePicker('floorStyle', FLOOR_STYLES, myRoom()!.floorStyle ?? 'planks', 'floor', myRoom()!.floor)}
+    <h3>Floor style</h3>${tilePicker('floorStyle', FLOOR_STYLES, myRoom()!.floorStyle ?? 'planks', 'floor', myRoom()!.floorColor ?? myRoom()!.floor)}
     <p class="hint">Want more space? Get a bigger room in the Shop.</p>
     <h3>Snapshots</h3>
     <button class="off" data-act="snapshot">📸 Save a picture of my room</button>

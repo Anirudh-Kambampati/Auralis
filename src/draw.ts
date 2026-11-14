@@ -989,14 +989,14 @@ export function drawWall(c: Ctx, x: number, y: number) {
 
 // An opening between rooms: each quarter of the tile (top-left, top-right, bottom-left, bottom-right) keeps the floor
 // of the room on that side, so floors meet in the middle, side by side, one above the other, or four at a corner.
-type Floored = { floor: string; floorStyle?: string };
+type Floored = { floor: string; floorColor?: string; floorStyle?: string };
 export function drawSeam(c: Ctx, x: number, y: number, tx: number, ty: number, quarters: Floored[]) {
   quarters.forEach((room, q) => {
     c.save();
     c.beginPath();
     c.rect(x + (q % 2) * 8, y + (q >> 1) * 8, 8, 8);
     c.clip();
-    drawFloor(c, x, y, room.floor, tx, ty, room.floorStyle);
+    drawFloor(c, x, y, room.floorColor ?? room.floor, tx, ty, room.floorStyle);
     c.restore();
   });
 }
