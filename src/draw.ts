@@ -232,8 +232,6 @@ const FACE_OVERLAY: Record<string, Overlay> = {
   sleepy: { 10: '.oh' + 'ssssssssss' + 'ho.' }, // lids down: the pupil row reads as the closed line
   wink: { 10: '.oh' + 'swesssssss' + 'ho.' },
   grin: { 12: '.oh' + 'sbmmmmmmbs' + 'ho.' },
-  // shades: a frame with a lens hole around each eye, and the mouth below it
-  cool: { 10: '.oh' + 'eweeeeewee' + 'ho.', 11: '.oh' + 'eeesssseee' + 'ho.', 12: '.oh' + 'seeeeeeees' + 'ho.', 13: '..oS' + 'ssmmmmss' + 'So..' },
   surprised: { 12: '.oh' + 'sssmmmmsss' + 'ho.', 13: '..oSssssmmssSo..' }, // open "o"
   // happy closed eyes (^ ^) and big rosy cheeks
   blush: { 10: '.ohssessssessho.', 11: '.ohsesessesesho.', 12: '.ohbbssmmssbbho.' },
