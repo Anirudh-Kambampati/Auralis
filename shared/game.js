@@ -454,11 +454,22 @@ export function clawPrize(r = Math.random()) {
   return CLAW_PRIZES[0];
 }
 
-// When a piece is next ready, or 0 when it is ready now.
-export const clawReadyAt = (f, now = Date.now()) => {
-  const at = f?.state?.readyAt;
+// A wait belongs to the player who used the piece, not to the piece: anyone in the house can use the claw or a
+// making piece, and each of them waits on their own clock. A key names one piece inside one house, and `p.ready`
+// is a map from that key to the moment the wait ends. The key includes the item, so swapping a piece in the same
+// slot starts a fresh wait.
+export const readyKey = (r, index, item) => `${r}:${index}:${item}`;
+
+// When this player is next ready to use that piece, or 0 when they are ready now.
+export const pieceReadyAt = (p, key, now = Date.now()) => {
+  const at = p?.ready?.[key];
   return Number.isFinite(at) && at > now ? at : 0;
 };
+
+export function setPieceReady(p, key, until) {
+  p.ready = { ...(p.ready ?? {}), [key]: until };
+  return p.ready;
+}
 
 // What each making piece can produce: only things that make sense for it. A piece picks uniformly from its own
 // pool, so no object inside a pool is rarer than another.

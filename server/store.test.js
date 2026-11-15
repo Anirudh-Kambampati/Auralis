@@ -180,3 +180,14 @@ test('a crafted list survives a round trip', () => {
   assert.deepEqual(back.db.players.p1.crafted, [{ item: 'vase', col: '#aabbcc' }]);
   back.close();
 });
+
+test('a piece wait survives a round trip', () => {
+  const dir = tmp(), file = path.join(dir, 'ready.db');
+  const s = openStore(file);
+  s.db.players.p1 = { id: 'p1', name: 'Wait', ready: { '0:3:easel': 1234 } };
+  s.saveAll();
+  s.close();
+  const back = openStore(file);
+  assert.deepEqual(back.db.players.p1.ready, { '0:3:easel': 1234 });
+  back.close();
+});

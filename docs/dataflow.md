@@ -43,7 +43,7 @@ client                         server                                    house m
 `{ t: 'state', house: { code, members[], todos[], chat[] }, me: { id, coins, inventory, sessions, subjects } }`
 
 - `members[]` holds each housemate's public data: name, look, room, focus, pets, online, position. It never includes tokens or hashes.
-- `me` is private and only goes to its owner. That includes `crafted` and `tipsSeen`: what you made by hand, and which Guide nudges you have had.
+- `me` is private and only goes to its owner. That includes `crafted`, `ready` and `tipsSeen`: what you made by hand, which waits are yours, and which Guide nudges you have had. A wait never rides in `publicPlayer`, because it belongs to a person rather than to a piece.
 
 ## The Guide's nudges
 

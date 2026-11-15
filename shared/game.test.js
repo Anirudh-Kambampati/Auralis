@@ -5,7 +5,7 @@ import {
   ITEMS, EVENTS, easterSunday, activeEvents, nextEvent, footprint, nextRot, canRotate,
   DOOR, WALL, FLOOR, BLOCKED, VOID, ROOM_W, colsFor, isFocusLength, FOCUS_LENGTHS, bondLevel,
   DRINKS,
-  CLAW_PRIZES, CLAW_COST, CLAW_COOLDOWN_MS, clawPrize, clawReadyAt,
+  CLAW_PRIZES, CLAW_COST, CLAW_COOLDOWN_MS, clawPrize, readyKey, pieceReadyAt, setPieceReady,
   CRAFT, CRAFT_COOLDOWN_MS, craftColour, craftItem, craftedPrice, craftedProblem, PASTELS,
 } from './game.js';
 
@@ -323,17 +323,25 @@ test('the claw costs five coins and cools down for thirty minutes', () => {
   assert.equal(CLAW_COOLDOWN_MS, 30 * 60_000);
 });
 
-test('a claw piece is ready when it has no cooldown, and not ready until it passes', () => {
+test('a wait belongs to the player who used the piece, not to the piece', () => {
   const now = 1_000_000_000_000;
-  assert.equal(clawReadyAt({ item: 'clawMachine' }, now), 0);
-  const cooling = { item: 'clawMachine', state: { readyAt: now + 1000 } };
-  assert.equal(clawReadyAt(cooling, now), now + 1000);
-  assert.equal(clawReadyAt(cooling, now + 1001), 0); // passed
+  const key = readyKey(0, 3, 'easel');
+  assert.equal(pieceReadyAt({ ready: {} }, key, now), 0);
+  const me = { ready: { [key]: now + 1000 } };
+  assert.equal(pieceReadyAt(me, key, now), now + 1000);
+  assert.equal(pieceReadyAt(me, key, now + 1001), 0); // passed
+  // The same piece in the same slot is a different wait for a housemate: they wait on their own clock.
+  assert.equal(pieceReadyAt({ ready: {} }, key, now), 0);
 });
 
-test('a cooldown in the past is treated as ready', () => {
+test('a wait in the past is treated as ready, and swapping a piece starts fresh', () => {
   const now = 1_000_000_000_000;
-  assert.equal(clawReadyAt({ item: 'clawMachine', state: { readyAt: now - 1 } }, now), 0);
+  const key = readyKey(0, 3, 'easel');
+  const p = { ready: { [key]: now - 1 } };
+  assert.equal(pieceReadyAt(p, key, now), 0);
+  setPieceReady(p, readyKey(0, 3, 'potteryWheel'), now + 2000);
+  assert.equal(pieceReadyAt(p, key, now), 0);
+  assert.notEqual(readyKey(0, 3, 'easel'), readyKey(0, 3, 'potteryWheel'));
 });
 
 test('the claw machine is solid, so a click always reaches it', () => {

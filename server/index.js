@@ -13,7 +13,7 @@ import {
   WALL_PATTERNS, FLOOR_STYLES, PETS, MAX_PETS, SIZES, bondLevel, NOTIFY, wantsNotify, EXPAND_COST, colorsFor, USES, PET_ACCS, MAX_ROOMS, ROOM_COST,
   isPlant, TASK_COINS, TASK_REWARDS_PER_DAY, discounted, GIFT_COINS, GIFTS_PER_DAY, nextRot, canRotate, sellPrice,
   SCAR_ACCS, SCAR_COLOURS, LIGHTS, DRINKS, focusStart, caffeineOverlap, caffeineMinutes,
-  CLAW_COST, CLAW_COOLDOWN_MS, clawPrize, clawReadyAt,
+  CLAW_COST, CLAW_COOLDOWN_MS, clawPrize, readyKey, pieceReadyAt, setPieceReady,
   CRAFT, CRAFT_COOLDOWN_MS, craftColour, craftItem, craftedPrice, craftedProblem,
 } from '../shared/game.js';
 import { parseVideo } from '../shared/watch.js';
@@ -309,7 +309,7 @@ function broadcastHouse(code) {
   for (const id of h.members) {
     const p = db.players[id];
     // Personal to-dos ride along in `me`, which only this player receives.
-    send(sockets.get(id), { t: 'state', house: { ...house, todos: house.todos.filter((t) => canSee(t, h, id)) }, me: { id: p.id, home: p.home, ...houseLists(p), coins: p.coins, discount: !!p.discount, notes: p.notes ?? [], inbox: p.inbox ?? [], inboxSeen: p.inboxSeen ?? 0, tipsSeen: p.tipsSeen ?? [], events: p.events ?? [], inventory: p.inventory, crafted: p.crafted ?? [], petAccs: p.petAccs ?? [], ...(sentSessions.get(id) !== (p.sessions ?? []).length && { sessions: p.sessions ?? [] }), subjects: p.subjects ?? [], hiddenSubjects: p.hiddenSubjects ?? [], todos: p.todos ?? [], dm: p.dm ?? {}, groups: p.groups ?? {}, friends: friendList(p), notify: p.notify ?? {}, pushKey: pushOn ? PUSH_KEY : undefined } });
+    send(sockets.get(id), { t: 'state', house: { ...house, todos: house.todos.filter((t) => canSee(t, h, id)) }, me: { id: p.id, home: p.home, ...houseLists(p), coins: p.coins, discount: !!p.discount, notes: p.notes ?? [], inbox: p.inbox ?? [], inboxSeen: p.inboxSeen ?? 0, tipsSeen: p.tipsSeen ?? [], events: p.events ?? [], inventory: p.inventory, crafted: p.crafted ?? [], ready: p.ready ?? {}, petAccs: p.petAccs ?? [], ...(sentSessions.get(id) !== (p.sessions ?? []).length && { sessions: p.sessions ?? [] }), subjects: p.subjects ?? [], hiddenSubjects: p.hiddenSubjects ?? [], todos: p.todos ?? [], dm: p.dm ?? {}, groups: p.groups ?? {}, friends: friendList(p), notify: p.notify ?? {}, pushKey: pushOn ? PUSH_KEY : undefined } });
     if (sockets.has(id)) sentSessions.set(id, (p.sessions ?? []).length);
   }
 }
@@ -786,54 +786,56 @@ function handle(p, m) {
       const drink = f && has(DRINKS, f.item) ? DRINKS[f.item] : null;
       if (!owner || !drink) return;
       const now = Date.now();
+      // The window belongs to whoever drinks, not to whoever owns the machine: a housemate using my coffee
+      // machine gets their own ten minutes, and I keep mine.
       if (drink.caffeine) {
         // Already caffeinated: top the timer back up rather than opening a second window.
-        if (!(owner.caffeineUntil > now)) owner.caffeineSince = now;
-        owner.caffeineUntil = Math.max(owner.caffeineUntil ?? 0, now + drink.caffeine * 60_000);
+        if (!(p.caffeineUntil > now)) p.caffeineSince = now;
+        p.caffeineUntil = Math.max(p.caffeineUntil ?? 0, now + drink.caffeine * 60_000);
       }
       // Wine rests rather than caffeinating; the client starts the break.
-      if (drink.tipsy) owner.tipsyUntil = now + (drink.rest ?? 2) * 60_000;
+      if (drink.tipsy) p.tipsyUntil = now + (drink.rest ?? 2) * 60_000;
       save();
       broadcastHouse(p.house); // the flame is visible to housemates
       break;
     }
-    case 'claw': { // 5 coins for a weighted prize, then the machine resets
+    case 'claw': { // 5 coins for a weighted prize, then this player's wait on the machine starts
       const owner = db.houses[p.house].members.includes(m.owner) ? db.players[m.owner] : null;
       const f = owner?.rooms?.[m.r ?? 0]?.furniture?.[m.index];
       if (!f || f.item !== 'clawMachine') return;
-      const now = Date.now();
-      if (clawReadyAt(f, now)) return send(sockets.get(owner.id), { t: 'error', text: 'The claw is resetting. Try again in a few minutes.' });
-      if (owner.coins < CLAW_COST) return send(sockets.get(owner.id), { t: 'error', text: `The claw costs ${CLAW_COST} coins.` });
-      owner.coins -= CLAW_COST;
-      f.state = { ...(f.state ?? {}), readyAt: now + CLAW_COOLDOWN_MS };
+      const now = Date.now(), key = readyKey(m.r ?? 0, m.index, f.item);
+      if (pieceReadyAt(p, key, now)) return send(sockets.get(p.id), { t: 'error', text: 'The claw is resetting. Try again in a few minutes.' });
+      if (p.coins < CLAW_COST) return send(sockets.get(p.id), { t: 'error', text: `The claw costs ${CLAW_COST} coins.` });
+      p.coins -= CLAW_COST;
+      setPieceReady(p, key, now + CLAW_COOLDOWN_MS);
       const prize = clawPrize();
-      owner.inventory[prize.item] = (owner.inventory[prize.item] ?? 0) + 1;
+      p.inventory[prize.item] = (p.inventory[prize.item] ?? 0) + 1;
       save();
-      send(sockets.get(owner.id), { t: 'reward', text: `🕹️ The claw dropped a ${ITEMS[prize.item].name}! It's in your Storage.` });
+      send(sockets.get(p.id), { t: 'reward', text: `🕹️ The claw dropped a ${ITEMS[prize.item].name}! It's in your Storage.` });
       broadcastHouse(p.house);
       break;
     }
-    case 'craft': {
+    case 'craft': { // free, and whoever taps it keeps what it makes
       const owner = db.houses[p.house].members.includes(m.owner) ? db.players[m.owner] : null;
       const f = owner?.rooms?.[m.r ?? 0]?.furniture?.[m.index];
       if (!owner || !f || !has(CRAFT, f.item)) return;
-      const now = Date.now();
-      if (clawReadyAt(f, now)) return send(sockets.get(owner.id), { t: 'error', text: 'That is still being set up. Try again in a few minutes.' });
+      const now = Date.now(), key = readyKey(m.r ?? 0, m.index, f.item);
+      if (pieceReadyAt(p, key, now)) return send(sockets.get(p.id), { t: 'error', text: 'That is still being set up. Try again in a few minutes.' });
       const item = craftItem(f.item);
       if (!item) return;
       const piece = { item, col: craftColour(item) };
-      f.state = { ...(f.state ?? {}), readyAt: now + CRAFT_COOLDOWN_MS };
+      setPieceReady(p, key, now + CRAFT_COOLDOWN_MS);
       const to = !m.keep && db.houses[p.house].members.includes(m.to) ? db.players[m.to] : null;
-      if (to && to.id !== owner.id) {
+      if (to && to.id !== p.id) {
         to.crafted = [...(to.crafted ?? []), piece];
-        inbox(to, 'gift', owner, `made you a ${ITEMS[item].name.toLowerCase()}`);
-        send(sockets.get(to.id), { t: 'crafted', piece, from: owner.name });
+        inbox(to, 'gift', p, `made you a ${ITEMS[item].name.toLowerCase()}`);
+        send(sockets.get(to.id), { t: 'crafted', piece, from: p.name });
         save();
-        send(sockets.get(owner.id), { t: 'crafted', piece, to: to.id });
+        send(sockets.get(p.id), { t: 'crafted', piece, to: to.id });
       } else {
-        owner.crafted = [...(owner.crafted ?? []), piece];
+        p.crafted = [...(p.crafted ?? []), piece];
         save();
-        send(sockets.get(owner.id), { t: 'crafted', piece });
+        send(sockets.get(p.id), { t: 'crafted', piece });
       }
       broadcastHouse(p.house);
       break;

@@ -1,6 +1,8 @@
 // End-to-end check of gifting and selling, against a throwaway server this script runs itself.
 //
 //   1. claw prizes are giftable (they are storage pieces, not handmade ones)
+//   1b. a housemate can play my claw, paying their own coins and waiting on their own clock
+//   1c. a housemate drinking at my machine gets their own caffeine, and mine is untouched
 //   2. every making piece produces one of its own things, at random, with nothing to choose
 //   3. handmade pieces carry their own colour, so the client can draw them
 //   4. handmade pieces sell for a quarter of catalog price
@@ -14,7 +16,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import WebSocket from 'ws';
-import { CRAFT, ITEMS, craftedPrice, craftItem } from '../shared/game.js';
+import { CRAFT, ITEMS, craftedPrice, craftItem, CLAW_COST } from '../shared/game.js';
 import { openStore } from '../server/store.js';
 
 const PORT = Number(process.env.E2E_PORT ?? 8792);
@@ -72,6 +74,7 @@ async function connect(p, token) {
   p.crafted = () => p.state.me.crafted ?? [];
   p.last = (t) => [...p.msgs].reverse().find((m) => m.t === t);
   p.room = () => p.state.house.members.find((m) => m.id === p.id).rooms[0];
+  p.who = () => p.state.house.members.find((m) => m.id === p.id);
 }
 const at = (p, item) => p.room().furniture.findIndex((f) => f.item === item);
 
@@ -106,6 +109,7 @@ try {
       { item: 'loom', x: 7, y: 3 },
       { item: 'craftTable', x: 1, y: 5 },
       { item: 'sewingTable', x: 3, y: 5 },
+      { item: 'coffeeMachine', x: 9, y: 5 },
     ],
   }];
   store.saveAll();
@@ -133,6 +137,25 @@ try {
   ok('the prize arrived with the housemate', (B.inv()[prize] ?? 0) > 0, JSON.stringify(B.inv()));
   ok('gifting a piece moves no coins', A.coins() === beforeGift && B.coins() === bCoinsBefore, `${beforeGift}/${bCoinsBefore}`);
   ok('the receiver was told', !!B.last('gift_item'));
+
+  // ---------- 1b. a housemate plays it too: their own coins, their own prize, their own wait ----------
+  const clawCoinsBefore = B.coins(), bInvBefore = { ...B.inv() }, aInvBefore = { ...A.inv() };
+  B.send({ t: 'claw', owner: A.id, r: 0, index: clawAt });
+  await sleep(500);
+  ok('a housemate can play my claw', B.coins() === clawCoinsBefore - CLAW_COST, `${clawCoinsBefore} -> ${B.coins()}`);
+  ok('the housemate got the prize, not the owner', Object.entries(B.inv()).some(([k, n]) => n > (bInvBefore[k] ?? 0)), JSON.stringify(B.inv()));
+  ok('my own things were left alone', JSON.stringify(A.inv()) === JSON.stringify(aInvBefore), JSON.stringify(A.inv()));
+  B.send({ t: 'claw', owner: A.id, r: 0, index: clawAt });
+  await sleep(400);
+  ok('the housemate waits on their own clock', B.coins() === clawCoinsBefore - CLAW_COST, `${B.coins()}`);
+
+  // ---------- 1c. a drink is the drinker's: my machine, their ten minutes ----------
+  const brewAt = at(A, 'coffeeMachine');
+  ok('the coffee machine is on the floor', brewAt >= 0);
+  B.send({ t: 'brew', owner: A.id, r: 0, index: brewAt });
+  await sleep(500);
+  ok('a housemate drinking at my machine gets their own ten minutes', (B.who().caffeineUntil ?? 0) > Date.now(), `${B.who().caffeineUntil ?? 0}`);
+  ok('my own window is untouched', !((A.who().caffeineUntil ?? 0) > Date.now()), `${A.who().caffeineUntil ?? 0}`);
 
   // ---------- 2. every making piece makes one of its own things, at random ----------
   const pieces = Object.keys(CRAFT);
@@ -182,9 +205,19 @@ try {
   ok('the quarter price is not the half price', expected !== half, `${expected} vs ${half}`);
   ok('the sold piece left the handmade list', A.crafted().length === made.length - 1);
 
-  // ---------- 5. a gifted handmade piece stays sellable ----------
-  A.send({ t: 'craft', owner: A.id, r: 0, index: at(A, 'easel'), keep: true });
+  // ---------- 5. a housemate uses my piece on their own clock, and keeps what it makes ----------
+  const easelAt = at(A, 'easel');
+  const aCrafted = A.crafted().length;
+  B.send({ t: 'craft', owner: A.id, r: 0, index: easelAt, keep: true });
   await sleep(400);
+  const housematePiece = B.crafted()[0];
+  ok('a housemate can use my piece and the thing is theirs', !!housematePiece, String(housematePiece?.item));
+  ok('the housemate was not blocked by my own wait', A.crafted().length === aCrafted, `${aCrafted} -> ${A.crafted().length}`);
+  A.send({ t: 'craft', owner: A.id, r: 0, index: easelAt, keep: true });
+  await sleep(400);
+  ok('my own wait still blocks me', A.crafted().length === aCrafted, `${aCrafted} -> ${A.crafted().length}`);
+
+  // ---------- 6. a gifted handmade piece stays sellable ----------
   const giftPiece = A.crafted()[0];
   ok('A has a piece to gift', !!giftPiece);
   A.send({ t: 'gift_crafted', index: 0, to: B.id });
@@ -197,7 +230,7 @@ try {
   ok('a gifted piece sells for a quarter of catalog price', B.coins() === bBefore + bExpected,
     `+${B.coins() - bBefore}, expected ${bExpected}`);
 
-  // ---------- 6. the plain coin gift still works ----------
+  // ---------- 7. the plain coin gift still works ----------
   const coinBefore = A.coins();
   A.send({ t: 'gift', to: B.id });
   await sleep(500);

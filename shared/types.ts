@@ -50,6 +50,7 @@ export interface MeState {
   events: CalEvent[];
   inventory: Record<string, number>;
   crafted?: { item: string; col: string }[]; // made by hand: one real piece each, private to its owner
+  ready?: Record<string, number>; // this player's waits on the claw and making pieces, keyed by `readyKey`
   petAccs: string[];
   sessions: Session[];
   subjects: string[];
@@ -116,7 +117,6 @@ export interface Furniture {
   wateredAt?: number;
   off?: boolean;
   col?: string;
-  state?: { readyAt?: number }; // a piece's own cooldown, checked against the clock on both sides
 }
 
 export interface Pet {

@@ -79,9 +79,11 @@ Each pet kind has free `coats` (fur colours) and can wear one accessory from `PE
 
 ## Drinks, the claw and crafting
 
-- **Drinks** (`DRINKS` in `shared/game.js`): coffee, the energy can and the coffee machine grant **caffeine** for 10 minutes — faster walking, a flame pass, a HUD chip, and one extra coin per caffeinated focus minute. Wine grants a 2-minute rest and a cosmetic **tipsy** sway. Drinking is free and consumes nothing; the caffeine window is the only limit.
-- **Claw machine**: 5 coins, a 30-minute cooldown per machine (`state.readyAt`), and a weighted prize from `CLAW_PRIZES` — small trinkets and plushes, all existing catalog items. The prize lands in `inventory`.
-- **Crafting**: the five `use: 'paint'` pieces (`potteryWheel`, `easel`, `loom`, `craftTable`, `sewingTable`) each own a pool of catalog items. Crafting is free, cools down for 20 minutes per piece, and produces one item in a random colour as a real instance stored in the player's `crafted` list. That list is private to its owner and rides in `me`, never in `publicPlayer`. A crafted piece can be kept, placed (carrying its colour), gifted to a housemate, or sold for a quarter of catalog price.
+- **Drinks** (`DRINKS` in `shared/game.js`): coffee, the energy can and the coffee machine grant **caffeine** for 10 minutes — faster walking, a flame pass, a HUD chip, and one extra coin per caffeinated focus minute. Wine grants a 2-minute rest and a cosmetic **tipsy** sway. Drinking is free and consumes nothing; the caffeine window is the only limit, and it is the drinker's own: any housemate can drink at any machine, and the window only ever opens on the person who clicked. Every limit like this is per player, so one housemate's drink, play or craft never makes another wait.
+- **Claw machine**: 5 coins, a 30-minute wait on the player who plays it, and a weighted prize from `CLAW_PRIZES` — small trinkets and plushes, all existing catalog items. Any housemate can play it; the clicker pays, the clicker gets the prize, and the clicker waits. The prize lands in their `inventory`.
+- **Crafting**: the five `use: 'paint'` pieces (`potteryWheel`, `easel`, `loom`, `craftTable`, `sewingTable`) each own a pool of catalog items. Crafting is free, waits 20 minutes on the clicker, and produces one item in a random colour as a real instance stored in the clicker's `crafted` list. Any housemate can use any piece, so a kiln in my room makes something for whoever taps it. That list is private to its owner and rides in `me`, never in `publicPlayer`. A crafted piece can be kept, placed (carrying its colour), gifted to a housemate, or sold for a quarter of catalog price.
+
+  A wait is kept per player, in `p.ready`: a map from `readyKey(room, index, item)` to the moment it ends, sent in `me` and never in `publicPlayer`. Two players can use the same piece at once, and swapping a piece in a slot starts a fresh wait because the item is part of the key.
 
 ## Gifting
 

@@ -106,12 +106,12 @@ Wine sets `tipsyUntil = now + 2 * 60_000` and starts the existing snack break (`
 
 `clawMachine` is `solid` and already on the games shelf. One click:
 
-1. Server checks the player has 5 coins and the piece is off cooldown.
-2. Server charges 5 coins and sets `state.readyAt = now + 30 * 60_000`.
+1. Server checks the player has 5 coins and their own wait on this piece is over.
+2. Server charges the clicker 5 coins and sets that player's `ready[readyKey(r, index, 'clawMachine')] = now + 30 * 60_000`.
 3. Client plays a 5-second claw animation over the prize pool.
-4. Server picks a prize by weight and adds it to `inventory`.
+4. Server picks a prize by weight and adds it to the clicker's `inventory`.
 
-The cooldown is 30 minutes, so a machine earns its keep slowly.
+The cooldown is 30 minutes, so a machine earns its keep slowly. Any housemate can play it; the wait belongs to whoever clicked, so one housemate's play never blocks another's.
 
 Prize pool (plushes and small decor, all existing catalog items):
 
@@ -126,11 +126,11 @@ Prize pool (plushes and small decor, all existing catalog items):
 | `sharkPlush` | 3 |
 | `bigTeddy` | 1 |
 
-The cooldown needs one new field:
+The wait needs one new field, on the player rather than on the piece, so that it belongs to the person who used it:
 
 ```ts
-// on Furniture
-state?: { readyAt?: number };
+// on the player (me)
+ready?: Record<string, number>; // readyKey(room, index, item) -> when this player may use that piece again
 ```
 
 ### Crafting
@@ -149,7 +149,7 @@ The colour is a random pick from the piece's own palette when it has one (`color
 
 The craft finishes in one step: the server picks the item and colour and the client plays the making animation while it waits for the reply. There is no multi-stage progress to persist.
 
-Crafting costs nothing and is gated by a per-piece cooldown (`state.readyAt`, 20 minutes).
+Crafting costs nothing and is gated by a wait of 20 minutes on the clicker's own clock. Any housemate can use any making piece, and each of them keeps what it makes.
 
 Each craft produces one item in a random colour, as a real instance rather than a count. `inventory` is `Record<string, number>` and cannot hold a colour, so the player gains a parallel list:
 
@@ -189,19 +189,19 @@ Placing a crafted piece consumes the matching entry in `crafted` and sets `col` 
 ```
 click a drink
    |
-   +-- DRINKS[item] --> caffeineSince/caffeineUntil on the member --> broadcast
+   +-- DRINKS[item] --> caffeineSince/caffeineUntil on the drinker --> broadcast
    |                        |                                   |
    |                        +-- flame pass, HUD chip, speed     +-- housemates see the flame
    |
-   +-- wine --> tipsyUntil + startBreak(2 min) --> sway
+   +-- wine --> tipsyUntil on the drinker + startBreak(2 min) --> sway
 
 click the claw machine
    |
-   +-- server: 5 coins, state.readyAt, weighted prize --> inventory
+   +-- server: 5 coins from the clicker, ready[key] for the clicker, weighted prize --> their inventory
 
 click a craft piece
    |
-   +-- server: cooldown, random item + colour --> keep? crafted : housemate's crafted + inbox
+   +-- server: the clicker's wait, random item + colour --> keep? their crafted : housemate's crafted + inbox
 ```
 
 ## Files touched
@@ -225,10 +225,10 @@ click a craft piece
 
 - Drinks have no cooldown of their own: the caffeine window is the limit, and drinking again only tops it up. Wine's limit is the break it starts, which `startBreak` already refuses while a focus session is running.
 - Drinking during a session is allowed and takes effect immediately, which is why the reward is computed from the stored window at `focus_done` rather than at `focus_start`.
-- A craft with an unknown target housemate falls back to keeping the piece rather than losing it.
+- The claw machine refuses a play without 5 coins or while the clicker's own wait is running, and says which. Both are answered to the clicker: they paid, so they are the one who hears about it.
+- A craft with an unknown target housemate falls back to keeping the piece rather than losing it. Whatever the target, the wait starts on the clicker.
 - A malformed `crafted` entry (unknown item, or a colour that is not a six-digit hex) is dropped on load, the same way unknown inventory keys are dropped at `server/index.js:1447`.
 - A stale `caffeineUntil` in the past simply means no overlap, so an old save cannot claim a bonus.
-- The claw machine refuses a play without 5 coins or while `state.readyAt` is in the future, and says which.
 
 ## Testing
 

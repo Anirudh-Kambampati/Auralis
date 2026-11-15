@@ -3,7 +3,7 @@ import {
   WALLPAPERS, WALL_PATTERNS, FLOORS, FLOOR_STYLES, SKINS, HAIRS, SHIRTS, STYLES, FACES, OUTFITS, BODIES, SIZES, ACCESSORIES, FOCUS_LENGTHS, isFocusLength, SCAR_ACCS, SCAR_COLOURS,
   WALL_H, WALL, FLOOR, DOOR, BLOCKED, VOID, buddyMultiplier, focusEnd, streakDays, streakBonus, sellPrice, footprint, lying, canRotate, THIRSTY_MS, isPlant, discounted, GIFT_COINS, activeEvents, nextEvent,
   docName, attachLabel, DOC_TYPES, usernameProblem, emailProblem, passwordProblem, LIGHTS, DRINKS, caffeineMinutes,
-  CLAW_COST, clawReadyAt, CRAFT, craftedPrice,
+  CLAW_COST, readyKey, pieceReadyAt, CRAFT, craftedPrice,
 } from '../shared/game.js';
 import { GUIDE_SECTIONS, GUIDE_TIPS } from '../shared/guide.js';
 import {
@@ -490,6 +490,8 @@ const pingOrHold = () => { if (myMember()?.focus) missed++; else notify(ping); }
 // Breaks: lying down in a bed you clicked (5 minutes) or a snack at the fridge (2), ending with a chime.
 const NAP_MS = 5 * 60_000, SNACK_MS = 2 * 60_000;
 const clawAt = new Map<string, number>(); // "member:room:index" -> when the claw was played, for the grabber animation
+// A wait belongs to whoever used the piece, not to the piece: ask about me and this piece, never about the furniture.
+const myReady = (f: Furniture, r: number, i: number) => pieceReadyAt(me, readyKey(r, i, f.item));
 let breakTimer = 0, breakEnds = 0; // breakEnds: shown counting down in the HUD
 function endBreak() { clearTimeout(breakTimer); breakTimer = 0; }
 function startBreak(ms: number, text: string) {
@@ -547,12 +549,12 @@ function afterUse(f: Furniture, owner: Member, ri: number, fi: number): (() => v
   if (f.item === 'giftBox') return () => { setPanel('house'); toast('Pick a housemate to send a gift.'); };
   if (f.item === 'whiteboard') return () => { setPanel('todos'); openTodoModal(); };
   if (CRAFT[f.item as keyof typeof CRAFT]) return () => {
-    const ready = clawReadyAt(f);
+    const ready = myReady(f, ri, fi);
     if (ready) { toast(`⏳ Ready ${fmt(ready - Date.now())} from now.`); return; }
     send({ t: 'craft', owner: owner.id, r: ri, index: fi });
   };
   if (f.item === 'clawMachine') return () => {
-    const ready = clawReadyAt(f);
+    const ready = myReady(f, ri, fi);
     if (ready) { toast(`🕹️ The claw is resetting. Ready ${fmt(ready - Date.now())} from now.`); return; }
     if (me.coins < CLAW_COST) { toast(`The claw costs ${coin()} ${CLAW_COST}.`, 'error'); return; }
     clawAt.set(`${owner.id}:${ri}:${fi}`, Date.now());
@@ -1955,7 +1957,7 @@ function decorateBody(mine: Member) {
       ${palette.length ? `<h3>Colour</h3><div class="swatches">${palette.map((c: string, k: number) =>
         `<button class="swatch${!sel.col && (sel.v ?? -1) === k ? ' on' : ''}" style="background:${c}" data-act="recolor" data-v="${k}" aria-label="${c}"></button>`).join('')}${sel.col
         ? `<button class="swatch on" style="background:${sel.col}" data-act="noop" title="Your custom colour" aria-label="Your custom colour"></button>` : ''}<button class="swatch custom" data-act="paintfurn" title="Custom colour" aria-label="Custom colour" style="background:${CUSTOM_SWATCH}"></button></div>` : ''}` : '';
-  const craftedReadyAt = sel ? clawReadyAt(sel) : 0;
+  const craftedReadyAt = sel && moving !== null ? myReady(sel, editRoom, moving) : 0;
   const craftBar = sel && CRAFT[sel.item as keyof typeof CRAFT] ? `<p class="hint">${craftedReadyAt ? `Ready ${fmt(craftedReadyAt - Date.now())} from now.` : 'Tap the piece in your room to make something: free, and it only makes what that piece is for.'}</p>` : '';
   const hint = placing ? `Tap a spot in your room to place the <b>${ITEMS[placing].name}</b>.`
     : sel ? (canRot ? 'Drag it, or tap a new spot to move it there. Keys: arrows move · R rotate · F flip · Delete put away · Esc done.' : 'Drag it, or tap a new spot to move it there. Keys: arrows move · F flip · Delete put away · Esc done.')
@@ -2282,7 +2284,7 @@ panel.addEventListener('click', (e) => {
       if (moving === null) return;
       const f = myRoom()?.furniture[moving];
       if (!f || !CRAFT[f.item as keyof typeof CRAFT]) return;
-      if (clawReadyAt(f)) { toast(`⏳ Ready ${fmt(clawReadyAt(f) - Date.now())} from now.`); return; }
+      if (myReady(f, editRoom, moving)) { toast(`⏳ Ready ${fmt(myReady(f, editRoom, moving) - Date.now())} from now.`); return; }
       send({ t: 'craft', owner: myId, r: editRoom, index: moving, keep: true });
       return;
     }
@@ -2498,13 +2500,13 @@ function clickLabel(tx: number, ty: number): string | null {
   if (LIGHTS.has(f.item) && members.some((m) => m.id === hit.m.id)) return f.off ? 'Lights on' : 'Lights off';
   if (f.item === 'giftBox') return 'Send a gift';
   if (f.item === 'whiteboard') return 'House to-dos';
-  if (f.item === 'clawMachine') return clawReadyAt(f) ? `Claw (ready ${fmt(clawReadyAt(f) - Date.now())})` : `Play the claw · ${CLAW_COST} coins`;
+  if (f.item === 'clawMachine') return myReady(f, hit.ri, fi) ? `Claw (ready ${fmt(myReady(f, hit.ri, fi) - Date.now())})` : `Play the claw · ${CLAW_COST} coins`;
   const craft = CRAFT[f.item as keyof typeof CRAFT];
   if (craft) {
     // A tip is plain text, so no coin() markup here: just whether it is ready. Each piece makes one of its own
     // things at random, so there is nothing to choose.
     const what = CRAFT_LABELS[f.item] ?? 'Make something';
-    const ready = clawReadyAt(f);
+    const ready = myReady(f, hit.ri, fi);
     return ready ? `${what} (ready ${fmt(ready - Date.now())})` : `${what} · free`;
   }
   const drink = DRINKS[f.item as keyof typeof DRINKS] as { caffeine?: number; rest?: number } | undefined;
