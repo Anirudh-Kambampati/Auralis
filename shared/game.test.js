@@ -6,6 +6,7 @@ import {
   DOOR, WALL, FLOOR, BLOCKED, VOID, ROOM_W, colsFor, isFocusLength, FOCUS_LENGTHS, bondLevel,
   DRINKS,
   CLAW_PRIZES, CLAW_COST, CLAW_COOLDOWN_MS, clawPrize, clawReadyAt,
+  CRAFT, CRAFT_COOLDOWN_MS, craftColour, craftedProblem, PASTELS,
 } from './game.js';
 
 const empty = (level = 0) => ({ level, furniture: [] });
@@ -338,4 +339,46 @@ test('a cooldown in the past is treated as ready', () => {
 test('the claw machine is solid, so a click always reaches it', () => {
   assert.equal(ITEMS.clawMachine.solid, true);
   assert.equal(ITEMS.clawMachine.top, undefined);
+});
+
+test('every craft piece names a pool of real catalog items', () => {
+  for (const [piece, pool] of Object.entries(CRAFT)) {
+    assert.ok(ITEMS[piece], `${piece} is not in ITEMS`);
+    assert.ok(Array.isArray(pool) && pool.length > 0, `${piece} has no pool`);
+    for (const item of pool) assert.ok(ITEMS[item], `${piece} yields ${item}, which is not in ITEMS`);
+  }
+});
+
+test('the five paint pieces are the craft pieces', () => {
+  for (const key of ['potteryWheel', 'easel', 'loom', 'craftTable', 'sewingTable']) {
+    assert.ok(CRAFT[key], `${key} is missing`);
+  }
+});
+
+test('crafting is free and cools down for five minutes', () => {
+  assert.equal(CRAFT_COOLDOWN_MS, 5 * 60_000);
+});
+
+test('craft colour comes from the item palette when it has one, and pastels otherwise', () => {
+  // Vase has a pastel palette; a rug has none, so it falls back to PASTELS.
+  const vase = craftColour('vase', 0);
+  assert.ok(colorsFor('vase').includes(vase));
+  const rug = craftColour('rug', 0);
+  assert.ok(PASTELS.includes(rug));
+});
+
+test('craft colour stays inside the palette across the whole range', () => {
+  for (const item of ['vase', 'sculpture', 'rug', 'plush']) {
+    for (const r of [0, 0.25, 0.5, 0.75, 0.999]) {
+      const col = craftColour(item, r);
+      assert.match(col, /^#[0-9a-f]{6}$/);
+    }
+  }
+});
+
+test('a crafted entry is only valid with a known item and a hex colour', () => {
+  assert.equal(craftedProblem({ item: 'vase', col: '#aabbcc' }), null);
+  assert.ok(craftedProblem({ item: 'notAnItem', col: '#aabbcc' }));
+  assert.ok(craftedProblem({ item: 'vase', col: 'red' }));
+  assert.ok(craftedProblem(null));
 });

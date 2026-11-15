@@ -440,6 +440,33 @@ export const clawReadyAt = (f, now = Date.now()) => {
   const at = f?.state?.readyAt;
   return Number.isFinite(at) && at > now ? at : 0;
 };
+
+// What each making piece can produce. All five already carry use: 'paint'.
+export const CRAFT = {
+  potteryWheel: ['vase', 'sculpture', 'bust', 'mushrooms'],
+  easel: ['photoFrames', 'vase', 'sculpture', 'bust'],
+  loom: ['rug', 'roundRug', 'ovalRug', 'runnerRug'],
+  craftTable: ['candles', 'photoFrames', 'snowGlobe'],
+  sewingTable: ['plush', 'bigTeddy', 'sharkPlush'],
+};
+export const CRAFT_COOLDOWN_MS = 5 * 60_000;
+
+// A crafted piece comes out in one of its own colours when it has a palette, and a pastel otherwise.
+export function craftColour(item, r = Math.random()) {
+  const palette = colorsFor(item);
+  const list = palette.length ? palette : PASTELS;
+  return list[Math.min(list.length - 1, Math.floor(Math.min(Math.max(r, 0), 0.999999) * list.length))];
+}
+
+const hasOwn = (table, key) => typeof key === 'string' && Object.hasOwn(table, key);
+
+// What is wrong with a crafted entry, in the same spirit as usernameProblem, or null when it is fine.
+export function craftedProblem(entry) {
+  if (!entry || typeof entry !== 'object') return 'That piece is missing.';
+  if (!hasOwn(ITEMS, entry.item)) return 'That piece is not in the catalog.';
+  if (typeof entry.col !== 'string' || !/^#[0-9a-fA-F]{6}$/.test(entry.col)) return 'That colour is not a hex colour.';
+  return null;
+}
 // Furniture remembers its colour by position in these lists: only ever add to the end.
 export const PASTELS = ['#f4a6b8', '#9db4ee', '#8fd0a8', '#ffd27a', '#b89af0', '#f2b48a', '#e8e3dc', '#7a6a8a',
   '#e06a5a', '#f28a3a', '#6cbf7a', '#4fb0b0', '#5b7fd6', '#3a3448', '#fffaf3', '#c8805a'];
