@@ -274,6 +274,15 @@ test('focusStart is the end minus the session length, with paused time frozen', 
   assert.equal(focusStart(paused, now), paused.endsAt + 100_000 - 25 * 60_000);
 });
 
+test('leaving early pays the overlap for the time actually worked', () => {
+  const now = 1_000_000_000_000;
+  const f = { minutes: 60, endsAt: now, pausedAt: null };
+  const workedFrom = focusStart(f, now);
+  // Caffeinated from minute 5 to minute 12, but the player left at minute 10.
+  const leftAt = workedFrom + 10 * 60_000;
+  assert.equal(caffeineOverlap(workedFrom, leftAt, workedFrom + 5 * 60_000, workedFrom + 12 * 60_000), 5);
+});
+
 test('the drinks table names a caffeine length for the three caffeinated drinks', () => {
   assert.equal(DRINKS.coffeeMachine.caffeine, 10);
   assert.equal(DRINKS.coffee.caffeine, 10);

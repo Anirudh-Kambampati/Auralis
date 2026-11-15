@@ -12,7 +12,7 @@ import {
   ITEMS, WALLPAPERS, FLOORS, SKINS, HAIRS, SHIRTS, STYLES, FACES, OUTFITS, BODIES, ACCESSORIES, isFocusLength, canPlace, placeSwaps, focusReward, quitReward, quitMinutes, focusEnd, streakDays, streakBonus,
   WALL_PATTERNS, FLOOR_STYLES, PETS, MAX_PETS, SIZES, bondLevel, NOTIFY, wantsNotify, EXPAND_COST, colorsFor, USES, PET_ACCS, MAX_ROOMS, ROOM_COST,
   isPlant, TASK_COINS, TASK_REWARDS_PER_DAY, discounted, GIFT_COINS, GIFTS_PER_DAY, nextRot, canRotate, sellPrice,
-  SCAR_ACCS, SCAR_COLOURS, LIGHTS, DRINKS,
+  SCAR_ACCS, SCAR_COLOURS, LIGHTS, DRINKS, focusStart, caffeineOverlap, caffeineMinutes,
 } from '../shared/game.js';
 import { parseVideo } from '../shared/watch.js';
 import { CHAT_KEY, DOC_TYPES, safeDocName, attachLabel, docName, usernameProblem, emailProblem, passwordProblem } from '../shared/game.js';
@@ -498,7 +498,8 @@ function handle(p, m) {
       if (!p.focus) return;
       const now = Date.now();
       const elapsed = now - (focusEnd(p.focus, now) - p.focus.minutes * 60_000); // paused time doesn't count
-      const reward = quitReward(p.focus.minutes, buddiesOf(p, now), elapsed);
+      const reward = quitReward(p.focus.minutes, buddiesOf(p, now), elapsed)
+        + caffeineOverlap(focusStart(p.focus, now), now, p.caffeineSince, p.caffeineUntil); // the time you actually worked while caffeinated
       const minutes = quitMinutes(p.focus.minutes, elapsed);
       p.coins += reward;
       if (minutes) {
@@ -523,7 +524,8 @@ function handle(p, m) {
       p.sessions.push({ at: now, minutes: p.focus.minutes, tag: p.focus.tag ?? 'Study' });
       if (p.sessions.length > 3000) p.sessions.splice(0, p.sessions.length - 3000);
       const streak = streakDays(p.sessions, now, p.tz); // includes today, now that this session counts
-      const reward = focusReward(p.focus.minutes, buddies) + Math.ceil(p.focus.minutes * streakBonus(streak));
+      const reward = focusReward(p.focus.minutes, buddies) + Math.ceil(p.focus.minutes * streakBonus(streak))
+        + caffeineMinutes(p.focus, p.caffeineSince, p.caffeineUntil, now); // one extra coin per caffeinated minute of the session
       p.coins += reward;
       const studied = p.focus.minutes;
       p.focus = null;
