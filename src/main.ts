@@ -1739,7 +1739,8 @@ function maybeShowHouseItemsTour() {
   const MUSIC_USES = new Set(['music', 'dance', 'dj', 'drum', 'strum']);
   const WATCH_ITEMS = new Set(['tv', 'retroTV', 'mediaConsole']);
   const rows: TourRow[] = [];
-  const seen = new Set(seenTips());
+  const forceOnce = !localStorage.getItem('auralis.houseItemsTour.once.v1');
+  const seen = new Set(forceOnce ? [] : seenTips());
   for (const m of members) {
     const who = m.id === myId ? 'Your' : `${m.name}'s`;
     for (let ri = 0; ri < m.rooms.length; ri++) {
@@ -1763,6 +1764,7 @@ function maybeShowHouseItemsTour() {
   if (!rows.length) return;
   // Remember each item (per user) so it never shows again, then present in tour format.
   for (const r of rows) if (r.item) markTipSeen(r.item);
+  if (forceOnce) localStorage.setItem('auralis.houseItemsTour.once.v1', '1');
   openTour(rows, { title: 'Items in this house', lede: 'Special things in this house you can use. Each one is shown once.' });
 }
 
