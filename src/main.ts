@@ -498,6 +498,8 @@ function startBreak(ms: number, text: string) {
 }
 
 const TVS = new Set(['tv', 'retroTV', 'mediaConsole']);
+// Pieces a click does something special with, beyond act/use/light/sound (see tapAt).
+const CLICKABLE = new Set(['petBall', 'deskCalendar', 'giftBox', 'whiteboard']);
 const STARS = ['🌠 A shooting star! Make a wish.', "✨ You spotted Orion's belt.", '🪐 Is that Saturn? It is!', '🌌 The Milky Way is out tonight.', '🌙 The moon is so bright.'];
 // What some furniture does once you've walked up to it, on top of the little animation.
 function afterUse(f: Furniture, owner: Member, ri: number, fi: number): (() => void) | null {
@@ -779,14 +781,38 @@ function wander() {
   else restUntil = Date.now() + 2000;
 }
 
-function furnitureAt(room: Room, lx: number, ly: number) {
-  const hits = room.furniture
+// Everything under a tile, topmost first: a tabletop thing sits above the solid piece it stands on, so it wins the click.
+// Decorate walks this list to reach the piece underneath without moving anything.
+function furnitureHits(room: Room, lx: number, ly: number) {
+  const rank = (f: Furniture) => { const it = ITEMS[f.item as ItemKey] as { top?: boolean; solid?: boolean } | undefined; return it?.top ? 2 : it?.solid ? 1 : 0; };
+  return room.furniture
     .map((f, i) => ({ f, i }))
     .filter(({ f }) => {
       const d = ITEMS[f.item as ItemKey] && footprint(f);
       return d && lx >= f.x && lx < f.x + d.w && ly >= f.y && ly < f.y + d.h;
-    });
-  return (hits.find(({ f }) => ITEMS[f.item as ItemKey].solid) ?? hits[0])?.i ?? -1;
+    })
+    .sort((a, b) => rank(b.f) - rank(a.f));
+}
+// What a click uses: the topmost thing there that actually does something, falling through a mug that does nothing to the
+// table under it.
+const isInteractive = (f: Furniture) => {
+  const it = ITEMS[f.item as ItemKey] as { act?: string; use?: string } | undefined;
+  return !!it && (!!it.act || !!it.use || LIGHTS.has(f.item) || CLICKABLE.has(f.item) || !!soundName(f.item));
+};
+function furnitureAt(room: Room, lx: number, ly: number) {
+  const hits = furnitureHits(room, lx, ly);
+  return (hits.find(({ f }) => isInteractive(f)) ?? hits[0])?.i ?? -1;
+}
+// Decorate picking: tap the same tile again to step down through what's stacked there, so a counter stays reachable
+// under the machine on it.
+let pickKey = '', pickDepth = 0, pickWhen = 0;
+function pickAt(room: Room, lx: number, ly: number) {
+  const key = `${lx},${ly}`, now = Date.now();
+  pickDepth = key === pickKey && now - pickWhen < 3000 ? pickDepth + 1 : 0;
+  pickKey = key; pickWhen = now;
+  const hits = furnitureHits(room, lx, ly);
+  if (pickDepth >= hits.length) pickDepth = 0;
+  return { i: hits[pickDepth]?.i ?? -1, depth: pickDepth, count: hits.length };
 }
 
 const without = (room: Room, index: number) => ({ ...room, furniture: room.furniture.filter((_, k) => k !== index) });
@@ -861,7 +887,8 @@ function tapAt(e: PointerEvent) {
     if (!placing && !drag && tapped?.m.id === myId && tapped.ri !== editRoom) { editRoom = tapped.ri; moving = null; renderPanel(); return; }
     const o = grid.origins[mySlot()];
     const lx = tx - o.x, ly = ty - o.y;
-    const i = furnitureAt(myRoom()!, lx, ly);
+    const hit = placing ? { i: -1, depth: 0, count: 0 } : pickAt(myRoom()!, lx, ly);
+    const i = hit.i;
     if (placing) {
       if (placeSwaps(myRoom()!, placing, lx, ly)) { send({ t: 'place', r: editRoom, item: placing, x: lx, y: ly }); placing = null; }
       else toast('That spot is taken or outside your room.', 'error');
@@ -871,6 +898,7 @@ function tapAt(e: PointerEvent) {
       moving = i;
       drag = { index: i, gx: lx - f.x, gy: ly - f.y, lx: f.x, ly: f.y, moved: false };
       canvas.setPointerCapture(e.pointerId);
+      if (hit.count > 1) toast(hit.depth ? `${ITEMS[f.item as ItemKey].name} selected. Tap again for the next one down.` : `${ITEMS[f.item as ItemKey].name} is on top. Tap again to reach what's under it.`);
     } else if (moving !== null) {
       const f = myRoom()!.furniture[moving];
       if (f && canPlace(without(myRoom()!, moving), f.item, lx, ly, f.rot)) send({ t: 'move', r: editRoom, index: moving, x: lx, y: ly });
@@ -1844,7 +1872,7 @@ function decorateBody(mine: Member) {
         ? `<button class="swatch on" style="background:${sel.col}" data-act="noop" title="Your custom colour" aria-label="Your custom colour"></button>` : ''}<button class="swatch custom" data-act="paintfurn" title="Custom colour" aria-label="Custom colour" style="background:${CUSTOM_SWATCH}"></button></div>` : ''}` : '';
   const hint = placing ? `Tap a spot in your room to place the <b>${ITEMS[placing].name}</b>.`
     : sel ? (canRot ? 'Drag it, or tap a new spot to move it there. Keys: arrows move · R rotate · F flip · Delete put away · Esc done.' : 'Drag it, or tap a new spot to move it there. Keys: arrows move · F flip · Delete put away · Esc done.')
-    : 'Drag any furniture to move it, or tap it for more options.';
+    : 'Drag any furniture to move it, or tap it for more options. Tap a stack again to reach what is underneath.';
   const shelves = SHELVES.filter((sh) => inv.some(([k]) => (ITEMS[k as ItemKey] as { shelf?: string }).shelf === sh.id));
   if (!shelves.some((sh) => sh.id === storeShelf)) storeShelf = 'all';
   const shown = storeShelf === 'all' ? inv : inv.filter(([k]) => (ITEMS[k as ItemKey] as { shelf?: string }).shelf === storeShelf);
