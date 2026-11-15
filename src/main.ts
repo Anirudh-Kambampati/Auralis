@@ -5,6 +5,7 @@ import {
   docName, attachLabel, DOC_TYPES, usernameProblem, emailProblem, passwordProblem, LIGHTS, DRINKS, caffeineMinutes,
   CLAW_COST, clawReadyAt, CRAFT, craftedPrice,
 } from '../shared/game.js';
+import { GUIDE_SECTIONS } from '../shared/guide.js';
 import {
   T, OVERHANG, SURFACE, AVATAR_H, avatarScale, lookKey, drawSeated, drawActing, drawSeam, drawFloor, drawWall, drawWallFace, drawWallTop, drawDoor, drawWindow, drawPainting, drawFurniture, drawAvatar, drawDeskLamp, drawGlow, drawUsing, drawFlames, drawClaw, skyNow, weatherNow, skyProgress, nightTint,
   coinURL, uiIconURL, AV, drawPaper, isDark, paintBlockText, drawWindow as drawWin, drawDroplet, drawHeart, tileURL, ACC_COL, ACC_COLORS, ACC_TINT, type Look,
@@ -94,6 +95,7 @@ let lastChatId = -1;
 let unread = false;
 let path: { x: number; y: number }[] = [];
 let openPanel: string | null = null;
+let guideOpen: string | null = null; // which Guide card is expanded, or null
 let shopTab = 'cozy';
 let placing: ItemKey | null = null;
 let placingCrafted = -1; // which handmade piece is being placed, or -1
@@ -1608,6 +1610,7 @@ const THEMES: Record<string, { title: string; icon: string; color: string }> = {
   avatar: { title: 'You', icon: 'face', color: '#f3d3dc' },
   house: { title: 'House', icon: 'house', color: '#ddd3ef' },
   stats: { title: 'Stats', icon: 'chart', color: '#fbe0c8' },
+  guide: { title: 'Guide', icon: 'guide', color: '#dce7ea' },
 };
 const TAG_COLORS = ['#9db4ee', '#f4a6b8', '#8fd0a8', '#ffd27a', '#b89af0', '#f2b48a'];
 
@@ -2010,7 +2013,24 @@ function subjectChips() {
 // Housemates whose session I can still join: running, not paused, at least a minute left (the server checks the same).
 const joinable = () => members.filter((o) => o.id !== myId && o.focus && !o.focus.pausedAt && o.focus.endsAt - Date.now() >= 60_000);
 
+// The Guide: one card per system, expanded in place. A card shows its blurb, then its item rows or,
+// for `start`, its numbered steps. Items the catalog no longer knows are skipped rather than thrown.
+function guideBody() {
+  return `<div class="guide">${GUIDE_SECTIONS.filter((s) => (s.items ?? []).every((r) => ITEMS[r.item as ItemKey])).map((s) => {
+    const open = guideOpen === s.id;
+    const rows = (s.items ?? []).filter((r) => ITEMS[r.item as ItemKey]);
+    return `<div class="guide-card${open ? ' open' : ''}">
+      <button class="guide-head" data-act="guide" data-v="${s.id}" aria-expanded="${open}"><b>${esc(s.title)}</b><span class="chev">${open ? '▾' : '▸'}</span></button>
+      ${open ? `<div class="guide-body"><p>${esc(s.blurb)}</p>
+        ${s.steps ? `<ol class="guide-steps">${s.steps.map((t) => `<li>${t}</li>`).join('')}</ol>` : ''}
+        ${rows.length ? `<ul class="guide-items">${rows.map((r) => `<li>${icon(r.item)}<div><b>${esc(ITEMS[r.item as ItemKey].name)}</b><p>${esc(r.text)}</p></div></li>`).join('')}</ul>` : ''}
+      </div>` : ''}
+    </div>`;
+  }).join('')}</div>`;
+}
+
 function panelBody(mine: Member) {
+  if (openPanel === 'guide') return guideBody();
   if (openPanel === 'stats') return statsBody();
   if (openPanel === 'calendar') return calendarBody();
   if (openPanel === 'focus') {
@@ -2346,6 +2366,10 @@ panel.addEventListener('click', (e) => {
     case 'rejoin': send({ t: 'join', code: v }); break;
     case 'forget': send({ t: 'forget', code: v }); break;
     case 'unban': send({ t: 'unban', id: v }); break;
+    case 'guide':
+      guideOpen = guideOpen === v ? null : v;
+      renderPanel();
+      break;
     case 'announcement-add': {
       const announcementModal = $<HTMLDialogElement>('#announcementModal');
       $<HTMLFormElement>('#announcementNew').reset();
@@ -2559,35 +2583,12 @@ function calendarBody() {
       <input id="calTime" type="time" aria-label="Time (optional)"><button data-act="caladd">Add</button></div>`;
 }
 
-// ---------- first visit: a short tour ----------
-const TOUR = [
-  '👋 Welcome to Auralis! This is your room. Your little buddy wanders around and uses things on their own.',
-  '🖱️ Click furniture to use it: sit, nap, work out, water plants, play music… Hover (or tap) to see what a click does.',
-  '⏰ Open <b>Focus</b> in the dock to study. Your buddy sits at the desk and you earn a coin a minute.',
-  '🛍️ Spend coins in the <b>Shop</b>, then arrange your room in <b>Decorate</b>.',
-  "🏠 Share your house code (top right) so friends' rooms join yours. Study at the same time for up to ×2 coins!",
-];
+// ---------- first visit: open the Guide on its first card ----------
 function welcome() {
   if (localStorage.getItem('auralis.tour')) return;
-  let i = 0;
-  const box = document.createElement('div');
-  box.id = 'tour';
-  box.setAttribute('role', 'dialog');
-  box.setAttribute('aria-label', 'Quick tour');
-  const show = () => {
-    box.innerHTML = `<p>${TOUR[i]}</p><div class="row"><small>${i + 1} / ${TOUR.length}</small>
-      <button class="off" data-t="skip">Skip</button><button data-t="next">${i === TOUR.length - 1 ? 'Got it!' : 'Next'}</button></div>`;
-    box.querySelector<HTMLButtonElement>('[data-t="next"]')!.focus();
-  };
-  box.addEventListener('click', (e) => {
-    const t = (e.target as HTMLElement).closest<HTMLButtonElement>('button')?.dataset.t;
-    if (!t) return;
-    if (t === 'next' && ++i < TOUR.length) { show(); return; }
-    box.remove();
-    localStorage.setItem('auralis.tour', 'done');
-  });
-  ui.body.append(box);
-  show();
+  localStorage.setItem('auralis.tour', 'done');
+  guideOpen = 'start';
+  setPanel('guide');
 }
 
 const requestBoard = () => send({ t: 'leaderboard', scope: boardScope, period: boardPeriod });
@@ -2607,6 +2608,7 @@ function setPanel(name: string | null) {
   placing = null;
   moving = null;
   ui.querySelectorAll<HTMLButtonElement>('#dock button').forEach((x) => x.classList.toggle('on', x.dataset.panel === name));
+  $<HTMLButtonElement>('#help').classList.toggle('on', name === 'guide');
   ui.body.classList.toggle('side-open', isSide(name));
   ui.body.dataset.side = isSide(name) ? name : '';
   if (isSide(name) && folds[name]) toggleFold(name);
@@ -2620,6 +2622,7 @@ ui.querySelectorAll<HTMLButtonElement>('#dock button').forEach((b) =>
     const card = b.dataset.panel!;
     setPanel(openPanel === card ? null : card);
   }));
+$<HTMLButtonElement>('#help').addEventListener('click', () => setPanel(openPanel === 'guide' ? null : 'guide'));
 
 // ---------- shared to-dos, private to-dos and chat ----------
 // "Everyone" to-dos show my own tick, and are crossed off only once the whole house has ticked them.

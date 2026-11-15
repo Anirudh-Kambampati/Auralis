@@ -147,6 +147,10 @@ button:focus-visible, select:focus-visible, a:focus-visible { outline: 3px dashe
 /* The bell: a count of what's new, and a menu of what happened with a quick action each */
 .bell-wrap { position: relative; display: flex; }
 .chip.bell { position: relative; padding: 5px 8px; cursor: var(--point); }
+/* The Guide button: the same shape as the bell, lit while the Guide is open */
+.chip.help { padding: 5px 8px; cursor: var(--point); }
+.chip.help img { width: 22px; height: 22px; image-rendering: pixelated; }
+.chip.help.on { background: var(--blue); }
 #bellCount { position: absolute; top: -9px; right: -9px; min-width: 22px; padding: 0 5px; font-size: 12px; line-height: 18px; text-align: center; color: #fff; background: var(--coral); border: 2px solid var(--ink); border-radius: 999px; }
 #bellMenu { position: absolute; top: calc(100% + 10px); right: 0; display: flex; flex-direction: column; width: min(340px, calc(100vw - 32px)); max-height: min(520px, 75vh); overflow-y: auto; padding: 12px; color: var(--ink); background: var(--paper); border: 3px solid var(--ink); border-radius: 16px; box-shadow: 0 4px 0 var(--ink); z-index: 6; pointer-events: auto; }
 @media (max-width: 600px) { #bellMenu { position: fixed; top: calc(70px + env(safe-area-inset-top, 0)); left: 16px; right: 16px; width: auto; } }
@@ -941,11 +945,6 @@ body.signed-out #deck, body.signed-out #game, body.signed-out #zoom { display: n
 
 /* What a click will do, next to the pointer (or over a tapping finger). */
 #tip { position: fixed; z-index: 60; pointer-events: none; padding: 4px 9px; border-radius: 8px; background: var(--ink); color: #fff; font-size: 13px; font-weight: 600; white-space: nowrap; }
-/* First-visit tour card, above the dock. */
-#tour { position: fixed; z-index: 55; left: 50%; bottom: 130px; transform: translateX(-50%); width: min(360px, calc(100vw - 32px)); padding: 12px 14px; background: #fffaf3; border: 2px solid var(--ink); border-radius: 14px; box-shadow: 0 3px 0 var(--ink); }
-#tour p { margin: 0 0 10px; }
-#tour .row { align-items: center; justify-content: flex-end; gap: 8px; }
-#tour small { margin-right: auto; color: var(--muted); }
 
 /* Calendar panel: a month grid, Monday first. */
 .cal-head { display: flex; align-items: center; justify-content: space-between; margin: 10px 0 6px; }
@@ -1028,6 +1027,22 @@ body.signed-out #deck, body.signed-out #game, body.signed-out #zoom { display: n
 .who.everyone .who-chip.person { opacity: 0.35; pointer-events: none; }
 .modal .bell { margin: 8px 0 0; font-size: 12px; font-weight: 700; color: var(--muted); }
 .modal .bell button { margin-right: 4px; }
+
+/* The Guide: one card per system, expanded in place */
+.guide { display: flex; flex-direction: column; gap: 8px; }
+.guide-card { background: #fff; border: 2px solid var(--ink); border-radius: 12px; }
+.guide-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; padding: 10px 12px; font: inherit; color: var(--ink); text-align: left; background: none; border: none; }
+.guide-head .chev { color: var(--muted); }
+.guide-card.open .guide-head { border-bottom: 2px solid var(--ink); }
+.guide-body { padding: 10px 12px 12px; }
+.guide-body > p { margin: 0 0 8px; font-size: 13px; color: var(--muted); }
+.guide-steps { margin: 0; padding-left: 18px; font-size: 13px; }
+.guide-steps li { margin-bottom: 6px; }
+.guide-items { display: flex; flex-direction: column; gap: 10px; margin: 10px 0 0; padding: 0; list-style: none; }
+.guide-items li { display: flex; align-items: flex-start; gap: 10px; }
+.guide-items .icon { width: 32px; height: 32px; flex: none; image-rendering: pixelated; }
+.guide-items b { display: block; font-size: 13px; }
+.guide-items p { margin: 2px 0 0; font-size: 12px; color: var(--muted); }
 
 /* Chat: the list of conversations, one row each (house chat + housemates), newest first */
 #chatList { list-style: none; margin: 0; padding: 6px; overflow-y: auto; flex: 1; }
