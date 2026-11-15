@@ -15,9 +15,21 @@ Drinks are a good example of the gap. `coffeeMachine`, `coffee`, `energyCan` and
 1. Coffee, the energy can and the coffee machine all grant one shared **caffeine** effect: 10 minutes, visible to the player and to housemates.
 2. Caffeine pays a focus bonus, including to a session already running.
 3. Wine grants a 2-minute rest and a cosmetic **tipsy** sway.
-4. The claw machine plays for 5 coins and yields a plushe or small decor piece.
+4. The claw machine plays for 5 coins and yields a plush or small decor piece.
 5. Five craft pieces yield an existing decor item in a random colour, which the player keeps or gifts.
 6. Nothing is consumed by drinking; cooldowns are the only gate.
+
+## Gifting
+
+Three separate gifting paths exist, and only one of them is rate-limited:
+
+| Path | Message | Rate limit |
+| --- | --- | --- |
+| Coins | `gift` | 5 per day per player (`GIFTS_PER_DAY`) |
+| Stored pieces | `gift_item` | None |
+| Handmade pieces | `gift_crafted` | None |
+
+The coin gift costs `GIFT_COINS` (10) and is capped so coins cannot be shovelled between accounts. Item and crafted gifts move a specific instance and have no cap — a player can hand over as many claw prizes or handmade pieces as they own.
 
 ## Design
 
@@ -95,9 +107,11 @@ Wine sets `tipsyUntil = now + 2 * 60_000` and starts the existing snack break (`
 `clawMachine` is `solid` and already on the games shelf. One click:
 
 1. Server checks the player has 5 coins and the piece is off cooldown.
-2. Server charges 5 coins and sets `state.readyAt = now + 10 * 60_000`.
+2. Server charges 5 coins and sets `state.readyAt = now + 30 * 60_000`.
 3. Client plays a 5-second claw animation over the prize pool.
 4. Server picks a prize by weight and adds it to `inventory`.
+
+The cooldown is 30 minutes, so a machine earns its keep slowly.
 
 Prize pool (plushes and small decor, all existing catalog items):
 
@@ -135,7 +149,7 @@ The colour is a random pick from the piece's own palette when it has one (`color
 
 The craft finishes in one step: the server picks the item and colour and the client plays the making animation while it waits for the reply. There is no multi-stage progress to persist.
 
-Crafting costs nothing and is gated by a per-piece cooldown (`state.readyAt`, 5 minutes).
+Crafting costs nothing and is gated by a per-piece cooldown (`state.readyAt`, 20 minutes).
 
 Each craft produces one item in a random colour, as a real instance rather than a count. `inventory` is `Record<string, number>` and cannot hold a colour, so the player gains a parallel list:
 

@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Make the claw machine play for 5 coins on a 10-minute cooldown and drop a plushe or small decor piece into Storage.
+**Goal:** Make the claw machine play for 5 coins on a 30-minute cooldown and drop a plush or small decor piece into Storage.
 
 **Architecture:** A weighted prize pool lives in `shared/game.js` beside the catalog. The piece remembers its own cooldown in a new `state` field on `Furniture`, checked against the clock on both sides. The server owns the coin charge and the prize roll; the client only plays the animation.
 
@@ -14,7 +14,7 @@
 - `npm test` runs the `node --test` suite; all existing tests plus the new ones must pass.
 - `npm run build` runs `tsc --noEmit` then `vite build`; it must be clean.
 - Server validates every client message against `ITEMS` with the `has()` helper at `server/index.js:241`.
-- The claw costs exactly 5 coins and cools down for exactly 10 minutes.
+- The claw costs exactly 5 coins and cools down for exactly 30 minutes.
 - Prize weights are whole numbers that sum to 100.
 - Requires Task 2 of the drinks plan only for the `Furniture.state` type; it does not depend on caffeine.
 

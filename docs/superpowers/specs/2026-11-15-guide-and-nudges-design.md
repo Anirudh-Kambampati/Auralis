@@ -10,7 +10,7 @@ Auralis has 284 items and nine dock panels, and almost none of it is discoverabl
 
 The first-run tour (`TOUR` at `src/main.ts:2562`) shows five sentences, writes `localStorage.auralis.tour`, and never appears again — on any device, for any reason. There is no way to replay it and nothing to look things up in.
 
-What the tour does not cover is where the depth is: the coffee machine opens a 10-minute window in which every focus minute pays an extra coin; the claw machine costs 5 coins, cools down for 10 minutes and drops one of 25 catalog prizes; the pottery wheel, easel, loom, craft table and sewing table each make one random piece from their own pool; pets bond, do tricks and find coins; crafted pieces can be kept or gifted; claw prizes and stored pieces can be gifted or sold; and announcements, exams, to-dos and stats each have a home nobody is told about.
+What the tour does not cover is where the depth is: the coffee machine opens a 10-minute window in which every focus minute pays an extra coin; the claw machine costs 5 coins, cools down for 30 minutes and drops one of 25 catalog prizes; the pottery wheel, easel, loom, craft table and sewing table each make one random piece from their own pool on a 20-minute cooldown; pets bond, do tricks and find coins; crafted pieces can be kept or gifted; claw prizes and stored pieces can be gifted or sold with no cap, while the coin gift stays at five a day; and announcements, exams, to-dos and stats each have a home nobody is told about.
 
 The hover tooltip already names the click — "Water", "Nap", "Play the claw · 5 coins". What it cannot say is the consequence, and the consequence is the part people miss.
 
@@ -90,12 +90,12 @@ The approved table grouped the last three as one row; they are separate systems 
 - **Coffee** — a cup from the machine; the same 10-minute window.
 - **Energy can** — the same 10-minute window.
 - **Wine** — two minutes of rest and a cosmetic sway. Nothing is consumed (`DRINKS.wine`, `shared/game.js:410`).
-- **Claw machine** — 5 coins a play, 10-minute cooldown, one of 25 catalog prizes: mostly small trinkets, rarely a giant teddy (`CLAW_PRIZES`, `CLAW_COST`, `CLAW_COOLDOWN_MS`).
-- **Pottery wheel** — free, 5-minute cooldown, makes one random piece of vase, sculpture, bust or mushroom pot (`CRAFT.potteryWheel`).
-- **Easel** — free, 5-minute cooldown, makes a photo frame, vase, sculpture or bust.
-- **Loom** — free, 5-minute cooldown, makes a rug: round, oval or runner.
-- **Craft table** — free, 5-minute cooldown, makes candles, photo frames or a snow globe.
-- **Sewing table** — free, 5-minute cooldown, makes a plush, giant teddy or big shark plush.
+- **Claw machine** — 5 coins a play, 30-minute cooldown, one of 25 catalog prizes: mostly small trinkets, rarely a giant teddy (`CLAW_PRIZES`, `CLAW_COST`, `CLAW_COOLDOWN_MS`).
+- **Pottery wheel** — free, 20-minute cooldown, makes one random piece of vase, sculpture, bust or mushroom pot (`CRAFT.potteryWheel`).
+- **Easel** — free, 20-minute cooldown, makes a photo frame, vase, sculpture or bust.
+- **Loom** — free, 20-minute cooldown, makes a rug: round, oval or runner.
+- **Craft table** — free, 20-minute cooldown, makes candles, photo frames or a snow globe.
+- **Sewing table** — free, 20-minute cooldown, makes a plush, giant teddy or big shark plush.
 
 ### The button
 

@@ -4,7 +4,7 @@ Approved spec: `docs/superpowers/specs/2026-11-15-drinks-claw-crafting-design.md
 
 ## Decisions
 
-- **Parameters confirmed (defaults):** 1 extra coin per caffeinated minute; claw costs 5 coins with a 10 minute cooldown; crafting has a 5 minute cooldown; claw weights sum to 100.
+- **Parameters confirmed (defaults):** 1 extra coin per caffeinated minute; claw costs 5 coins with a 30 minute cooldown; crafting has a 20 minute cooldown; claw weights sum to 100.
 - **Execution:** subagent-driven. One subagent per task, each implementing and verifying its own task, then committing. The orchestrator reviews the diff before the next task starts.
 
 ## Task order

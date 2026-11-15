@@ -14,7 +14,7 @@
 - `npm test` runs the `node --test` suite; all existing tests plus the new ones must pass.
 - `npm run build` runs `tsc --noEmit` then `vite build`; it must be clean.
 - Server validates every client message against `ITEMS` with the `has()` helper at `server/index.js:241`.
-- Crafting is free and cools down for 5 minutes per piece.
+- Crafting is free and cools down for 20 minutes per piece.
 - A colour is a six-digit hex string, matching the `paint` message's `/^#[0-9a-fA-F]{6}$/` check at `server/index.js:774`.
 - `crafted` is private to its owner: it rides in `me`, never in `publicPlayer`.
 
@@ -49,8 +49,8 @@ test('the five paint pieces are the craft pieces', () => {
   }
 });
 
-test('crafting is free and cools down for five minutes', () => {
-  assert.equal(CRAFT_COOLDOWN_MS, 5 * 60_000);
+test('crafting is free and cools down for twenty minutes', () => {
+  assert.equal(CRAFT_COOLDOWN_MS, 20 * 60_000);
 });
 
 test('craft colour comes from the item palette when it has one, and pastels otherwise', () => {
@@ -98,7 +98,7 @@ export const CRAFT = {
   craftTable: ['candles', 'photoFrames', 'snowGlobe'],
   sewingTable: ['plush', 'bigTeddy', 'sharkPlush'],
 };
-export const CRAFT_COOLDOWN_MS = 5 * 60_000;
+export const CRAFT_COOLDOWN_MS = 20 * 60_000;
 
 // A crafted piece comes out in one of its own colours when it has a palette, and a pastel otherwise.
 export function craftColour(item, r = Math.random()) {

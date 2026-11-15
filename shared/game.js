@@ -442,7 +442,7 @@ export const CLAW_PRIZES = [
   { item: 'bigTeddy', weight: 1 },
 ];
 export const CLAW_COST = 5;
-export const CLAW_COOLDOWN_MS = 10 * 60_000;
+export const CLAW_COOLDOWN_MS = 30 * 60_000;
 
 // r is a random number in [0, 1): injectable so the test can walk the whole range.
 export function clawPrize(r = Math.random()) {
@@ -469,7 +469,7 @@ export const CRAFT = {
   craftTable: ['candles', 'photoFrames', 'snowGlobe'],
   sewingTable: ['plush', 'bigTeddy', 'sharkPlush'],
 };
-export const CRAFT_COOLDOWN_MS = 5 * 60_000;
+export const CRAFT_COOLDOWN_MS = 20 * 60_000;
 // A random piece from this piece's own pool, uniform across every object in it. Null when the thing you clicked
 // is not a making piece at all, so a caller can tell that apart from a piece that has nothing to give.
 export function craftItem(piece, r = Math.random()) {

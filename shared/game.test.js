@@ -318,9 +318,9 @@ test('the claw always drops something from the pool', () => {
   }
 });
 
-test('the claw costs five coins and cools down for ten minutes', () => {
+test('the claw costs five coins and cools down for thirty minutes', () => {
   assert.equal(CLAW_COST, 5);
-  assert.equal(CLAW_COOLDOWN_MS, 10 * 60_000);
+  assert.equal(CLAW_COOLDOWN_MS, 30 * 60_000);
 });
 
 test('a claw piece is ready when it has no cooldown, and not ready until it passes', () => {
@@ -378,8 +378,8 @@ test('something that is not a making piece makes nothing', () => {
   assert.equal(craftItem('notAPiece'), null);
 });
 
-test('crafting is free and cools down for five minutes', () => {
-  assert.equal(CRAFT_COOLDOWN_MS, 5 * 60_000);
+test('crafting is free and cools down for twenty minutes', () => {
+  assert.equal(CRAFT_COOLDOWN_MS, 20 * 60_000);
 });
 
 test('a handmade piece sells for a quarter of its catalog price', () => {

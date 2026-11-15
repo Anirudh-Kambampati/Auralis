@@ -118,7 +118,7 @@ Create `shared/guide.js`:
 // The Guide: the words for what the catalog cannot say.
 //
 // `ITEMS` says what a thing is, and the hover tooltip says what a click does. Neither can say the
-// consequence: that a coffee buys ten minutes of extra pay, that the claw waits ten minutes between
+// consequence: that a coffee buys ten minutes of extra pay, that the claw waits half an hour between
 // plays. That is what this file holds.
 //
 // An item gets a row only when the tooltip does not already explain it. `Water`, `Nap`, `Play music`
@@ -165,21 +165,21 @@ export const GUIDE_SECTIONS = [
   {
     id: 'claw',
     title: 'The claw machine',
-    blurb: 'Five coins a play, then ten minutes while it resets. It drops one of 25 catalog prizes: mostly small trinkets, rarely a giant teddy.',
+    blurb: 'Five coins a play, then half an hour while it resets. It drops one of 25 catalog prizes: mostly small trinkets, rarely a giant teddy.',
     items: [
-      { item: 'clawMachine', text: 'Click to play. Five coins, one prize, then a ten-minute wait.' },
+      { item: 'clawMachine', text: 'Click to play. Five coins, one prize, then a thirty-minute wait.' },
     ],
   },
   {
     id: 'craft',
     title: 'Crafting',
-    blurb: 'Each making piece is free and cools down for five minutes. It makes one thing from its own pool, chosen at random — you do not pick which. Keep the piece or send it to a housemate.',
+    blurb: 'Each making piece is free and cools down for twenty minutes. It makes one thing from its own pool, chosen at random — you do not pick which. Keep the piece or send it to a housemate.',
     items: [
-      { item: 'potteryWheel', text: 'Free, five-minute cooldown, and one random piece: vase, sculpture, bust or mushroom pot.' },
-      { item: 'easel', text: 'Free, five-minute cooldown, and one random piece: photo frames, vase, sculpture or bust.' },
-      { item: 'loom', text: 'Free, five-minute cooldown, and one random rug: round, oval or runner.' },
-      { item: 'craftTable', text: 'Free, five-minute cooldown, and one random piece: candles, photo frames or a snow globe.' },
-      { item: 'sewingTable', text: 'Free, five-minute cooldown, and one random plush: plush bear, giant teddy or big shark.' },
+      { item: 'potteryWheel', text: 'Free, twenty-minute cooldown, and one random piece: vase, sculpture, bust or mushroom pot.' },
+      { item: 'easel', text: 'Free, twenty-minute cooldown, and one random piece: photo frames, vase, sculpture or bust.' },
+      { item: 'loom', text: 'Free, twenty-minute cooldown, and one random rug: round, oval or runner.' },
+      { item: 'craftTable', text: 'Free, twenty-minute cooldown, and one random piece: candles, photo frames or a snow globe.' },
+      { item: 'sewingTable', text: 'Free, twenty-minute cooldown, and one random plush: plush bear, giant teddy or big shark.' },
     ],
   },
   {
@@ -230,12 +230,12 @@ export const GUIDE_TIPS = {
   coffee: 'Coffee: click it for a ten-minute window in which every focus minute pays an extra coin.',
   energyCan: 'Energy drink: the same ten-minute window as coffee.',
   wine: 'Wine: two minutes of rest, and a sway. Nothing is used up.',
-  clawMachine: 'The claw machine is yours: five coins a play, then ten minutes while it resets.',
-  potteryWheel: 'The pottery wheel is yours: click it to make one random piece, free, every five minutes.',
-  easel: 'The easel is yours: click it to make one random piece, free, every five minutes.',
-  loom: 'The weaving loom is yours: click it to make one random rug, free, every five minutes.',
-  craftTable: 'The craft table is yours: click it to make one random piece, free, every five minutes.',
-  sewingTable: 'The sewing table is yours: click it to make one random plush, free, every five minutes.',
+  clawMachine: 'The claw machine is yours: five coins a play, then half an hour while it resets.',
+  potteryWheel: 'The pottery wheel is yours: click it to make one random piece, free, every twenty minutes.',
+  easel: 'The easel is yours: click it to make one random piece, free, every twenty minutes.',
+  loom: 'The weaving loom is yours: click it to make one random rug, free, every twenty minutes.',
+  craftTable: 'The craft table is yours: click it to make one random piece, free, every twenty minutes.',
+  sewingTable: 'The sewing table is yours: click it to make one random plush, free, every twenty minutes.',
 };
 ```
 

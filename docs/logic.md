@@ -74,8 +74,26 @@ Each pet kind has free `coats` (fur colours) and can wear one accessory from `PE
 ## Catalog and shelves
 
 - `SHELVES` in `shared/game.js` sets the shop shelves, and each item names its `shelf`. Twelve shelves hold 20 items each. Items without a shelf (the free desk and chair, and the retired bathroom pieces) aren't sold, but stay valid so rooms that already have them keep them.
-- Most items are drawn from shape recipes (`RECIPES` in `draw.ts`): a list of boxes, discs, hearts, and blinking or sliding rects, with `$` standing for the owner's colour. Hand-drawn items keep their own `DRAW` function.
+- Most items are drawn from shape recipes (`RECIPES` in `draw.ts`): a list of boxes, discs, hearts, and blinking or sliding rect, with `$` standing for the owner's colour. Hand-drawn items keep their own `DRAW` function.
 - Pets: 20 kinds and 20 accessories. Pets also eat at food bowls, fountains and treat jars (`pet: 'eat'`).
+
+## Drinks, the claw and crafting
+
+- **Drinks** (`DRINKS` in `shared/game.js`): coffee, the energy can and the coffee machine grant **caffeine** for 10 minutes — faster walking, a flame pass, a HUD chip, and one extra coin per caffeinated focus minute. Wine grants a 2-minute rest and a cosmetic **tipsy** sway. Drinking is free and consumes nothing; the caffeine window is the only limit.
+- **Claw machine**: 5 coins, a 30-minute cooldown per machine (`state.readyAt`), and a weighted prize from `CLAW_PRIZES` — small trinkets and plushes, all existing catalog items. The prize lands in `inventory`.
+- **Crafting**: the five `use: 'paint'` pieces (`potteryWheel`, `easel`, `loom`, `craftTable`, `sewingTable`) each own a pool of catalog items. Crafting is free, cools down for 20 minutes per piece, and produces one item in a random colour as a real instance stored in the player's `crafted` list. That list is private to its owner and rides in `me`, never in `publicPlayer`. A crafted piece can be kept, placed (carrying its colour), gifted to a housemate, or sold for a quarter of catalog price.
+
+## Gifting
+
+Three gifting paths exist, and only one is rate-limited:
+
+| Path | Message | Rate limit |
+| --- | --- | --- |
+| Coins | `gift` | 5 per day per player |
+| Stored pieces | `gift_item` | None |
+| Handmade pieces | `gift_crafted` | None |
+
+The coin gift sends `GIFT_COINS` (10) and is capped so coins cannot be shovelled between accounts. Item and crafted gifts move a specific instance and have no cap — a player can hand over as many claw prizes or handmade pieces as they own.
 
 ## Extra rooms
 
