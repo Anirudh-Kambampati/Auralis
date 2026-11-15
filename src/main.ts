@@ -3,7 +3,7 @@ import {
   WALLPAPERS, WALL_PATTERNS, FLOORS, FLOOR_STYLES, SKINS, HAIRS, SHIRTS, STYLES, FACES, OUTFITS, BODIES, SIZES, ACCESSORIES, FOCUS_LENGTHS, isFocusLength, SCAR_ACCS, SCAR_COLOURS,
   WALL_H, WALL, FLOOR, DOOR, BLOCKED, VOID, buddyMultiplier, focusEnd, streakDays, streakBonus, sellPrice, footprint, lying, canRotate, THIRSTY_MS, isPlant, discounted, GIFT_COINS, activeEvents, nextEvent,
   docName, attachLabel, DOC_TYPES, usernameProblem, emailProblem, passwordProblem, LIGHTS, DRINKS, caffeineMinutes,
-  CLAW_COST, clawReadyAt,
+  CLAW_COST, clawReadyAt, CRAFT,
 } from '../shared/game.js';
 import {
   T, OVERHANG, SURFACE, AVATAR_H, avatarScale, lookKey, drawSeated, drawActing, drawSeam, drawFloor, drawWall, drawWallFace, drawWallTop, drawDoor, drawWindow, drawPainting, drawFurniture, drawAvatar, drawDeskLamp, drawGlow, drawUsing, drawFlames, drawClaw, skyNow, weatherNow, skyProgress, nightTint,
@@ -34,7 +34,7 @@ type Focus = { minutes: number; endsAt: number; tag?: string; pausedAt?: number 
 type Session = { at: number; minutes: number; tag: string; early?: boolean };
 type Inbox = { kind: string; from?: string; by?: string; text: string; at: number; n?: number };
 type Friend = { id: string; name: string; look: Look; online: boolean; focus: boolean; status: 'friend' | 'incoming' | 'outgoing'; here?: boolean; visit?: boolean; asked?: boolean };
-type Me = { id: string; home?: string; visited?: { code: string; ownerName: string | null; online: number }[]; banned?: { id: string; name: string }[]; coins: number; discount?: boolean; notes?: { from: string; text: string; at: number }[]; inbox?: Inbox[]; inboxSeen?: number; events?: CalEvent[]; pushKey?: string; notify?: Record<string, boolean>; groups?: Record<string, { name: string; members: string[]; msgs: Chat[] }>; friends?: Friend[]; inventory: Record<string, number>; sessions: Session[]; subjects: string[]; hiddenSubjects: string[]; todos: Todo[]; dm: Record<string, Chat[]>; petAccs?: string[] };
+type Me = { id: string; home?: string; visited?: { code: string; ownerName: string | null; online: number }[]; banned?: { id: string; name: string }[]; coins: number; discount?: boolean; notes?: { from: string; text: string; at: number }[]; inbox?: Inbox[]; inboxSeen?: number; events?: CalEvent[]; pushKey?: string; notify?: Record<string, boolean>; groups?: Record<string, { name: string; members: string[]; msgs: Chat[] }>; friends?: Friend[]; inventory: Record<string, number>; crafted?: { item: string; col: string }[]; sessions: Session[]; subjects: string[]; hiddenSubjects: string[]; todos: Todo[]; dm: Record<string, Chat[]>; petAccs?: string[] };
 type Board = { scope: string; period: string; rows: { name: string; me: boolean; minutes: number; members?: number }[] };
 type Avatar = { x: number; y: number; tx: number; ty: number; up: boolean; dist: number; use?: string };
 type ItemKey = keyof typeof ITEMS;
@@ -96,6 +96,8 @@ let path: { x: number; y: number }[] = [];
 let openPanel: string | null = null;
 let shopTab = 'cozy';
 let placing: ItemKey | null = null;
+let placingCrafted = -1; // which handmade piece is being placed, or -1
+let gifting = -1; // which handmade piece is waiting for a housemate to be picked
 let moving: number | null = null; // index of the furniture picked up in Decorate
 let drag: { index: number; gx: number; gy: number; lx: number; ly: number; moved: boolean } | null = null;
 let lastDoneTry = 0; // when we last told the server a finished session is done
@@ -322,6 +324,12 @@ function onMessage(m: any) {
     }
     if (m.text) toast(esc(m.text), 'reward');
     else toast(`Session complete! +${m.coins} ${coin()}${m.buddies ? ` (×${buddyMultiplier(m.buddies)} for studying together!)` : ''}${streakBonus(m.streak) ? ` 🔥 ${m.streak}-day streak +${streakBonus(m.streak) * 100}%` : ''}`, 'reward');
+  } else if (m.t === 'crafted') { // a handmade piece was made, or arrived from a housemate
+    const name = esc(ITEMS[m.piece.item as ItemKey]?.name ?? 'piece');
+    if (m.from) toast(`🎁 <b>${esc(m.from)}</b> made you a ${name}! It's in your Storage.`, 'reward');
+    else if (m.to) toast(`🎁 Sent to your housemate.`);
+    else toast(`✨ Made a ${name}. It's in Storage.`, 'reward');
+    if (openPanel === 'decorate') renderPanel();
   } else if (m.t === 'inbox') {
     me.inbox = m.inbox;
     renderBell();
@@ -505,7 +513,8 @@ function startBreak(ms: number, text: string) {
 
 const TVS = new Set(['tv', 'retroTV', 'mediaConsole']);
 // Pieces a click does something special with, beyond act/use/light/sound (see tapAt).
-const CLICKABLE = new Set(['petBall', 'deskCalendar', 'giftBox', 'whiteboard']);
+const CLICKABLE = new Set(['petBall', 'deskCalendar', 'giftBox', 'whiteboard', 'clawMachine',
+  'potteryWheel', 'easel', 'loom', 'craftTable', 'sewingTable']);
 const STARS = ['🌠 A shooting star! Make a wish.', "✨ You spotted Orion's belt.", '🪐 Is that Saturn? It is!', '🌌 The Milky Way is out tonight.', '🌙 The moon is so bright.'];
 // What some furniture does once you've walked up to it, on top of the little animation.
 function afterUse(f: Furniture, owner: Member, ri: number, fi: number): (() => void) | null {
@@ -521,6 +530,14 @@ function afterUse(f: Furniture, owner: Member, ri: number, fi: number): (() => v
   if (f.item === 'foodBowl') return () => (owner.pets.some((p) => !p.away) ? send({ t: 'feed', owner: owner.id, r: ri, index: fi }) : toast('No pets here to feed yet.'));
   if (f.item === 'giftBox') return () => { setPanel('house'); toast('Pick a housemate to send a gift.'); };
   if (f.item === 'whiteboard') return () => { setPanel('todos'); openTodoModal(); };
+  if (CRAFT[f.item as keyof typeof CRAFT]) return () => {
+    const ready = clawReadyAt(f);
+    if (ready) { toast(`⏳ Ready ${fmt(ready - Date.now())} from now.`); return; }
+    editRoom = ri; // the panel works on the room the piece is actually in
+    moving = fi;
+    setPanel('decorate');
+    renderPanel();
+  };
   if (f.item === 'clawMachine') return () => {
     const ready = clawReadyAt(f);
     if (ready) { toast(`🕹️ The claw is resetting. Ready ${fmt(ready - Date.now())} from now.`); return; }
@@ -910,7 +927,12 @@ function tapAt(e: PointerEvent) {
     const hit = placing ? { i: -1, depth: 0, count: 0 } : pickAt(myRoom()!, lx, ly);
     const i = hit.i;
     if (placing) {
-      if (placeSwaps(myRoom()!, placing, lx, ly)) { send({ t: 'place', r: editRoom, item: placing, x: lx, y: ly }); placing = null; }
+      // A handmade piece is one instance and is never swapped away, so it only goes where it fits.
+      const fits = placingCrafted >= 0 ? canPlace(myRoom()!, placing, lx, ly) : !!placeSwaps(myRoom()!, placing, lx, ly);
+      if (fits) {
+        send({ t: 'place', r: editRoom, item: placing, x: lx, y: ly, ...(placingCrafted >= 0 ? { crafted: true } : {}) });
+        placing = null; placingCrafted = -1;
+      }
       else toast('That spot is taken or outside your room.', 'error');
     } else if (i >= 0) {
       // Grab it: drag to move, or just tap to select it.
@@ -1900,6 +1922,12 @@ function decorateBody(mine: Member) {
       ${palette.length ? `<h3>Colour</h3><div class="swatches">${palette.map((c: string, k: number) =>
         `<button class="swatch${!sel.col && (sel.v ?? -1) === k ? ' on' : ''}" style="background:${c}" data-act="recolor" data-v="${k}" aria-label="${c}"></button>`).join('')}${sel.col
         ? `<button class="swatch on" style="background:${sel.col}" data-act="noop" title="Your custom colour" aria-label="Your custom colour"></button>` : ''}<button class="swatch custom" data-act="paintfurn" title="Custom colour" aria-label="Custom colour" style="background:${CUSTOM_SWATCH}"></button></div>` : ''}` : '';
+  const craftPool = sel ? CRAFT[sel.item as keyof typeof CRAFT] : undefined;
+  const craftReadyAt = sel ? clawReadyAt(sel) : 0;
+  const craftBar = craftPool ? `<h3>Make something</h3>
+      <p class="hint">${craftReadyAt ? `Ready ${fmt(craftReadyAt - Date.now())} from now.` : 'Free. Ready when you are.'}</p>
+      <div class="row">${craftPool.map((item: string) => `<button class="off" data-act="craft" ${craftReadyAt ? 'disabled' : ''}>${icon(item)}${ITEMS[item as ItemKey].name}</button>`).join('')}</div>
+      <p class="hint">You choose whether to keep it or send it to a housemate once it is made.</p>` : '';
   const hint = placing ? `Tap a spot in your room to place the <b>${ITEMS[placing].name}</b>.`
     : sel ? (canRot ? 'Drag it, or tap a new spot to move it there. Keys: arrows move · R rotate · F flip · Delete put away · Esc done.' : 'Drag it, or tap a new spot to move it there. Keys: arrows move · F flip · Delete put away · Esc done.')
     : 'Drag any furniture to move it, or tap it for more options. Tap a stack again to reach what is underneath.';
@@ -1908,7 +1936,15 @@ function decorateBody(mine: Member) {
   const shown = storeShelf === 'all' ? inv : inv.filter(([k]) => (ITEMS[k as ItemKey] as { shelf?: string }).shelf === storeShelf);
   const filter = shelves.length > 1 ? `<div class="row chips">${[{ id: 'all', label: `All (${inv.length})` }, ...shelves].map((sh) =>
     `<button class="small-chip ${storeShelf === sh.id ? 'on' : 'off'}" data-act="storeShelf" data-v="${sh.id}">${sh.label}</button>`).join('')}</div>` : '';
-  return `${roomPicker(mine)}${selBar}<p class="hint">${hint}</p>
+  const crafted = (me.crafted ?? []).map((e, i) => ({ ...e, i }));
+  const craftedCards = crafted.map((e) => `<div class="card crafted">
+      <span class="swatch on" style="background:${e.col}" aria-hidden="true"></span>
+      <b>${esc(ITEMS[e.item as ItemKey]?.name ?? e.item)}</b>
+      <button data-act="placeCrafted" data-v="${e.i}">Place</button>
+      <button class="off small" data-act="giftCrafted" data-v="${e.i}">Gift</button>
+    </div>`).join('');
+  return `${roomPicker(mine)}${selBar}${craftBar}<p class="hint">${hint}</p>
+    ${crafted.length ? `<h3>Handmade</h3><div class="grid">${craftedCards}</div>` : ''}
     ${inv.length ? `<h3>Storage</h3>${filter}<div class="grid">${shown.map(([k, n]) => `<div class="card${placing === k ? ' on' : ''}"><b>${ITEMS[k as ItemKey].name} ×${n}</b>${icon(k)}<button data-act="place" data-v="${k}">Place</button>${sellPrice(k) ? `<button class="off small" data-act="sell" data-v="${k}">Sell ${coin()} ${sellPrice(k)}</button>` : ''}</div>`).join('')}</div>` : '<p class="hint">Storage is empty. Visit the Shop!</p>'}
     <h3>Wallpaper</h3>${swatches('wallpaper', WALLPAPERS, myRoom()!.wallColor ?? myRoom()!.wallpaper, false, false)}<button class="swatch custom" data-act="paintroom" data-v="wall" title="Custom wall colour" aria-label="Custom wall colour" style="background:${CUSTOM_SWATCH}"></button>
     <h3>Pattern</h3>${tilePicker('pattern', WALL_PATTERNS, myRoom()!.pattern ?? 'plain', 'wall', myRoom()!.wallColor ?? myRoom()!.wallpaper)}
@@ -2179,7 +2215,30 @@ panel.addEventListener('click', (e) => {
     case 'addroom': send({ t: 'add_room' }); editRoom = mine.rooms.length; toast('A new room! Find it next to your others.', 'reward'); break;
     case 'editroom': editRoom = Number(v); moving = null; placing = null; renderPanel(); break;
     case 'expand': send({ t: 'expand', r: editRoom }); toast('Your room just got bigger!', 'reward'); break;
-    case 'place': placing = v as ItemKey; moving = null; renderPanel(); break;
+    case 'place': placing = v as ItemKey; placingCrafted = -1; moving = null; renderPanel(); break;
+    case 'placeCrafted': {
+      const piece = me.crafted?.[Number(v)];
+      if (!piece) return;
+      placing = piece.item as ItemKey; placingCrafted = Number(v); moving = null; renderPanel();
+      return;
+    }
+    case 'giftCrafted': {
+      const piece = me.crafted?.[Number(v)];
+      if (!piece) return;
+      setPanel('house');
+      toast(`Pick a housemate to send the ${esc(ITEMS[piece.item as ItemKey]?.name ?? 'piece')} to.`);
+      gifting = Number(v);
+      renderPanel();
+      return;
+    }
+    case 'craft': {
+      if (moving === null) return;
+      const f = myRoom()?.furniture[moving];
+      if (!f || !CRAFT[f.item as keyof typeof CRAFT]) return;
+      if (clawReadyAt(f)) { toast(`⏳ Ready ${fmt(clawReadyAt(f) - Date.now())} from now.`); return; }
+      send({ t: 'craft', owner: myId, r: editRoom, index: moving, keep: true });
+      return;
+    }
     case 'putaway': if (moving !== null) send({ t: 'pickup', r: editRoom, index: moving }); moving = null; renderPanel(); break;
     case 'deselect': moving = null; renderPanel(); break;
     case 'flip': if (moving !== null) send({ t: 'flip', r: editRoom, index: moving }); break;
@@ -2290,7 +2349,10 @@ panel.addEventListener('click', (e) => {
       if (chimes) chime();
       renderPanel();
       break;
-    case 'gift': send({ t: 'gift', to: v }); break;
+    case 'gift':
+      if (gifting >= 0) { send({ t: 'gift_crafted', index: gifting, to: v }); gifting = -1; break; }
+      send({ t: 'gift', to: v });
+      break;
     case 'install': installPrompt?.prompt(); installPrompt = null; renderPanel(); break;
     case 'noteto': writeNote(v); break;
     case 'sendnote': {
