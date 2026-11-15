@@ -76,6 +76,11 @@ export const GUIDE_SECTIONS = [
     blurb: 'Click a lamp to switch it on or off. The switch belongs to the house: anyone in it can reach any room\'s lamps.',
   },
   {
+    id: 'music',
+    title: 'Music and sound',
+    blurb: 'Click a record player, DJ deck, piano, guitar, saxophone, cello, violin or harp to start a piece, and click it again to stop. Only one piece plays at a time, so starting another ends the first. Drum kit, synth and dhol are band instruments: they layer over each other, but stop when music starts. Sound belongs to the house it started in, so leaving the house stops it. The speaker in the HUD mutes everything, the slider beside it is the master volume, and the ▾ beside that sets the levels for music, fire and clocks, and chimes — and stops every sound at once.',
+  },
+  {
     id: 'gifts',
     title: 'Gifting and selling',
     blurb: 'Send a housemate ten coins, up to five times a day. Stored pieces and handmade pieces can be given away too. Selling something back returns half its price, or a quarter for a handmade piece.',

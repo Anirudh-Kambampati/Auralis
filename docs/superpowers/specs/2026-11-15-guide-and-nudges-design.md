@@ -60,7 +60,7 @@ export const GUIDE_START = ['…', '…'];
 - `GUIDE_TIPS` — keyed by item id, one sentence, shown once when the item is acquired.
 - `GUIDE_START` — the five old tour steps, in order, as `start`'s `steps`.
 
-Sections carry no icon. The panel header already shows the `guide` icon, and fifteen section icons would mean fifteen new sprites for very little gain; a card is its title, its blurb, and its item rows.
+Sections carry no icon. The panel header already shows the `guide` icon, and sixteen section icons would mean sixteen new sprites for very little gain; a card is its title, its blurb, and its item rows.
 
 **Sections, in order:**
 
@@ -75,6 +75,7 @@ Sections carry no icon. The panel header already shows the `guide` icon, and fif
 | `craft` | Crafting | pottery wheel, easel, loom, craft table, sewing table |
 | `pets` | Pets | none |
 | `lights` | Lights | none |
+| `music` | Music and sound | none |
 | `gifts` | Gifting and selling | none |
 | `house` | House and friends | none |
 | `todos` | To-dos, calendar and exams | none |

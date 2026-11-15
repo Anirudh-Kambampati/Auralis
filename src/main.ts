@@ -1662,11 +1662,12 @@ function tickTimers() {
     lastDoneTry = Date.now();
     send({ t: 'focus_done' });
   }
-  const showDeck = !!f && !deckHidden;
+  // A panel takes over from the deck: the timer moves to the HUD chip and the dock comes back, so
+  // another panel can be picked. Closing the panel brings the deck back.
+  const showDeck = !!f && !deckHidden && !openPanel;
   $('#focusChip').hidden = !f || showDeck;
   $('#deck').hidden = !showDeck;
   $('#dock').hidden = showDeck;
-  if (showDeck && openPanel) setPanel(null);
   ui.querySelector('#dock [data-panel="chat"]')?.classList.toggle('unread', unread);
   if (!unread) $('#fold-chat').classList.remove('dot'); // read elsewhere: the folded card's dot goes too
   if (!f) return;
@@ -2619,6 +2620,7 @@ function setPanel(name: string | null) {
   if (name === 'chat') { chatOpen = false; renderSide(); } // opens on the list of conversations
   renderPanel();
   ui.body.classList.toggle('panel-open', !panel.hidden);
+  tickTimers(); // opening a panel swaps the focus deck for the HUD timer, and closing it brings it back
 }
 ui.querySelectorAll<HTMLButtonElement>('#dock button').forEach((b) =>
   b.addEventListener('click', () => {

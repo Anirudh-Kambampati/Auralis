@@ -22,7 +22,7 @@ Panel headers use a pastel per area: focus blue, decorate mint, shop butter, you
 
 A `?` chip sits in the HUD, grouped with the coin count on the left, and opens the Guide panel. The first visit opens it for you on its first card, and it never opens itself again.
 
-The panel is one card per system — fifteen of them, plus the opening card — and a card expands in place rather than navigating anywhere. Each card shows a sentence of prose, then either a numbered list of steps (the opening card) or a row per item: the item's own art, its name, and the one thing a hover tooltip cannot say, that a coffee buys ten minutes of extra pay, that the claw waits half an hour between plays.
+The panel is one card per system — sixteen of them, plus the opening card — and a card expands in place rather than navigating anywhere. Each card shows a sentence of prose, then either a numbered list of steps (the opening card) or a row per item: the item's own art, its name, and the one thing a hover tooltip cannot say, that a coffee buys ten minutes of extra pay, that the claw waits half an hour between plays.
 
 An item gets a row only when the tooltip does not already explain it. `Water`, `Nap`, `Play music` and `Send a gift` are on the tooltip, so plants, chairs, speakers and gift boxes are not listed.
 
@@ -32,7 +32,7 @@ An item gets a row only when the tooltip does not already explain it. `Water`, `
 - Buttons press down 3px when tapped.
 - Font: **Fredoka** for UI text, because its numbers are easy to read. The focus timer uses a blocky pixel font drawn in code (`paintBlockText`).
 - Phone: panels are bottom sheets above an icon dock. Desktop (≥ 900px): to-dos and chat in a left sidebar, panels in a right sidebar, the room centred between them.
-- Focus mode swaps the dock for a focus card with the big timer, a progress track with a coin marker, and two icon buttons (give up needs two taps; room view hides the card).
+- Focus mode swaps the dock for a focus card with the big timer, a progress track with a coin marker, and two icon buttons (give up needs two taps; room view hides the card). Opening any panel steps the card aside and moves the timer to the HUD chip, and closing the panel brings the card back — the Guide and the to-do card are as reachable mid-session as they are any other time.
 
 ## Pixel art
 
