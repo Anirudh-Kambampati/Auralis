@@ -3552,7 +3552,7 @@ const UI_ICONS: Record<string, { rows: string[]; pal: Record<string, string> }> 
     ],
     pal: { o: OUT, r: '#b89af0', w: '#fff4e6', b: '#a8dcf5', d: '#b07a4e' },
   },
-  guide: { // a blue badge with a cream question mark
+  guide: { // a red badge with a cream question mark
     rows: [
       '............',
       '..oooooooo..',
@@ -3567,7 +3567,7 @@ const UI_ICONS: Record<string, { rows: string[]; pal: Record<string, string> }> 
       '..oooooooo..',
       '............',
     ],
-    pal: { o: OUT, p: '#5b7fd6', w: '#fff4e6' },
+    pal: { o: OUT, p: '#d94a3d', w: '#fff4e6' },
   },
 };
 for (const { rows } of Object.values(UI_ICONS)) console.assert(rows.every((row) => row.length === 12), 'icon rows must be 12 wide', rows);

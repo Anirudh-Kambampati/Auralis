@@ -51,6 +51,8 @@ The Guide's words live in `shared/guide.js`, which both sides import. `GUIDE_SEC
 
 When a `state` message arrives and the client sees an item it owns that is in `GUIDE_TIPS` but not in `me.tipsSeen`, it toasts the line once and sends `tip_seen`. The server adds the id to `tipsSeen` and saves. `tip_seen` saves without broadcasting, the same as `inbox_read`, so the client marks the tip as seen locally too — otherwise a broadcast arriving before the next `state` would show it twice.
 
+There is one toast element, so a second toast replaces the first. Nudges go through a small queue (`nudge()`) that shows them one at a time, because a player who has owned several of these things since before the Guide existed gets them all in a single `state`.
+
 ## Room snapshots (Object Storage)
 
 1. In Decorate, the client crops its room out of the game canvas and turns it into a PNG.

@@ -196,7 +196,7 @@ function onMessage(m: any) {
     const seen = (me.tipsSeen ??= []);
     for (const id of Object.keys(GUIDE_TIPS)) {
       if (!me.inventory[id] || seen.includes(id)) continue;
-      toast(GUIDE_TIPS[id as keyof typeof GUIDE_TIPS]);
+      nudge(GUIDE_TIPS[id as keyof typeof GUIDE_TIPS]);
       seen.push(id); // mark it here too: a broadcast can land before the server's answer does
       send({ t: 'tip_seen', id });
     }
@@ -1719,6 +1719,22 @@ function toast(html: string, kind = '', opts: { ms?: number; onClick?: () => voi
   el.style.cursor = opts.onClick ? 'pointer' : '';
   clearTimeout(toastTimer);
   toastTimer = window.setTimeout(() => (el.hidden = true), opts.ms ?? 3200);
+}
+
+// Nudges are rare, but several can arrive at once — a returning player who has had nothing new for a
+// while can own a shelf's worth of them. One toast would overwrite the next, so they queue up instead.
+let nudgeQueue: string[] = [];
+let nudgeBusy = false;
+function nudgeNext() {
+  const next = nudgeQueue.shift();
+  if (next === undefined) { nudgeBusy = false; return; }
+  nudgeBusy = true;
+  toast(next);
+  setTimeout(nudgeNext, 3600); // the toast's own 3.2s, plus a breath between them
+}
+function nudge(html: string) {
+  nudgeQueue.push(html);
+  if (!nudgeBusy) nudgeNext();
 }
 
 function copyCode(code = houseCode) {
