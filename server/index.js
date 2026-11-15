@@ -13,6 +13,7 @@ import {
   WALL_PATTERNS, FLOOR_STYLES, PETS, MAX_PETS, SIZES, bondLevel, NOTIFY, wantsNotify, EXPAND_COST, colorsFor, USES, PET_ACCS, MAX_ROOMS, ROOM_COST,
   isPlant, TASK_COINS, TASK_REWARDS_PER_DAY, discounted, GIFT_COINS, GIFTS_PER_DAY, nextRot, canRotate, sellPrice,
   SCAR_ACCS, SCAR_COLOURS, LIGHTS, DRINKS, focusStart, caffeineOverlap, caffeineMinutes,
+  CLAW_COST, CLAW_COOLDOWN_MS, clawPrize, clawReadyAt,
 } from '../shared/game.js';
 import { parseVideo } from '../shared/watch.js';
 import { CHAT_KEY, DOC_TYPES, safeDocName, attachLabel, docName, usernameProblem, emailProblem, passwordProblem } from '../shared/game.js';
@@ -326,7 +327,7 @@ function handle(p, m) {
   if (['place', 'move', 'pickup', 'room', 'flip', 'restyle', 'shape', 'expand', 'curtains', 'turn'].includes(m.t) && !room) return;
   // Furniture is addressed by position. Anything but a real integer fetches a built-in
   // (`furniture['toString']`) or nothing, so those messages only run for real indices.
-  if (['move', 'pickup', 'turn', 'flip', 'restyle', 'shape', 'light', 'paint', 'water', 'brew'].includes(m.t) && !Number.isInteger(m.index)) return;
+  if (['move', 'pickup', 'turn', 'flip', 'restyle', 'shape', 'light', 'paint', 'water', 'brew', 'claw'].includes(m.t) && !Number.isInteger(m.index)) return;
   if (m.t === 'water' && !Number.isInteger(m.r)) return;
   switch (m.t) {
     case 'look': {
@@ -752,6 +753,22 @@ function handle(p, m) {
       if (drink.tipsy) owner.tipsyUntil = now + (drink.rest ?? 2) * 60_000;
       save();
       broadcastHouse(p.house); // the flame is visible to housemates
+      break;
+    }
+    case 'claw': { // 5 coins for a weighted prize, then the machine resets
+      const owner = db.houses[p.house].members.includes(m.owner) ? db.players[m.owner] : null;
+      const f = owner?.rooms?.[m.r ?? 0]?.furniture?.[m.index];
+      if (!f || f.item !== 'clawMachine') return;
+      const now = Date.now();
+      if (clawReadyAt(f, now)) return send(sockets.get(owner.id), { t: 'error', text: 'The claw is resetting. Try again in a few minutes.' });
+      if (owner.coins < CLAW_COST) return send(sockets.get(owner.id), { t: 'error', text: `The claw costs ${CLAW_COST} coins.` });
+      owner.coins -= CLAW_COST;
+      f.state = { ...(f.state ?? {}), readyAt: now + CLAW_COOLDOWN_MS };
+      const prize = clawPrize();
+      owner.inventory[prize.item] = (owner.inventory[prize.item] ?? 0) + 1;
+      save();
+      send(sockets.get(owner.id), { t: 'reward', text: `🕹️ The claw dropped a ${ITEMS[prize.item].name}! It's in your Storage.` });
+      broadcastHouse(p.house);
       break;
     }
     case 'room': {

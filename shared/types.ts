@@ -354,6 +354,7 @@ export interface ClientMessages {
   pip: { t: 'pip'; on: boolean };
   // Drinks
   brew: { t: 'brew'; owner: string; r: number; index: number };
+  claw: { t: 'claw'; owner: string; r: number; index: number };
 }
 
 // Server-to-client message types
