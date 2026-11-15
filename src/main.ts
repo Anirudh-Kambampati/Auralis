@@ -1739,7 +1739,7 @@ function maybeShowHouseItemsTour() {
   const MUSIC_USES = new Set(['music', 'dance', 'dj', 'drum', 'strum']);
   const WATCH_ITEMS = new Set(['tv', 'retroTV', 'mediaConsole']);
   const rows: TourRow[] = [];
-  const forceOnce = !localStorage.getItem('auralis.houseItemsTour.once.v1');
+  const forceOnce = !localStorage.getItem('auralis.houseItemsTour.once.v2');
   const seen = new Set(forceOnce ? [] : seenTips());
   for (const m of members) {
     const who = m.id === myId ? 'Your' : `${m.name}'s`;
@@ -1764,7 +1764,7 @@ function maybeShowHouseItemsTour() {
   if (!rows.length) return;
   // Remember each item (per user) so it never shows again, then present in tour format.
   for (const r of rows) if (r.item) markTipSeen(r.item);
-  if (forceOnce) localStorage.setItem('auralis.houseItemsTour.once.v1', '1');
+  if (forceOnce) localStorage.setItem('auralis.houseItemsTour.once.v2', '1');
   openTour(rows, { title: 'Items in this house', lede: 'Special things in this house you can use. Each one is shown once.' });
 }
 
@@ -1827,29 +1827,21 @@ function shortTitle(text: string, i: number) {
 function renderTour() {
   const body = $<HTMLDivElement>('#tourBody');
   if (!body || !tourRows.length) return;
-  const at = Math.max(0, Math.min(tourAt, tourRows.length - 1));
   const name = (r: TourRow, i: number) => r.title ?? (r.item ? ITEMS[r.item as ItemKey]?.name ?? r.item : shortTitle(r.text, i));
-  body.innerHTML = `<ol class="tour-list">${tourRows.map((r, i) => `<li class="${i === at ? 'on' : ''}${i < at ? ' past' : ''}">
-      <button type="button" data-tour="${i}"${i === at ? ' aria-current="step"' : ''}>
+  body.innerHTML = `<ol class="tour-list">${tourRows.map((r, i) => `<li>
+      <div class="tour-row">
         ${r.item ? icon(r.item) : '<b class="tour-n">i</b>'}
-        <span class="tour-line"><b>${esc(name(r, i))}</b>${i === at ? `<em>${r.html ? r.text : esc(r.text)}</em>` : ''}</span>
-      </button></li>`).join('')}</ol>
+        <span class="tour-line"><b>${esc(name(r, i))}</b><em>${r.html ? r.text : esc(r.text)}</em></span>
+      </div></li>`).join('')}</ol>
     <div class="tour-foot">
-      <span class="tour-count">${at + 1} / ${tourRows.length}</span>
-      <button type="button" class="off" data-tour="prev"${at === 0 ? ' disabled' : ''}>‹ Back</button>
-      ${at < tourRows.length - 1 ? '<button type="button" data-tour="next">Next ›</button>' : '<button type="button" data-tour="done">Got it</button>'}
+      <button type="button" data-tour="done">Got it</button>
     </div>`;
 }
 
 $('#tourBody').addEventListener('click', (e) => {
   const b = (e.target as HTMLElement).closest<HTMLElement>('[data-tour]');
   if (!b) return;
-  const v = b.dataset.tour!;
-  if (v === 'next') tourAt = Math.min(tourAt + 1, tourRows.length - 1);
-  else if (v === 'prev') tourAt = Math.max(tourAt - 1, 0);
-  else if (v === 'done') return closeTour();
-  else tourAt = Number(v);
-  renderTour();
+  if (b.dataset.tour === 'done') closeTour();
 });
 $('#tourClose').addEventListener('click', closeTour);
 $('#tour').addEventListener('close', finishTour); // Esc, or the browser closing it for us

@@ -1055,16 +1055,13 @@ body.signed-out #deck, body.signed-out #game, body.signed-out #zoom { display: n
 .tour-lede { margin: 6px 0 12px; font-size: 13px; color: var(--muted); }
 .tour-list { display: flex; flex-direction: column; gap: 6px; max-height: 44vh; margin: 0; padding: 0; overflow-y: auto; list-style: none; }
 .tour-list li { background: #fff; border: 2px solid var(--ink); border-radius: 12px; }
-.tour-list li.on { background: var(--soft); }
-.tour-list li.past { opacity: 0.62; }
-.tour-list li > button { display: flex; align-items: flex-start; gap: 10px; width: 100%; padding: 8px 10px; font: inherit; color: var(--ink); text-align: left; background: none; border: none; }
+.tour-list li .tour-row { display: flex; align-items: flex-start; gap: 10px; width: 100%; padding: 8px 10px; color: var(--ink); text-align: left; }
 .tour-list li img { width: 32px; height: 32px; flex: none; image-rendering: pixelated; }
 .tour-list .tour-n { display: grid; place-items: center; width: 32px; height: 32px; flex: none; font-size: 16px; background: var(--soft); border-radius: 8px; }
 .tour-line { min-width: 0; }
 .tour-line b { display: block; font-size: 13px; }
 .tour-line em { display: block; margin-top: 2px; font-size: 12px; font-style: normal; line-height: 1.45; color: var(--muted); }
 .tour-foot { display: flex; align-items: center; justify-content: flex-end; gap: 8px; margin-top: 14px; }
-.tour-count { margin-right: auto; font-size: 12px; font-weight: 700; color: var(--muted); }
 
 /* Chat: the list of conversations, one row each (house chat + housemates), newest first */
 #chatList { list-style: none; margin: 0; padding: 6px; overflow-y: auto; flex: 1; }
