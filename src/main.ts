@@ -1736,6 +1736,8 @@ let tourAt = 0;
 
 // Unseen object types with special features/actions in the current house, shown once per item (remembered per user across houses).
 function maybeShowHouseItemsTour() {
+  const MUSIC_USES = new Set(['music', 'dance', 'dj', 'drum', 'strum']);
+  const WATCH_ITEMS = new Set(['tv', 'retroTV', 'mediaConsole']);
   const rows: TourRow[] = [];
   const seen = new Set(seenTips());
   for (const m of members) {
@@ -1743,16 +1745,25 @@ function maybeShowHouseItemsTour() {
     for (let ri = 0; ri < m.rooms.length; ri++) {
       const where = m.rooms.length > 1 ? `${who} room ${ri + 1}` : `${who} room`;
       for (const f of m.rooms[ri].furniture) {
-        if (!ITEMS[f.item as ItemKey] || !(f.item in GUIDE_TIPS) || seen.has(f.item)) continue;
+        const it = ITEMS[f.item as ItemKey];
+        if (!it || seen.has(f.item)) continue;
+        const use = (it as { use?: string }).use;
+        const isMusic = !!use && MUSIC_USES.has(use);
+        const isWatch = WATCH_ITEMS.has(f.item);
+        if (!(f.item in GUIDE_TIPS) && !isMusic && !isWatch) continue;
         seen.add(f.item);
-        rows.push({ item: f.item, title: ITEMS[f.item as ItemKey].name, text: where });
+        let text = where;
+        if (f.item in GUIDE_TIPS) text = `${where}. ${(GUIDE_TIPS as Record<string, string>)[f.item]}`;
+        else if (isMusic) text = `${where}. Click to play music (shared with the house).`;
+        else if (isWatch) text = `${where}. Watch videos together with housemates here.`;
+        rows.push({ item: f.item, title: it.name, text });
       }
     }
   }
   if (!rows.length) return;
   // Remember each item (per user) so it never shows again, then present in tour format.
   for (const r of rows) if (r.item) markTipSeen(r.item);
-  openTour(rows, { title: 'Items in this house', lede: 'Objects in this house you can go use. Each one is shown once.' });
+  openTour(rows, { title: 'Items in this house', lede: 'Special things in this house you can use. Each one is shown once.' });
 }
 
 // What I have been shown this session. A state message can land after the tour has marked its steps but before
