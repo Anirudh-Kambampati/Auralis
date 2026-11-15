@@ -255,11 +255,12 @@ function trimDmThreads(rec) {
 
 function publicPlayer(p) {
   for (const r of p.rooms ?? []) for (const f of r.furniture ?? []) if (!canRotate(f.item) && f.rot !== undefined) delete f.rot;
-    return {
-      id: p.id, name: p.name, look: p.look, rooms: p.rooms, focus: p.focus, pets: p.pets ?? [],
-      totalMinutes: p.totalMinutes, online: sockets.has(p.id), pos: positions.get(p.id) ?? null, fedAt: p.fedAt ?? 0,
-      exams: p.exams ?? [], caffeineSince: p.caffeineSince, caffeineUntil: p.caffeineUntil, tipsyUntil: p.tipsyUntil,
-    };
+return {
+    id: p.id, name: p.name, look: p.look, rooms: p.rooms, focus: p.focus, pets: p.pets ?? [],
+    totalMinutes: p.totalMinutes, online: sockets.has(p.id), pos: positions.get(p.id) ?? null, fedAt: p.fedAt ?? 0,
+    exams: p.exams ?? [],
+    caffeineSince: p.caffeineSince, caffeineUntil: p.caffeineUntil, tipsyUntil: p.tipsyUntil,
+  };
 }
 
 // My friends and friend requests, as the client shows them.
@@ -737,13 +738,16 @@ function handle(p, m) {
     case 'brew': { // coffee machine, coffee cup or energy can: 10 minutes of caffeine, free
       const owner = db.houses[p.house].members.includes(m.owner) ? db.players[m.owner] : null;
       const f = owner?.rooms?.[m.r ?? 0]?.furniture[m.index];
-      if (!f || !DRINKS[f.item]?.caffeine) return;
+      const drink = f && has(DRINKS, f.item) ? DRINKS[f.item] : null;
+      if (!owner || !drink) return;
       const now = Date.now();
-      // Already caffeinated: top the timer back up rather than opening a second window.
-      if (!(owner.caffeineUntil > now)) owner.caffeineSince = now;
-      owner.caffeineUntil = Math.max(owner.caffeineUntil ?? 0, now + DRINKS[f.item].caffeine * 60_000);
+      if (drink.caffeine) {
+        // Already caffeinated: top the timer back up rather than opening a second window.
+        if (!(owner.caffeineUntil > now)) owner.caffeineSince = now;
+        owner.caffeineUntil = Math.max(owner.caffeineUntil ?? 0, now + drink.caffeine * 60_000);
+      }
       // Wine rests rather than caffeinating; the client starts the break.
-      if (DRINKS[f.item].tipsy) owner.tipsyUntil = now + (DRINKS[f.item].rest ?? 2) * 60_000;
+      if (drink.tipsy) owner.tipsyUntil = now + (drink.rest ?? 2) * 60_000;
       save();
       broadcastHouse(p.house); // the flame is visible to housemates
       break;
