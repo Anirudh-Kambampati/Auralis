@@ -411,15 +411,34 @@ export const DRINKS = {
 };
 
 // The claw machine: what it can drop and how likely each is. Weights are whole numbers that add up to 100.
-// Plushes and small decor, all existing catalog items.
+// Lots of small trinkets to scoop up, a few plushes to hope for, all existing catalog items.
 export const CLAW_PRIZES = [
-  { item: 'plush', weight: 30 },
-  { item: 'snowGlobe', weight: 20 },
-  { item: 'sculpture', weight: 18 },
-  { item: 'discoBall', weight: 12 },
-  { item: 'easterBunny', weight: 10 },
-  { item: 'reindeer', weight: 6 },
-  { item: 'sharkPlush', weight: 3 },
+  // small trinkets: the usual haul
+  { item: 'candyBowl', weight: 7 },
+  { item: 'giftBox', weight: 7 },
+  { item: 'snowGlobe', weight: 8 },
+  { item: 'photoFrames', weight: 7 },
+  { item: 'candles', weight: 6 },
+  { item: 'hourglass', weight: 6 },
+  { item: 'fairyJar', weight: 7 },
+  { item: 'jewelryBox', weight: 6 },
+  { item: 'diya', weight: 5 },
+  { item: 'lotusLamp', weight: 5 },
+  { item: 'succulent', weight: 4 },
+  { item: 'mushrooms', weight: 4 },
+  { item: 'vase', weight: 4 },
+  { item: 'stocking', weight: 3 },
+  { item: 'eggBasket', weight: 3 },
+  { item: 'hotCrossBuns', weight: 3 },
+  { item: 'mithaiBox', weight: 3 },
+  { item: 'datesPlate', weight: 2 },
+  // plushes and showpieces: the good stuff
+  { item: 'plush', weight: 3 },
+  { item: 'easterBunny', weight: 2 },
+  { item: 'sculpture', weight: 1 },
+  { item: 'reindeer', weight: 1 },
+  { item: 'discoBall', weight: 1 },
+  { item: 'sharkPlush', weight: 1 },
   { item: 'bigTeddy', weight: 1 },
 ];
 export const CLAW_COST = 5;
