@@ -157,3 +157,15 @@ test('saves only write rows that changed', () => {
   assert.deepEqual([again.db.players.p1.coins, again.db.players.p2.coins], [5, 99]);
   again.close();
 });
+
+test('the caffeine window is part of a player and survives a round trip', () => {
+  const dir = tmp(), file = path.join(dir, 'caf.db');
+  const s = openStore(file);
+  s.db.players.p1 = { id: 'p1', name: 'Caf', caffeineSince: 1000, caffeineUntil: 601_000 };
+  s.saveAll();
+  s.close();
+  const back = openStore(file);
+  assert.equal(back.db.players.p1.caffeineSince, 1000);
+  assert.equal(back.db.players.p1.caffeineUntil, 601_000);
+  back.close();
+});

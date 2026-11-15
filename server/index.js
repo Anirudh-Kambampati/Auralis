@@ -12,7 +12,7 @@ import {
   ITEMS, WALLPAPERS, FLOORS, SKINS, HAIRS, SHIRTS, STYLES, FACES, OUTFITS, BODIES, ACCESSORIES, isFocusLength, canPlace, placeSwaps, focusReward, quitReward, quitMinutes, focusEnd, streakDays, streakBonus,
   WALL_PATTERNS, FLOOR_STYLES, PETS, MAX_PETS, SIZES, bondLevel, NOTIFY, wantsNotify, EXPAND_COST, colorsFor, USES, PET_ACCS, MAX_ROOMS, ROOM_COST,
   isPlant, TASK_COINS, TASK_REWARDS_PER_DAY, discounted, GIFT_COINS, GIFTS_PER_DAY, nextRot, canRotate, sellPrice,
-  SCAR_ACCS, SCAR_COLOURS, LIGHTS,
+  SCAR_ACCS, SCAR_COLOURS, LIGHTS, DRINKS,
 } from '../shared/game.js';
 import { parseVideo } from '../shared/watch.js';
 import { CHAT_KEY, DOC_TYPES, safeDocName, attachLabel, docName, usernameProblem, emailProblem, passwordProblem } from '../shared/game.js';
@@ -255,11 +255,11 @@ function trimDmThreads(rec) {
 
 function publicPlayer(p) {
   for (const r of p.rooms ?? []) for (const f of r.furniture ?? []) if (!canRotate(f.item) && f.rot !== undefined) delete f.rot;
-  return {
-    id: p.id, name: p.name, look: p.look, rooms: p.rooms, focus: p.focus, pets: p.pets ?? [],
-    totalMinutes: p.totalMinutes, online: sockets.has(p.id), pos: positions.get(p.id) ?? null, fedAt: p.fedAt ?? 0,
-    exams: p.exams ?? [],
-  };
+    return {
+      id: p.id, name: p.name, look: p.look, rooms: p.rooms, focus: p.focus, pets: p.pets ?? [],
+      totalMinutes: p.totalMinutes, online: sockets.has(p.id), pos: positions.get(p.id) ?? null, fedAt: p.fedAt ?? 0,
+      exams: p.exams ?? [], caffeineSince: p.caffeineSince, caffeineUntil: p.caffeineUntil, tipsyUntil: p.tipsyUntil,
+    };
 }
 
 // My friends and friend requests, as the client shows them.
@@ -325,7 +325,7 @@ function handle(p, m) {
   if (['place', 'move', 'pickup', 'room', 'flip', 'restyle', 'shape', 'expand', 'curtains', 'turn'].includes(m.t) && !room) return;
   // Furniture is addressed by position. Anything but a real integer fetches a built-in
   // (`furniture['toString']`) or nothing, so those messages only run for real indices.
-  if (['move', 'pickup', 'turn', 'flip', 'restyle', 'shape', 'light', 'paint', 'water'].includes(m.t) && !Number.isInteger(m.index)) return;
+  if (['move', 'pickup', 'turn', 'flip', 'restyle', 'shape', 'light', 'paint', 'water', 'brew'].includes(m.t) && !Number.isInteger(m.index)) return;
   if (m.t === 'water' && !Number.isInteger(m.r)) return;
   switch (m.t) {
     case 'look': {
@@ -732,6 +732,20 @@ function handle(p, m) {
       const f = owner?.rooms[m.r]?.furniture[m.index];
       if (!f || !isPlant(f.item)) return;
       f.wateredAt = Date.now();
+      break;
+    }
+    case 'brew': { // coffee machine, coffee cup or energy can: 10 minutes of caffeine, free
+      const owner = db.houses[p.house].members.includes(m.owner) ? db.players[m.owner] : null;
+      const f = owner?.rooms?.[m.r ?? 0]?.furniture[m.index];
+      if (!f || !DRINKS[f.item]?.caffeine) return;
+      const now = Date.now();
+      // Already caffeinated: top the timer back up rather than opening a second window.
+      if (!(owner.caffeineUntil > now)) owner.caffeineSince = now;
+      owner.caffeineUntil = Math.max(owner.caffeineUntil ?? 0, now + DRINKS[f.item].caffeine * 60_000);
+      // Wine rests rather than caffeinating; the client starts the break.
+      if (DRINKS[f.item].tipsy) owner.tipsyUntil = now + (DRINKS[f.item].rest ?? 2) * 60_000;
+      save();
+      broadcastHouse(p.house); // the flame is visible to housemates
       break;
     }
     case 'room': {

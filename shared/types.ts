@@ -73,6 +73,9 @@ export interface Member {
   pets: Pet[];
   fedAt?: number;
   exams?: Exam[];
+  caffeineSince?: number;
+  caffeineUntil?: number;
+  tipsyUntil?: number;
 }
 
 export interface Look {
@@ -348,6 +351,8 @@ export interface ClientMessages {
   set_lang: { t: 'set_lang'; lang: string };
   // PIP
   pip: { t: 'pip'; on: boolean };
+  // Drinks
+  brew: { t: 'brew'; owner: string; r: number; index: number };
 }
 
 // Server-to-client message types
