@@ -2,7 +2,7 @@ import {
   SHELVES, buildGrid, walkable, canPlace, placeSwaps,roomSize, MAX_ROOMS, ROOM_COST, colorsFor, ITEMS, PETS, PET_ACCS, MAX_PETS, bondLevel, NOTIFY, wantsNotify, EXPAND_COST, ROOM_SIZES,
   WALLPAPERS, WALL_PATTERNS, FLOORS, FLOOR_STYLES, SKINS, HAIRS, SHIRTS, STYLES, FACES, OUTFITS, BODIES, SIZES, ACCESSORIES, FOCUS_LENGTHS, isFocusLength, SCAR_ACCS, SCAR_COLOURS,
   WALL_H, WALL, FLOOR, DOOR, BLOCKED, VOID, buddyMultiplier, focusEnd, streakDays, streakBonus, sellPrice, footprint, lying, canRotate, THIRSTY_MS, isPlant, discounted, GIFT_COINS, activeEvents, nextEvent,
-  docName, attachLabel, DOC_TYPES, usernameProblem, emailProblem, passwordProblem, LIGHTS,
+  docName, attachLabel, DOC_TYPES, usernameProblem, emailProblem, passwordProblem, LIGHTS, DRINKS, caffeineMinutes,
 } from '../shared/game.js';
 import {
   T, OVERHANG, SURFACE, AVATAR_H, avatarScale, lookKey, drawSeated, drawActing, drawSeam, drawFloor, drawWall, drawWallFace, drawWallTop, drawDoor, drawWindow, drawPainting, drawFurniture, drawAvatar, drawDeskLamp, drawGlow, drawUsing, skyNow, weatherNow, skyProgress, nightTint,
@@ -22,6 +22,7 @@ type Member = {
   id: string; name: string; look: Look; rooms: Room[]; focus: Focus | null;
   totalMinutes: number; online: boolean; pos: { x: number; y: number } | null; pets: { kind: string; name?: string; coat?: number; acc?: string; away?: boolean; follow?: boolean; bond?: number }[]; fedAt?: number;
   exams?: { subject: string; date: string }[]; // YYYY-MM-DD, soonest first
+  caffeineSince?: number; caffeineUntil?: number; tipsyUntil?: number; // the caffeine window rides on the member, so housemates see the flame
 };
 // all: everyone has to tick it. to: who it's for (older ones have neither). at: reminder time. mine: one of my older private to-dos.
 type Todo = { id: number; text: string; done: boolean; by: string; byId?: string; all?: boolean; to?: string[]; ticks?: string[]; at?: number; mine?: boolean; repeat?: 'daily' | 'weekly' | 'monthly'; repeatUntil?: number; parentId?: number; priority?: 'low' | 'medium' | 'high' };
@@ -360,6 +361,9 @@ function receiveChat(list: Chat[]) {
 // ---------- house helpers ----------
 const myIndex = () => members.findIndex((m) => m.id === myId);
 const myMember = () => members[myIndex()];
+// Coffee and wine wear off: the window is on the member, so housemates see the same flame.
+const caffeinated = (m: Member | undefined, now = Date.now()) => !!m && (m.caffeineUntil ?? 0) > now;
+const tipsy = (m: Member | undefined, now = Date.now()) => !!m && (m.tipsyUntil ?? 0) > now;
 // Every room in the house in grid order: each housemate's rooms, first room first.
 type Slot = { m: Member; room: Room; ri: number };
 let slots: Slot[] = [];
@@ -505,6 +509,13 @@ const STARS = ['🌠 A shooting star! Make a wish.', "✨ You spotted Orion's be
 function afterUse(f: Furniture, owner: Member, ri: number, fi: number): (() => void) | null {
   const it = ITEMS[f.item as ItemKey] as { name: string; use?: string };
   if (isPlant(f.item)) return () => { send({ t: 'water', owner: owner.id, r: ri, index: fi }); toast(`💧 Watered the ${it.name.toLowerCase()}.`); };
+  const drink = DRINKS[f.item as keyof typeof DRINKS] as { caffeine?: number; rest?: number; tipsy?: boolean } | undefined;
+  if (drink) return () => {
+    // Wine is a two-minute rest, not caffeine: the break is local, the sway is the server's.
+    if (drink.tipsy) { startBreak((drink.rest ?? 2) * 60_000, `🍷 A short rest. Take two minutes.`); return; }
+    send({ t: 'brew', owner: owner.id, r: ri, index: fi });
+    toast(`☕ Caffeinated for ${drink.caffeine} minutes.`);
+  };
   if (f.item === 'foodBowl') return () => (owner.pets.some((p) => !p.away) ? send({ t: 'feed', owner: owner.id, r: ri, index: fi }) : toast('No pets here to feed yet.'));
   if (f.item === 'giftBox') return () => { setPanel('house'); toast('Pick a housemate to send a gift.'); };
   if (f.item === 'whiteboard') return () => { setPanel('todos'); openTodoModal(); };
@@ -1588,6 +1599,9 @@ function tickTimers() {
   chromeDirty(); // the deck and break chip can appear or go, which changes how much room the house gets
   $('#breakChip').hidden = !breakTimer;
   if (breakTimer) $('#breakTime').textContent = `☕ Break ${fmt(breakEnds - Date.now())}`;
+  const caf = caffeinated(myMember());
+  $('#cafChip').hidden = !caf;
+  if (caf) $('#cafTime').textContent = `Caffeinated ${fmt((myMember()!.caffeineUntil ?? 0) - Date.now())}`;
   const f = myMember()?.focus;
   // Here, not in the frame loop: frames stop in a background tab, this interval keeps running.
   // Keep asking until the server ends the session: a single try is lost if the connection blinks
@@ -1612,9 +1626,11 @@ function tickTimers() {
   $('#deckFill').style.width = `calc(${progress(f)}% - 6px)`;
   $('#deckMarker').style.left = `${progress(f)}%`;
   const buddies = members.filter((m) => m.id !== myId && m.focus && !m.focus.pausedAt).length;
+  const cafMin = caffeineMinutes(f, myMember()?.caffeineSince, myMember()?.caffeineUntil, Date.now()); // what the coffee is worth, live
+  const cafNote = cafMin ? ` · 🔥 ${cafMin} ${coin()}` : '';
   $('#deckNote').innerHTML = buddies
-    ? `Earning ${Math.ceil(f.minutes * buddyMultiplier(buddies))} ${coin()} · ✨ ×${buddyMultiplier(buddies)} with ${buddies} studying`
-    : `Earning ${f.minutes} ${coin()}`;
+    ? `Earning ${Math.ceil(f.minutes * buddyMultiplier(buddies))} ${coin()}${cafNote} · ✨ ×${buddyMultiplier(buddies)} with ${buddies} studying`
+    : `Earning ${f.minutes} ${coin()}${cafNote}`;
   const pt = panel.querySelector('#ptimer'), pb = panel.querySelector<HTMLElement>('#pbar');
   if (pt) pt.textContent = left;
   if (pb) pb.style.width = `${progress(f)}%`;

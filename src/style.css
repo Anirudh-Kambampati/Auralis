@@ -974,6 +974,8 @@ body.signed-out #deck, body.signed-out #game, body.signed-out #zoom { display: n
 /* Pomodoro: the break counting down in the HUD, and today's tomatoes. */
 .chip.break { gap: 8px; background: #8fd0a8; color: var(--ink); }
 .chip.break .small { padding: 2px 10px; font-size: 14px; }
+/* Caffeine: ten minutes of coffee, counted down like a break but shorter and warmer. */
+.chip.caf { background: #ffe0cf; color: #7a3d1f; }
 .tomatoes { font-size: 20px; margin: 4px 0 10px; }
 
 /* Dark mode: only the paper backdrop goes dark; cards, outlines and the pixel art keep their colours.
