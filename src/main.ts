@@ -522,10 +522,11 @@ function afterUse(f: Furniture, owner: Member, ri: number, fi: number): (() => v
   if (isPlant(f.item)) return () => { send({ t: 'water', owner: owner.id, r: ri, index: fi }); toast(`💧 Watered the ${it.name.toLowerCase()}.`); };
   const drink = DRINKS[f.item as keyof typeof DRINKS] as { caffeine?: number; rest?: number; tipsy?: boolean } | undefined;
   if (drink) return () => {
-    // Wine is a two-minute rest, not caffeine: the break is local, the sway is the server's.
-    if (drink.tipsy) { startBreak((drink.rest ?? 2) * 60_000, `🍷 A short rest. Take two minutes.`); return; }
+    // The server owns the effect: caffeine for the three caffeinated drinks, a tipsy window for wine.
+    // Wine also starts a break here, which is why it is sent as well as rested.
     send({ t: 'brew', owner: owner.id, r: ri, index: fi });
-    toast(`☕ Caffeinated for ${drink.caffeine} minutes.`);
+    if (drink.tipsy) startBreak((drink.rest ?? 2) * 60_000, `🍷 A short rest. Take two minutes.`);
+    else toast(`☕ Caffeinated for ${drink.caffeine} minutes.`);
   };
   if (f.item === 'foodBowl') return () => (owner.pets.some((p) => !p.away) ? send({ t: 'feed', owner: owner.id, r: ri, index: fi }) : toast('No pets here to feed yet.'));
   if (f.item === 'giftBox') return () => { setPanel('house'); toast('Pick a housemate to send a gift.'); };
@@ -2391,6 +2392,13 @@ function writeNote(id: string) {
 }
 
 // ---------- what a click does: hover labels, cheering, exam countdowns ----------
+// Coffee and wine ride on the tea animation but do something else, so they say what they do.
+const DRINK_LABELS: Record<string, string> = {
+  coffeeMachine: 'Brew a coffee',
+  coffee: 'Drink the coffee',
+  energyCan: 'Drink the energy can',
+  wine: 'Pour a glass of wine',
+};
 const ACT_LABELS: Record<string, string> = { sit: 'Sit', sleep: 'Nap (5-min break)', bounce: 'Bounce', lift: 'Work out', pullup: 'Pull-ups', run: 'Run', punch: 'Box', bike: 'Ride', stretch: 'Stretch' };
 const USE_LABELS: Record<string, string> = {
   water: 'Water', read: 'Study here', snack: 'Snack (2-min break)', tea: 'Tea (2-min break)', primp: 'Change your look', dress: 'Change your look',
@@ -2425,6 +2433,13 @@ function clickLabel(tx: number, ty: number): string | null {
   if (f.item === 'giftBox') return 'Send a gift';
   if (f.item === 'whiteboard') return 'House to-dos';
   if (f.item === 'clawMachine') return clawReadyAt(f) ? `Claw (ready ${fmt(clawReadyAt(f) - Date.now())})` : `Play the claw · ${coin()} ${CLAW_COST}`;
+  const drink = DRINKS[f.item as keyof typeof DRINKS] as { caffeine?: number; rest?: number } | undefined;
+  if (drink) {
+    // Already caffeinated: say how long is left, so the top-up is not a surprise.
+    const left = drink.caffeine && caffeinated(myMember()) ? ` · ${fmt((myMember()!.caffeineUntil ?? 0) - Date.now())} left` : '';
+    const does = drink.caffeine ? `${drink.caffeine}-min caffeine` : `${drink.rest ?? 2}-min rest`;
+    return `${DRINK_LABELS[f.item] ?? 'Drink'} · ${does}${left}`;
+  }
   if (TVS.has(f.item)) return 'Watch together';
   if (it.act) return ACT_LABELS[it.act] ?? cap(it.act);
   if (it.use) return (USE_LABELS[it.use] ?? cap(it.use)) + sound;
