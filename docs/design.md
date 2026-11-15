@@ -56,6 +56,7 @@ The tour is a `<dialog>` (`#tour`) with the same outline-and-offset-shadow card 
 - Furniture uses a few shapes: an outlined box with a top highlight and bottom shade, discs and hearts. Recolourable pieces take one base colour and shade from it.
 - The 3/4 view: furniture overhangs its floor footprint upwards (`OVERHANG`). Sprites draw in order of their bottom edge, so characters walk in front of and behind things correctly.
 - Pets are 12×10 sprites with a little hop when they move, drawn with a dark version of their coat as the outline so they read soft. Coats themselves are a step brighter than the accessories' base tones, and each column of coat carries a one-pixel shine along its lit top edge, so a pet looks glossy next to its accessories instead of flat.
+- Extra furniture looks sit in one block at the end of the furniture section of `draw.ts`, next to the shapes they are built from: a crowned wingback, three beds (four-poster, brass frame, buttoned four-poster), a glass cabinet and an arched bookcase, a pleated paper lantern, a mid-century dresser and a hairpin sideboard, an armoire and a linen press, and a Persian or gingham rug. They paint in the room's own art pixels and take the owner's colour, so a style recolours exactly like the original piece.
 - Pet accessories are the one place that turns up the volume: a candy palette (hot pink, gold, sky blue, red, violet) with a cream highlight and a full ink outline on every piece, so a bow or crown pops off a coat instead of melting into it.
 
 ## Icon

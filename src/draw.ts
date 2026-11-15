@@ -1217,8 +1217,8 @@ export function drawPainting(c: Ctx, x: number, y: number) {
 // Pixels each sprite reaches above its footprint (things stand "up" in the 3/4 view).
 export const OVERHANG: Record<string, number> = {
   desk: 6, chair: 6, plant: 8, lamp: 12, rug: 0, bookshelf: 16, bed: 26, sofa: 8, aquarium: 14,
-  books: 2, cactus: 8, sunflower: 12, globe: 8, beanbag: 0, roundRug: 0, coffeeTable: 2, armchair: 6, plush: 2,
-  mirror: 14, recordPlayer: 4, guitar: 12, cello: 14, sharkPlush: 6, easel: 14, bonsai: 4, wardrobe: 18, piano: 12,
+  books: 2, cactus: 8, sunflower: 12, globe: 8, beanbag: 0, roundRug: 0, coffeeTable: 2, armchair: 11, plush: 2,
+  mirror: 14, recordPlayer: 4, guitar: 12, cello: 14, sharkPlush: 6, easel: 14, bonsai: 4, wardrobe: 23, piano: 12,
   workTable: 6, pcDesk: 14, gamingDesk: 12, officeChair: 7, gamingChair: 11, miniFridge: 6,
   coffee: 0, energyCan: 0, soda: 0, wine: 1, gymBall: 0, dumbbells: 4, punchingBag: 16, exerciseBike: 9, treadmill: 12,
   petBall: 0, petBed: 0, doghouse: 10, catTower: 14,
@@ -2655,6 +2655,363 @@ export function drawUsing(c: Ctx, look: Look, use: string, x: number, y: number,
     }
   });
 }
+
+// ---------- more looks for pieces we already have ----------
+// These are styles of existing furniture, not new furniture: ITEMS[item].looks lists their names, Decorate's Style row
+// picks one, the server stores it as `s` on the placed piece, and drawFurniture draws ALT[item][s - 1]. They paint in
+// the same art pixels as the rest of the furniture here — origin at the top-left of the footprint, y up from the
+// piece's floor line — and take the owner's colour, so recolouring a piece recolours its style too.
+// The wingback and the paper lantern replace the older drawings of those two looks, so a room already styled that way
+// gets the better art without being asked.
+type StylePaint = (c: Ctx, col: string, t: number) => void;
+const look = (base: string, paint: StylePaint): Draw => (c, x, y, t, col) => {
+  c.save();
+  c.translate(x, y);
+  paint(c, col ?? base, t);
+  c.restore();
+};
+
+const WOOD = '#b07a4e', DARKWOOD = '#8a5a3c', LEG = '#5a3620', BRASS = '#e8b43c', BRASS_L = '#fff3b0';
+const SHEET = '#fff8f0', WHITE = '#ffffff', BLUSH = '#f4b6c8';
+const BOOKS = ['#f48a8a', '#7fb2e8', '#8fd0a8', '#ffd27a', '#b89af0', '#f4b6c8'];
+
+// A diagonal, made of half-pixel steps so a hairpin leg or a splayed chair leg needs no path.
+const stroke = (c: Ctx, x0: number, y0: number, x1: number, y1: number, col: string) => {
+  const n = Math.max(2, Math.round(Math.hypot(x1 - x0, y1 - y0) * 2));
+  for (let i = 0; i <= n; i++) r(c, x0 + (x1 - x0) * i / n, y0 + (y1 - y0) * i / n, 0.5, 0.5, col);
+};
+
+// Wingback, redrawn: a crowned buttoned back, wings folded one step proud of it, rolled arms, a seat you see the top of.
+ALT.armchair[0] = look('#f2b48a', (c, col, _t) => {
+  for (const lx of [2, 12]) r(c, lx, 14, 1.5, 2, LEG);                 // tapered legs
+  r(c, 6, 12.5, 4, 1, DARKWOOD);                                       // front stretcher
+  box(c, 3, -9, 10, 20, shade(col, -0.05));                            // back
+  r(c, 4.5, -10, 7, 1, shade(col, -0.02));                             // the crown, rounded off
+  r(c, 4, -9.5, 8, 0.5, shade(col, 0.14));
+  for (let qy = 0; qy < 3; qy++) for (let qx = 0; qx < 3; qx++) {       // button tufting
+    const bx = 5.5 + qx * 3 + (qy % 2) * 1.5, by = -6.5 + qy * 4.2;
+    r(c, bx, by, 0.5, 0.5, shade(col, -0.32));
+    r(c, bx + 0.5, by - 1.2, 0.5, 1, shade(col, 0.06));                // the fold above each button
+  }
+  for (const [wx, lx] of [[1.5, 4.5], [11, 11.5]]) {                   // flared wings
+    box(c, wx, -8, 3.5, 14, shade(col, -0.12));
+    r(c, lx, -7, 0.5, 12, shade(col, 0.14));                           // their lit inner face
+  }
+  box(c, 2.5, 5, 11, 5, shade(col, 0.08));                             // seat cushion
+  r(c, 3.5, 5.2, 9, 0.5, shade(col, 0.22));
+  box(c, 2.5, 9.5, 11, 4, shade(col, -0.14));                          // apron
+  for (const ax of [0.5, 12.5]) {                                      // rolled arms
+    box(c, ax, 3.5, 3, 7, shade(col, 0));
+    r(c, ax + 0.5, 4, 2, 0.5, shade(col, 0.16));
+    r(c, ax + 0.5, 6, 2, 0.5, shade(col, -0.12));
+  }
+});
+
+// Four-poster: slim turned posts, a canopy rail with a short valance, a duvet folded back over the sheet.
+ALT.bed.push(
+  look('#9cc4f0', (c, col, _t) => {
+    const woodL = shade(DARKWOOD, 0.22);
+    for (const px of [0, 29.5]) {                                      // corner posts
+      r(c, px, -8, 2.5, 54, DARKWOOD);
+      r(c, px + 0.5, -7, 0.5, 52, woodL);
+      r(c, px - 0.5, -6.5, 3.5, 1.5, shade(DARKWOOD, 0.06));           // turned collars
+      r(c, px - 0.5, 20, 3.5, 1.5, shade(DARKWOOD, 0.06));
+      sphere(c, px + 1.25, -9, 1.6, DARKWOOD);                         // finial
+    }
+    r(c, 3, -7.5, 26, 1.5, DARKWOOD);                                  // canopy rail
+    r(c, 3, -7.5, 26, 0.5, woodL);
+    for (let k = 0; k < 6; k++) {                                      // its little valance
+      const sw = 26 / 6, vx = 3 + k * sw;
+      r(c, vx, -6, sw, 1.5, '#fff4e6');
+      r(c, vx + sw / 2 - 1, -4.5, 2, 1, shade('#fff4e6', -0.1));
+    }
+    box(c, 1, -2, 30, 12, DARKWOOD);                                   // headboard
+    box(c, 3, 0, 12, 8, shade(DARKWOOD, 0.06));                        // two raised panels
+    box(c, 17, 0, 12, 8, shade(DARKWOOD, 0.06));
+    r(c, 4, 1, 10, 0.5, shade(DARKWOOD, 0.16));
+    r(c, 18, 1, 10, 0.5, shade(DARKWOOD, 0.16));
+    r(c, 2, -1.5, 28, 0.5, woodL);
+    box(c, 1, 8, 30, 38, shade(DARKWOOD, -0.12));                      // frame
+    r(c, 3, 10, 26, 34, SHEET);
+    r(c, 1, 8, 2, 38, shade(DARKWOOD, 0.02));                          // side rails, so the frame reads deep
+    r(c, 29, 8, 2, 38, shade(DARKWOOD, 0.02));
+    for (const px of [4, 17]) {                                        // pillows
+      box(c, px, 9, 12, 9, WHITE);
+      r(c, px + 1, 16.5, 10, 1, '#e8e0f0');
+      r(c, px + 1.5, 10, 4, 0.5, '#f4f0fa');
+      r(c, px + 6, 12, 0.5, 3, '#ece6f4');
+    }
+    box(c, 2, 20, 28, 24, col);                                        // duvet
+    for (let q = 0; q < 5; q++) for (let k = 0; k < 6; k++) {          // quilting
+      const qx = 5 + k * 4.4 + (q % 2) * 2.2, qy = 25 + q * 4;
+      if (qx < 28) { r(c, qx, qy, 1, 0.5, shade(col, -0.14)); r(c, qx, qy + 0.5, 0.5, 1, shade(col, 0.1)); }
+    }
+    r(c, 16, 25, 0.5, 18, shade(col, -0.1));                           // the duvet's centre seam
+    r(c, 2.5, 43, 27, 1, shade(col, -0.12));                           // hem at the foot
+    box(c, 2, 19, 28, 5, SHEET);                                       // sheet turned down over it
+    r(c, 3, 21.5, 26, 0.5, '#ece4dc');
+    r(c, 3, 24, 26, 1, shade(col, -0.2));                              // the shadow the fold casts
+    box(c, 1, 44, 30, 4, DARKWOOD);                                    // footboard
+    r(c, 1.5, 44.5, 29, 0.5, woodL);
+  }),
+  // Brass frame: thin spun spindles under a shallow arch, small finials, crisp white linen.
+  look('#9cc4f0', (c, col, _t) => {
+    const brass = '#c58b5a', brassL = shade(brass, 0.26);
+    for (const px of [1, 28.5]) { r(c, px, 4, 2, 42, brass); sphere(c, px + 1, 3, 1.5, brass); }
+    const archY = (x: number) => 3 - Math.sin(((x - 1) / 29.5) * Math.PI) * 4;
+    for (let x = 1; x <= 30.5; x += 0.5) r(c, x, archY(x), 0.5, 0.5, brass);
+    for (let k = 1; k < 8; k++) {                                      // spindles, down to the rail
+      const x = 1.5 + k * 3.5;
+      r(c, x, archY(x) + 0.5, 0.8, 13 - archY(x), brass);
+    }
+    r(c, 1, 13, 30.5, 1, brass);
+    r(c, 1.5, 13, 29.5, 0.5, brassL);
+    box(c, 1, 12, 30, 36, SHEET);                                      // mattress
+    r(c, 2, 12, 28, 0.5, '#e8e0d0');
+    for (const px of [4, 17]) { box(c, px, 12, 12, 9, WHITE); r(c, px + 1, 19.5, 10, 1, '#e8e0f0'); r(c, px + 1.5, 13, 4, 0.5, '#f4f0fa'); }
+    box(c, 2, 24, 28, 22, col);                                        // duvet
+    for (let q = 0; q < 5; q++) for (let k = 0; k < 6; k++) {
+      const qx = 5 + k * 4.4 + (q % 2) * 2.2, qy = 28 + q * 4;
+      if (qx < 28) r(c, qx, qy, 0.5, 0.5, shade(col, -0.12));
+    }
+    r(c, 16, 28, 0.5, 16, shade(col, -0.1));
+    box(c, 2, 22, 28, 5, SHEET);
+    r(c, 3, 24.5, 26, 0.5, '#ece4dc');
+    r(c, 3, 27, 26, 1, shade(col, -0.2));
+    r(c, 1, 14, 1.5, 34, brass);                                       // side rails
+    r(c, 29.5, 14, 1.5, 34, brass);
+  }),
+  // Buttoned four-poster: the posts and rail of the four-poster, a padded buttoned headboard, drawers in the base.
+  look('#9cc4f0', (c, col, _t) => {
+    const woodL = shade(DARKWOOD, 0.22);
+    for (const px of [0, 29.5]) {
+      r(c, px, -8, 2.5, 54, DARKWOOD);
+      r(c, px + 0.5, -7, 0.5, 52, woodL);
+      sphere(c, px + 1.25, -9, 1.6, DARKWOOD);
+    }
+    r(c, 3, -7.5, 26, 1.5, DARKWOOD);
+    r(c, 3, -7.5, 26, 0.5, woodL);
+    box(c, 1, -3, 30, 14, shade(col, -0.04));                          // padded headboard
+    r(c, 2, -2.5, 28, 0.5, shade(col, 0.14));
+    for (let qy = 0; qy < 3; qy++) for (let qx = 0; qx < 7; qx++)       // buttoning
+      r(c, 5 + qx * 4 + (qy % 2) * 2, 1 + qy * 4.2, 0.5, 0.5, shade(col, -0.32));
+    box(c, 1, 9, 30, 31, SHEET);                                       // mattress
+    for (const px of [4, 17]) { box(c, px, 9, 12, 9, WHITE); r(c, px + 1, 16.5, 10, 1, '#e8e0f0'); r(c, px + 1.5, 10, 4, 0.5, '#f4f0fa'); }
+    box(c, 2, 21, 28, 19, col);                                        // duvet
+    for (let q = 0; q < 4; q++) for (let k = 0; k < 6; k++) {
+      const qx = 5 + k * 4.4 + (q % 2) * 2.2, qy = 26 + q * 4;
+      if (qx < 28) r(c, qx, qy, 0.5, 0.5, shade(col, -0.14));
+    }
+    r(c, 16, 26, 0.5, 12, shade(col, -0.1));
+    box(c, 2, 20, 28, 4, SHEET);                                       // sheet turned down
+    r(c, 3, 22, 26, 0.5, '#ece4dc');
+    r(c, 3, 24, 26, 1, shade(col, -0.2));
+    box(c, 1, 40, 30, 8, WOOD);                                        // drawers in the base
+    for (const dx of [3, 17]) { box(c, dx, 41, 12, 6, shade(WOOD, 0.06)); r(c, dx + 5, 43.5, 2, 1, BRASS); }
+  }),
+);
+
+// Glass cabinet and arch, added to the bookshelf's ladder and cubbies.
+ALT.bookshelf.push(
+  look('#b07a4e', (c, col, _t) => {
+    box(c, 0, -16, 32, 32, shade(col, 0.04));
+    r(c, 2, -14, 28, 28, shade(col, -0.36));                           // dark interior
+    for (const sy of [-12, -3]) {
+      r(c, 3, sy + 8, 26, 0.5, shade(col, -0.12));                     // shelf
+      for (let i = 0, bx = 4; bx < 26; i++) {
+        const w = 1.5 + (i % 2), h = 4 + (i % 3);
+        r(c, bx, sy + 8 - h, w, h, BOOKS[(i + (sy < -5 ? 0 : 2)) % BOOKS.length]);
+        bx += w + 1;
+      }
+    }
+    for (const dx of [2, 16]) {                                        // glazed doors
+      r(c, dx, -14, 13, 28, 'rgba(178,214,232,0.22)');
+      r(c, dx, -14, 13, 0.5, 'rgba(255,255,255,0.6)');
+      r(c, dx + 2, -12, 2, 20, 'rgba(255,255,255,0.22)');              // long highlight down the glass
+      r(c, dx, -14, 0.5, 28, shade(col, 0.06));
+    }
+    r(c, 15.5, -14, 1, 28, shade(col, -0.16));                         // the gap between the doors
+    for (const hx of [13.5, 17]) { r(c, hx, -1, 1, 4, BRASS); r(c, hx, -1, 0.5, 0.5, BRASS_L); }
+    for (const fx of [3, 27]) r(c, fx, 14, 3, 2, LEG);
+  }),
+  look('#b07a4e', (c, col, _t) => {
+    const archY = (x: number) => -2 - Math.sin((x / 31) * Math.PI) * 7;
+    for (let x = 0; x <= 31; x += 0.5) r(c, x, archY(x), 0.5, 16 - archY(x), shade(col, -0.16)); // the arched back
+    for (let x = 0; x <= 31; x += 0.5) r(c, x, archY(x), 0.5, 0.5, shade(col, 0.26));            // its lit top edge
+    for (let x = 2.5; x <= 28.5; x += 0.5) r(c, x, archY(x) + 2.5, 0.5, 0.5, shade(col, 0.02));  // a moulded inner line
+    for (let i = 0, bx = 4; bx < 15; i++) {                            // books on the upper shelf
+      const w = 1.5 + (i % 2), h = 4 + (i % 3);
+      r(c, bx, 4 - h, w, h, BOOKS[i % BOOKS.length]);
+      bx += w + 0.5;
+    }
+    disc(c, 22, -1, 3, '#6cbf7a');                                     // a trailing plant beside them
+    box(c, 20, 1, 4.5, 3, '#d97a55');
+    for (const [dx, dy] of [[26, 3], [27, 6], [27.5, 9]]) disc(c, dx, dy, 1.2, '#6cbf7a');
+    r(c, 25, -1.5, 5, 1.2, BOOKS[3]);                                  // one book lying flat
+    for (let i = 0, bx = 4; bx < 22; i++) {                            // books on the lower shelf
+      const w = 1.5 + (i % 2), h = 4 + (i % 3);
+      r(c, bx, 10 - h, w, h, BOOKS[(i + 2) % BOOKS.length]);
+      bx += w + 0.5;
+    }
+    r(c, 23, 6, 6, 1.2, BOOKS[0]);
+    for (const sy of [4, 10]) {                                        // the shelves, standing proud
+      box(c, 0.5, sy, 31, 2, col);
+      r(c, 1.5, sy + 0.3, 29, 0.5, shade(col, 0.2));
+    }
+    for (const fx of [1.5, 27]) r(c, fx, 16, 3, 1, LEG);               // little feet
+  }),
+);
+
+// Paper lantern, redrawn: straight pleats on a ribbed globe, warm from the inside.
+ALT.lamp[1] = look('#ffb454', (c, col, _t) => {
+  const paper = shade(col, 0.32);
+  sphere(c, 8, -1, 8, paper);                                          // globe
+  for (let px = -7.5; px <= 7.5; px += 1.6) {                          // pleats: straight columns, kept inside the paper
+    for (let dy = -7.5; dy <= 7.5; dy += 0.5) {
+      if (px * px + dy * dy <= 60) r(c, 8 + px, -1 + dy, 0.5, 0.5, shade(col, 0.04));
+    }
+  }
+  for (const wy of [-5, 3]) {                                          // two waist bands, cut to the globe's width
+    const half = Math.sqrt(64 - (wy + 1) ** 2) * 1.05;
+    r(c, 8 - half, wy, half * 2, 0.5, shade(col, -0.08));
+  }
+  r(c, 7, 6, 2, 7, '#5a5070');                                         // pole
+  sphere(c, 8, 13.8, 2.2, '#7a6a8a');                                  // foot
+  r(c, 6.5, 12, 3, 1.5, shade(col, -0.12));
+  r(c, 6, -9.5, 4, 1.5, '#5a5070');                                    // brass cap
+});
+
+// Mid-century and sideboard, the dresser's first two extra looks.
+ALT.dresser = [
+  look('#f0d2a8', (c, col, _t) => {
+    for (const lx of [2, 13, 19, 29]) r(c, lx, 13, 1.5, 3, LEG);       // tapered peg legs
+    box(c, 0, 3, 32, 11, col);
+    r(c, 1, 3.5, 30, 0.5, shade(col, 0.18));
+    const drawers: [number, number, number][] = [[2, 5, 13], [16.5, 5, 13.5], [2, 9.5, 8], [11, 9.5, 4.5], [16.5, 9.5, 13.5]];
+    for (const [dx, dy, dw] of drawers) {
+      box(c, dx, dy, dw, 3.5, shade(col, 0.06));
+      r(c, dx + dw / 2 - 2, dy + 1.5, 4, 0.5, BRASS);
+    }
+    box(c, 22, 0, 4, 3, '#fff4e6');                                    // a little vase on top
+    r(c, 23, 1, 2, 0.5, '#9a6440');
+  }),
+  look('#f0d2a8', (c, col, _t) => {
+    for (const lx of [3, 26]) {                                        // hairpin legs
+      stroke(c, lx + 1.5, 16, lx + 1.5, 12, LEG);
+      stroke(c, lx + 1.5, 12, lx + 4, 16, LEG);
+    }
+    stroke(c, 15, 12, 15, 16, LEG);
+    box(c, 0, 2, 32, 12, shade(col, 0.02));
+    r(c, 1, 2.5, 30, 0.5, shade(col, 0.18));
+    for (const [dx, dy, dw, dh] of [[2, 4, 13, 9], [17, 4, 13, 9]]) {  // graphic sliding doors
+      r(c, dx, dy, dw, dh, shade(col, -0.14));
+      for (let k = 0; k < 4; k++) {                                    // graduated dots
+        r(c, dx + dw / 2 - 0.5, dy + 2 + k * 1.8, 1, 1, shade(col, 0.26));
+        r(c, dx + 2.5, dy + 2 + k * 1.8, 0.5, 0.5, shade(col, 0.18));
+        r(c, dx + dw - 3, dy + 2 + k * 1.8, 0.5, 0.5, shade(col, 0.18));
+      }
+    }
+    r(c, 15, 4, 2, 9, shade(col, -0.16));                              // the join between the doors
+    box(c, 6, -1, 5, 3, '#fff4e6');                                    // a ceramic bowl
+    r(c, 7, -0.5, 3, 1, '#f48a8a');
+    for (const [sx, sy] of [[22, -1], [24, -2.5], [26, -1]]) r(c, sx, sy, 1.5, 3, '#8fd0a8');
+    box(c, 21, 0, 6, 2, '#9cc4f0');
+  }),
+];
+
+// Armoire and linen press, added to the wardrobe's mirrored and sliding doors.
+ALT.wardrobe.push(
+  look('#f0d2a8', (c, col, _t) => {
+    for (let x = 0; x <= 31; x += 0.5) {                               // the crown: a thick band, gently arched
+      const lift = Math.sin((x / 31) * Math.PI) * 2.2;
+      r(c, x, -20 - lift, 0.5, 4, shade(col, 0.04));
+      r(c, x, -20 - lift, 0.5, 0.6, shade(col, 0.24));
+    }
+    r(c, 0, -16, 32, 0.8, shade(col, -0.12));
+    box(c, 0, -16, 32, 32, shade(col, 0.02));                          // carcass
+    r(c, 1.5, -15, 13.5, 29, shade(col, -0.34));                       // the open half
+    r(c, 2.5, -13, 11.5, 25, shade(col, -0.44));
+    r(c, 2.5, -8, 11.5, 0.8, WOOD);                                    // the hanging rail
+    const clothes: [number, number, string][] = [[3, 3, BOOKS[4]], [6.5, 3, BOOKS[1]], [10, 3, BOOKS[5]]];
+    for (const [cx, cw, cc] of clothes) {
+      r(c, cx + cw / 2 - 0.5, -8, 0.5, 1.5, BRASS);                    // hook
+      r(c, cx, -6.5, cw, 12, cc);                                      // garment
+      r(c, cx, -6.5, cw, 0.5, shade(cc, 0.2));
+      r(c, cx + 1, 1, 1, 4, shade(cc, -0.12));                         // a fold
+    }
+    box(c, 4, 8, 9, 3, '#b07a4e');                                     // a basket of folded things
+    r(c, 4.5, 8.5, 8, 0.5, shade('#b07a4e', 0.2));
+    box(c, 15, -15, 16, 30, shade(col, 0.06));                         // the closed door
+    for (const [py, ph] of [[-13, 11], [1, 11]]) {
+      box(c, 17, py, 12, ph, shade(col, -0.03));
+      r(c, 18, py + 1, 10, ph - 2, shade(col, 0.1));
+      r(c, 18, py + 1, 10, 0.5, shade(col, 0.24));
+      r(c, 18, py + ph - 2, 10, 0.5, shade(col, -0.1));
+    }
+    for (const kx of [21, 25]) { r(c, kx, -1, 1, 2, BRASS); r(c, kx, -1, 0.5, 0.5, BRASS_L); }
+    r(c, 15.5, -15, 0.5, 30, shade(col, -0.2));                        // the door's hinge edge
+    box(c, 0, 12, 32, 4, shade(col, -0.12));                           // plinth
+    for (const fx of [2, 27]) r(c, fx, 16, 3, 1, LEG);
+  }),
+  look('#f0d2a8', (c, col, _t) => {
+    box(c, 0, -18, 32, 34, shade(col, 0.02));
+    r(c, 2, -16, 28, 30, shade(col, -0.3));                            // the open interior
+    for (const sy of [-16, -8, 0, 8]) {
+      r(c, 2, sy, 28, 1, shade(col, 0.06));
+      r(c, 2, sy + 1, 28, 0.5, shade(col, -0.16));
+    }
+    const stacks: [number, number, string][] = [[4, -15, '#fff4e6'], [12, -15, '#9cc4f0'], [21, -15, '#f4b6c8']];
+    for (const [sx, sy, sc] of stacks) for (let i = 0; i < 4; i++) {    // folded linen
+      r(c, sx, sy + i * 1.6, 7 - (i % 2), 1.4, i % 2 ? shade(sc, -0.06) : sc);
+    }
+    for (let i = 0; i < 3; i++) r(c, 5, -7 + i * 2, 10, 1.8, i % 2 ? '#fff8f0' : SHEET); // folded quilts
+    box(c, 19, -7, 9, 6, BLUSH);                                       // towels
+    r(c, 19, -5, 9, 0.5, shade(BLUSH, -0.12));
+    box(c, 19, 1, 10, 6, WOOD);                                        // basket on the bottom shelf
+    for (let k = 0; k < 5; k++) r(c, 20 + k * 2, 2, 0.5, 4, shade(WOOD, -0.2));
+    r(c, 19, 1, 10, 0.5, shade(WOOD, 0.2));
+    box(c, 4, 9, 24, 6, shade(col, -0.06));                            // closed drawer at the foot
+    r(c, 15, 11, 3, 1, BRASS);
+    for (const fx of [3, 26]) r(c, fx, 16, 3, 1, LEG);
+  }),
+);
+
+// Persian and gingham, added to the rug's hearts, stripes and checks.
+ALT.rug.push(
+  look('#e98a9a', (c, col, _t) => {
+    r(c, 2, 1, 44, 30, shade(col, -0.06));                             // outer border
+    r(c, 4, 3, 40, 26, '#fff4e6');
+    r(c, 5, 4, 38, 24, shade(col, -0.12));
+    r(c, 8, 7, 32, 18, shade(col, 0.1));                               // the field
+    for (let k = 0; k < 26; k++) {                                     // border motif
+      r(c, 5.5 + k * 1.45, 3.8, 0.5, 0.5, shade(col, 0.2));
+      r(c, 5.5 + k * 1.45, 26.4, 0.5, 0.5, shade(col, 0.2));
+    }
+    for (let i = 0; i < 7; i++) {                                      // stepped medallion
+      const hw = 4 + (i < 4 ? i : 7 - i) * 1.6, hh = 2 + (i < 4 ? i : 7 - i) * 1.1;
+      r(c, 24 - hw, 16 - hh, hw * 2, hh * 2, i % 2 ? shade(col, -0.16) : '#e8b43c');
+    }
+    r(c, 23.5, 15.5, 1, 1, '#fff4e6');
+    for (const [cx, cy] of [[9, 9], [39, 9], [9, 23], [39, 23]]) {     // corner spandrels
+      r(c, cx - 1, cy - 1, 3, 3, shade(col, -0.18));
+      r(c, cx - 0.5, cy - 0.5, 2, 2, shade(col, 0.28));
+    }
+    for (let k = 0; k < 26; k++) {                                     // fringe
+      r(c, 1, 3 + k, 1.5, 0.5, '#fff4e6');
+      r(c, 45.5, 3 + k, 1.5, 0.5, '#fff4e6');
+    }
+  }),
+  look('#e98a9a', (c, col, _t) => {
+    r(c, 3, 2, 42, 28, '#fff4e6');
+    for (let gy = 0; gy < 7; gy++) for (let gx = 0; gx < 7; gx++) {    // the check
+      const dark = (gx + gy) % 2 === 0;
+      r(c, 5 + gx * 5.4, 4 + gy * 3.8, 5.4, 3.8, dark ? shade(col, -0.04) : shade(col, 0.22));
+    }
+    r(c, 3, 2, 42, 0.5, shade(col, 0.3));
+    r(c, 3, 29.5, 42, 0.5, shade(col, -0.12));
+    for (let k = 0; k < 26; k++) { r(c, 1, 3 + k, 2, 0.5, '#fff4e6'); r(c, 45, 3 + k, 2, 0.5, '#fff4e6'); }
+  }),
+);
 
 // ---------- recipe sprites ----------
 // Most of the catalog is described as a short list of shapes instead of hand-written draw code.

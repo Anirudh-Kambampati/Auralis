@@ -65,7 +65,7 @@ Each viewer's local clock sets the sky (`skyNow`): day 8:00–17:00, dusk 6–8 
 
 ## Furniture styles
 
-Items with `looks` (sofa, armchair, bed, lamp, plant, rug, bookshelf, wardrobe, coffee table) have 3 styles each, stored as `s` on the placed item and picked in Decorate → Style. They're drawn by `ALT[item][s - 1]` in `draw.ts`. Style 0 is the original.
+Pieces with `looks` are styled in Decorate → Style: sofa, armchair, bed, lamp, plant, rug, bookshelf, wardrobe, dresser and coffee table. The list is the styles by name, so its length is how many there are — 3 for most, 6 for the bed, 5 for the rug, bookshelf and wardrobe. The choice is stored as `s` on the placed item, checked by the server against that list, and drawn by `ALT[item][s - 1]` in `draw.ts`. Style 0 is the original. Recolouring a piece recolours whichever style it is wearing.
 
 ## Pet looks
 
