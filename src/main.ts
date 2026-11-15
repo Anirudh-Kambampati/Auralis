@@ -534,9 +534,10 @@ function afterUse(f: Furniture, owner: Member, ri: number, fi: number): (() => v
   if (CRAFT[f.item as keyof typeof CRAFT]) return () => {
     const ready = clawReadyAt(f);
     if (ready) { toast(`⏳ Ready ${fmt(ready - Date.now())} from now.`); return; }
-    editRoom = ri; // the panel works on the room the piece is actually in
-    moving = fi;
+    // setPanel clears `moving`, so open the panel first and select the piece afterwards.
     setPanel('decorate');
+    editRoom = ri;
+    moving = fi;
     renderPanel();
   };
   if (f.item === 'clawMachine') return () => {
@@ -2401,6 +2402,14 @@ const DRINK_LABELS: Record<string, string> = {
   energyCan: 'Drink the energy can',
   wine: 'Pour a glass of wine',
 };
+// The five making pieces all ride on use: 'paint', so they say what they actually make.
+const CRAFT_LABELS: Record<string, string> = {
+  potteryWheel: 'Make pottery',
+  easel: 'Paint something',
+  loom: 'Weave a rug',
+  craftTable: 'Make a craft',
+  sewingTable: 'Sew a plush',
+};
 const ACT_LABELS: Record<string, string> = { sit: 'Sit', sleep: 'Nap (5-min break)', bounce: 'Bounce', lift: 'Work out', pullup: 'Pull-ups', run: 'Run', punch: 'Box', bike: 'Ride', stretch: 'Stretch' };
 const USE_LABELS: Record<string, string> = {
   water: 'Water', read: 'Study here', snack: 'Snack (2-min break)', tea: 'Tea (2-min break)', primp: 'Change your look', dress: 'Change your look',
@@ -2434,7 +2443,14 @@ function clickLabel(tx: number, ty: number): string | null {
   if (LIGHTS.has(f.item) && members.some((m) => m.id === hit.m.id)) return f.off ? 'Lights on' : 'Lights off';
   if (f.item === 'giftBox') return 'Send a gift';
   if (f.item === 'whiteboard') return 'House to-dos';
-  if (f.item === 'clawMachine') return clawReadyAt(f) ? `Claw (ready ${fmt(clawReadyAt(f) - Date.now())})` : `Play the claw · ${coin()} ${CLAW_COST}`;
+  if (f.item === 'clawMachine') return clawReadyAt(f) ? `Claw (ready ${fmt(clawReadyAt(f) - Date.now())})` : `Play the claw · ${CLAW_COST} coins`;
+  const craft = CRAFT[f.item as keyof typeof CRAFT];
+  if (craft) {
+    // A tip is plain text, so no coin() markup here: just what it makes and whether it is ready.
+    const what = CRAFT_LABELS[f.item] ?? 'Make something';
+    const ready = clawReadyAt(f);
+    return ready ? `${what} (ready ${fmt(ready - Date.now())})` : `${what} · free`;
+  }
   const drink = DRINKS[f.item as keyof typeof DRINKS] as { caffeine?: number; rest?: number } | undefined;
   if (drink) {
     // Already caffeinated: say how long is left, so the top-up is not a surprise.
