@@ -73,6 +73,7 @@ let chat: Chat[] = [];
 let dmPeer: string | null = null; // null = talking to the whole house
 let houseCode = '';
 let houseOwnerName = ''; // whose home this house is (empty for old shared houses with no owner)
+let lastHouseCode = ''; // detect entering a different house to show unseen items once
 let focusSeen: Set<string> | null = null; // housemates who were studying at the last state; null until the first one
 let notesSeen = 0; // newest desk note already shown
 let noteTo: string | null = null; // housemate I'm writing a desk note for
@@ -171,6 +172,11 @@ function onMessage(m: any) {
     me = { ...m.me, sessions: m.me.sessions ?? me.sessions }; // study history only comes when it changed
     subscribePush();
     renderNotifyPrefs();
+    // Entering a (new or current) house: show unseen object types in it once per item (remembered per user).
+    if (houseCode && houseCode !== lastHouseCode) {
+      lastHouseCode = houseCode;
+      maybeShowHouseItemsTour();
+    }
     const started = joinable().filter((o) => focusSeen && !focusSeen.has(o.id));
     if (started.length && !myMember()?.focus) {
       notify(chime);
@@ -1728,6 +1734,27 @@ type TourRow = { item?: string; title?: string; text: string; html?: boolean };
 let tourRows: TourRow[] = [];
 let tourAt = 0;
 
+// Unseen object types in the current house, shown once per item (remembered per user across houses).
+function maybeShowHouseItemsTour() {
+  const rows: TourRow[] = [];
+  const seen = new Set(seenTips());
+  for (const m of members) {
+    const who = m.id === myId ? 'Your' : `${m.name}'s`;
+    for (let ri = 0; ri < m.rooms.length; ri++) {
+      const where = m.rooms.length > 1 ? `${who} room ${ri + 1}` : `${who} room`;
+      for (const f of m.rooms[ri].furniture) {
+        if (!ITEMS[f.item as ItemKey] || seen.has(f.item)) continue;
+        seen.add(f.item);
+        rows.push({ item: f.item, title: ITEMS[f.item as ItemKey].name, text: where });
+      }
+    }
+  }
+  if (!rows.length) return;
+  // Remember each item (per user) so it never shows again, then present in tour format.
+  for (const r of rows) if (r.item) markTipSeen(r.item);
+  openTour(rows, { title: 'Items in this house', lede: 'Objects in this house you can go use. Each one is shown once.' });
+}
+
 // What I have been shown this session. A state message can land after the tour has marked its steps but before
 // the server has stored them, and it would carry the old `tipsSeen` — so the session's own set is merged in.
 const shownHere = new Set<string>();
@@ -1749,13 +1776,18 @@ function myThings(): Record<string, number> {
   return owned;
 }
 
-function openTour(rows: TourRow[]) {
+function openTour(rows: TourRow[], opts?: { title?: string; lede?: string }) {
   if (!rows.length) return;
   const d = $<HTMLDialogElement>('#tour');
   if (d?.open) return; // one at a time: finishTour picks up anything that turned up meanwhile
   tourRows = rows;
   tourAt = 0;
-  for (const r of rows) if (r.item) markTipSeen(r.item);
+  if (!opts) for (const r of rows) if (r.item) markTipSeen(r.item);
+  $('#tourTitle').innerHTML = `<img data-icon="guide" alt="" /> ${esc(opts?.title ?? 'A quick look around')}`;
+  $<HTMLImageElement>('#tourTitle [data-icon="guide"]').src = uiIconURL('guide');
+  const lede = $('#tourLede');
+  lede.textContent = opts?.lede ?? 'These are the things the catalog cannot explain. Every one is already yours, and every step is listed below.';
+  lede.hidden = !lede.textContent;
   renderTour();
   if (d && !d.open) d.showModal();
 }

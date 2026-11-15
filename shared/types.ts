@@ -46,7 +46,7 @@ export interface MeState {
   notes: Note[];
   inbox: InboxItem[];
   inboxSeen: number;
-  tipsSeen?: string[]; // the Guide nudges this player has already had, private to them
+  tipsSeen?: string[]; // item/tip ids this player has already been shown, private to them, never repeated
   events: CalEvent[];
   inventory: Record<string, number>;
   crafted?: { item: string; col: string }[]; // made by hand: one real piece each, private to its owner

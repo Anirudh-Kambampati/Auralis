@@ -29,6 +29,7 @@ A cozy pixel-art study game you play with friends. Start a focus timer and your 
 - **Characters**: 19 hairstyles, 10 expressions, 20 outfits, and colours for hair, skin and clothes.
 - **Pets**: 20 pets, from 300 to 2,000 coins, each with several coat colours, plus 20 accessories (bows, hats, crowns, capes…). Pets wander, climb cat towers, nap in beds, chase balls and eat from bowls.
 - **Day and night**: windows follow your local time, the house darkens in the evening, and lamps, candles and fireplaces glow.
+- **House items tour**: when you enter a house, you get a quick tour of the objects in it (yours and your housemates’) shown in the tour format so you know what you can use. Each item type is shown once per user and remembered across houses.
 - **Stats**: day, week, month and year charts, a streak, a breakdown by subject, and leaderboards for your house or everyone.
 - **Social**: shared house to-dos, private to-dos, house chat with speech bubbles, private messages and group chats, pictures and documents (PDF, Office, CSV, text) in any chat, friends you find by username (suggestions appear as you type), and room snapshots saved to cloud storage with share links.
 - **Accounts**: sign up and log in, and your progress follows you to any device.
