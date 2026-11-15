@@ -666,6 +666,19 @@ export const streakBonus = (days) => (days >= 30 ? 0.5 : days >= 7 ? 0.25 : days
 
 export const quitMinutes =(minutes, elapsedMs) => Math.floor((minutes * quitQuarter(minutes, elapsedMs)) / 4);
 
+// The start of a focus session, worked back from its end (paused time has moved the end out).
+export const focusStart = (f, now = Date.now()) => focusEnd(f, now) - f.minutes * 60_000;
+
+// Whole minutes shared by [from, to) and the caffeine window. Zero when either is missing or inverted.
+export function caffeineOverlap(from, to, caffeineSince, caffeineUntil) {
+  if (!Number.isFinite(caffeineSince) || !Number.isFinite(caffeineUntil) || caffeineUntil <= caffeineSince) return 0;
+  return Math.max(0, Math.floor((Math.min(to, caffeineUntil) - Math.max(from, caffeineSince)) / 60_000));
+}
+
+// Caffeinated minutes of a whole session: what focus_done pays the bonus on.
+export const caffeineMinutes = (f, caffeineSince, caffeineUntil, now = Date.now()) =>
+  caffeineOverlap(focusStart(f, now), focusEnd(f, now), caffeineSince, caffeineUntil);
+
 // Accounts: what's wrong with a sign-up field, in words a person can act on, or null when it's fine.
 // Shared so the website can say it at once and the server still enforces it.
 export function usernameProblem(name) {

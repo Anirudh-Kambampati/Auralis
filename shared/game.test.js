@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  buildGrid, canPlace, placeSwaps, focusReward, quitReward, quitMinutes, focusEnd, streakDays, streakBonus, colorsFor, roomSize, PETS, EXPAND_COST,
+  buildGrid, canPlace, placeSwaps, focusReward, quitReward, quitMinutes, focusEnd, focusStart, caffeineOverlap, caffeineMinutes, streakDays, streakBonus, colorsFor, roomSize, PETS, EXPAND_COST,
   ITEMS, EVENTS, easterSunday, activeEvents, nextEvent, footprint, nextRot, canRotate,
   DOOR, WALL, FLOOR, BLOCKED, VOID, ROOM_W, colsFor, isFocusLength, FOCUS_LENGTHS, bondLevel,
 } from './game.js';
@@ -236,4 +236,39 @@ test('sign-up checks say exactly what is wrong', async () => {
   assert.match(emailProblem('na me@example.com'), /spaces/);
   assert.equal(passwordProblem('12345678'), null);
   assert.match(passwordProblem('short'), /at least 8.*has 5/);
+});
+
+test('caffeine overlap counts whole minutes of a session that fall inside the window', () => {
+  const now = 1_000_000_000_000;
+  const f = { minutes: 60, endsAt: now, pausedAt: null };
+  const since = now - 55 * 60_000, until = now - 40 * 60_000;
+  assert.equal(caffeineMinutes(f, since, until, now), 15);
+});
+
+test('caffeine overlap is zero when the window is outside the session', () => {
+  const now = 1_000_000_000_000;
+  const f = { minutes: 25, endsAt: now, pausedAt: null };
+  assert.equal(caffeineMinutes(f, now + 60_000, now + 120_000, now), 0);
+  assert.equal(caffeineMinutes(f, now - 3 * 3600_000, now - 2 * 3600_000, now), 0);
+});
+
+test('caffeine overlap never exceeds the session or the window', () => {
+  const now = 1_000_000_000_000;
+  const f = { minutes: 15, endsAt: now, pausedAt: null };
+  assert.equal(caffeineMinutes(f, now - 3600_000, now + 3600_000, now), 15);
+});
+
+test('a missing or inverted caffeine window overlaps for nothing', () => {
+  const now = 1_000_000_000_000;
+  const f = { minutes: 25, endsAt: now, pausedAt: null };
+  assert.equal(caffeineMinutes(f, 0, 0, now), 0);
+  assert.equal(caffeineMinutes(f, now, now - 1000, now), 0);
+});
+
+test('focusStart is the end minus the session length, with paused time frozen', () => {
+  const now = 1_000_000_000_000;
+  const f = { minutes: 25, endsAt: now, pausedAt: null };
+  assert.equal(focusStart(f, now), now - 25 * 60_000);
+  const paused = { minutes: 25, endsAt: now, pausedAt: now - 100_000 };
+  assert.equal(focusStart(paused, now), paused.endsAt + 100_000 - 25 * 60_000);
 });
