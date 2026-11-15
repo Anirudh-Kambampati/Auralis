@@ -14,6 +14,7 @@ import {
   isPlant, TASK_COINS, TASK_REWARDS_PER_DAY, discounted, GIFT_COINS, GIFTS_PER_DAY, nextRot, canRotate, sellPrice,
   SCAR_ACCS, SCAR_COLOURS, LIGHTS, DRINKS, focusStart, caffeineOverlap, caffeineMinutes,
   CLAW_COST, CLAW_COOLDOWN_MS, clawPrize, clawReadyAt,
+  CRAFT, CRAFT_COOLDOWN_MS, craftColour, craftedProblem,
 } from '../shared/game.js';
 import { parseVideo } from '../shared/watch.js';
 import { CHAT_KEY, DOC_TYPES, safeDocName, attachLabel, docName, usernameProblem, emailProblem, passwordProblem } from '../shared/game.js';
@@ -307,7 +308,7 @@ function broadcastHouse(code) {
   for (const id of h.members) {
     const p = db.players[id];
     // Personal to-dos ride along in `me`, which only this player receives.
-    send(sockets.get(id), { t: 'state', house: { ...house, todos: house.todos.filter((t) => canSee(t, h, id)) }, me: { id: p.id, home: p.home, ...houseLists(p), coins: p.coins, discount: !!p.discount, notes: p.notes ?? [], inbox: p.inbox ?? [], inboxSeen: p.inboxSeen ?? 0, events: p.events ?? [], inventory: p.inventory, petAccs: p.petAccs ?? [], ...(sentSessions.get(id) !== (p.sessions ?? []).length && { sessions: p.sessions ?? [] }), subjects: p.subjects ?? [], hiddenSubjects: p.hiddenSubjects ?? [], todos: p.todos ?? [], dm: p.dm ?? {}, groups: p.groups ?? {}, friends: friendList(p), notify: p.notify ?? {}, pushKey: pushOn ? PUSH_KEY : undefined } });
+    send(sockets.get(id), { t: 'state', house: { ...house, todos: house.todos.filter((t) => canSee(t, h, id)) }, me: { id: p.id, home: p.home, ...houseLists(p), coins: p.coins, discount: !!p.discount, notes: p.notes ?? [], inbox: p.inbox ?? [], inboxSeen: p.inboxSeen ?? 0, events: p.events ?? [], inventory: p.inventory, crafted: p.crafted ?? [], petAccs: p.petAccs ?? [], ...(sentSessions.get(id) !== (p.sessions ?? []).length && { sessions: p.sessions ?? [] }), subjects: p.subjects ?? [], hiddenSubjects: p.hiddenSubjects ?? [], todos: p.todos ?? [], dm: p.dm ?? {}, groups: p.groups ?? {}, friends: friendList(p), notify: p.notify ?? {}, pushKey: pushOn ? PUSH_KEY : undefined } });
     if (sockets.has(id)) sentSessions.set(id, (p.sessions ?? []).length);
   }
 }
@@ -1482,6 +1483,12 @@ wss.on('connection', (ws) => {
         for (const f of r.furniture) if (!canRotate(f.item) && f.rot !== undefined) delete f.rot;
       }
       for (const k of Object.keys(p.inventory)) if (!has(ITEMS, k)) delete p.inventory[k];
+      // Handmade pieces: drop anything that is not a real catalog item in a real colour, rather than trust the save.
+      if (!Array.isArray(p.crafted)) delete p.crafted;
+      else {
+        const kept = p.crafted.filter((e) => !craftedProblem(e));
+        if (kept.length) p.crafted = kept; else delete p.crafted;
+      }
       if (!STYLES.includes(p.look.style)) p.look.style = STYLES[0]; // retired hairstyles fall back to the default
       p.pets ??= hadCat ? [{ kind: 'cat' }] : [];
       p.pets = p.pets.filter((pet) => has(PETS, pet.kind)); // pet kinds that were retired

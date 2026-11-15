@@ -48,6 +48,7 @@ export interface MeState {
   inboxSeen: number;
   events: CalEvent[];
   inventory: Record<string, number>;
+  crafted?: { item: string; col: string }[]; // made by hand: one real piece each, private to its owner
   petAccs: string[];
   sessions: Session[];
   subjects: string[];

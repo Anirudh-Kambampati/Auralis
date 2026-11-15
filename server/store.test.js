@@ -169,3 +169,14 @@ test('the caffeine window is part of a player and survives a round trip', () => 
   assert.equal(back.db.players.p1.caffeineUntil, 601_000);
   back.close();
 });
+
+test('a crafted list survives a round trip', () => {
+  const dir = tmp(), file = path.join(dir, 'craft.db');
+  const s = openStore(file);
+  s.db.players.p1 = { id: 'p1', name: 'Craft', crafted: [{ item: 'vase', col: '#aabbcc' }] };
+  s.saveAll();
+  s.close();
+  const back = openStore(file);
+  assert.deepEqual(back.db.players.p1.crafted, [{ item: 'vase', col: '#aabbcc' }]);
+  back.close();
+});
