@@ -134,6 +134,7 @@ button:focus-visible, select:focus-visible, a:focus-visible { outline: 3px dashe
   box-shadow: 0 4px 0 var(--ink);
 }
 .chip.house { font-size: 16px; letter-spacing: 2px; }
+.hud-left { display: flex; align-items: flex-start; gap: var(--gap); }
 .hud-right { display: flex; gap: var(--gap); }
 .chip.theme { padding: 5px 8px; cursor: var(--point); }
 .chip.vol { position: relative; display: flex; align-items: center; gap: 4px; padding: 5px 8px; }

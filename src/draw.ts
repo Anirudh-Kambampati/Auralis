@@ -3552,22 +3552,22 @@ const UI_ICONS: Record<string, { rows: string[]; pal: Record<string, string> }> 
     ],
     pal: { o: OUT, r: '#b89af0', w: '#fff4e6', b: '#a8dcf5', d: '#b07a4e' },
   },
-  guide: { // a lavender book with cream pages
+  guide: { // a blue badge with a cream question mark
     rows: [
       '............',
       '..oooooooo..',
-      '.oppppppppo.',
-      '.opwwwwwwpo.',
-      '.opwwwwwwpo.',
-      '.opwwwwwwpo.',
-      '.opwwwwwwpo.',
-      '.opwwwwwwpo.',
-      '.oppppppppo.',
+      '.op.wwww.po.',
+      '.opww..wwpo.',
+      '.op....wwpo.',
+      '.op...ww.po.',
+      '.op..ww..po.',
+      '.op..ww..po.',
+      '.op......po.',
+      '.op..ww..po.',
       '..oooooooo..',
       '............',
-      '............',
     ],
-    pal: { o: OUT, p: '#b89af0', w: '#fff4e6' },
+    pal: { o: OUT, p: '#5b7fd6', w: '#fff4e6' },
   },
 };
 for (const { rows } of Object.values(UI_ICONS)) console.assert(rows.every((row) => row.length === 12), 'icon rows must be 12 wide', rows);
