@@ -336,7 +336,7 @@ export interface ClientMessages {
   // Snapshot
   snapshot: { t: 'snapshot' };
   // Room furniture
-  place: { t: 'place'; item: string; room: number; x: number; y: number; rot?: number; flip?: boolean; v?: number; s?: number };
+  place: { t: 'place'; item: string; room: number; x: number; y: number; rot?: number; flip?: boolean; v?: number; s?: number; crafted?: boolean };
   move: { t: 'move'; item: string; room: number; x: number; y: number; rot?: number; flip?: boolean };
   remove: { t: 'remove'; item: string; room: number; x: number; y: number };
   // Lights/curtains

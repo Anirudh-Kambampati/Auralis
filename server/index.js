@@ -562,7 +562,19 @@ function handle(p, m) {
       break;
     }
     case 'place': {
-      if (!has(ITEMS, m.item) || !(p.inventory[m.item] > 0)) return;
+      if (!has(ITEMS, m.item)) return;
+      if (m.crafted) { // a handmade piece is one specific instance, so it is placed rather than counted
+        const list = p.crafted ?? [];
+        const at = list.findIndex((e) => e.item === m.item);
+        if (at < 0) return;
+        if (!canPlace(room, m.item, m.x, m.y)) return;
+        const piece = list[at];
+        p.crafted = [...list.slice(0, at), ...list.slice(at + 1)];
+        room.furniture.push({ item: m.item, x: m.x, y: m.y, col: piece.col });
+        save();
+        break;
+      }
+      if (!(p.inventory[m.item] > 0)) return;
       const out = placeSwaps(room, m.item, m.x, m.y);
       if (!out) return;
       p.inventory[m.item]--;
