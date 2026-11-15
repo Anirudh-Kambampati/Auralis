@@ -70,8 +70,16 @@ try {
   const memberButtons = page.locator('.members [data-act="gift"]');
   const labels = await memberButtons.allInnerTexts();
   ok('the housemate buttons drop the coin count while gifting', labels.every((t) => !/\d/.test(t)), JSON.stringify(labels));
-  ok('the housemate buttons say "Give" while gifting', labels.some((t) => /give/i.test(t)), JSON.stringify(labels));
+  ok('the housemate buttons show only the present while gifting', labels.every((t) => t.trim() === '🎁'), JSON.stringify(labels));
   await page.screenshot({ path: 'scripts/out-ui-gifting.png', fullPage: true });
+
+  // --- the Guide explains what the tooltip cannot ---
+  // A first visit opens it for you, so only click when it isn't already there.
+  if (!(await page.locator('.guide-card').count())) { await page.locator('#help').click(); await page.waitForTimeout(500); }
+  await page.locator('.guide-head', { hasText: 'Drinks' }).click();
+  await page.waitForTimeout(300);
+  const guideText = await page.locator('#panel').innerText();
+  ok('the Guide explains the coffee machine', /focus minute pays one extra coin/i.test(guideText), guideText.slice(0, 80));
 
   // --- clicking a making piece crafts at once, with no picker ---
   // The panel covers the room, so close it while hunting for the piece, then reopen to count.
