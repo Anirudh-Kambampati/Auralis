@@ -17,6 +17,7 @@ import {
   CRAFT, CRAFT_COOLDOWN_MS, craftColour, craftItem, craftedPrice, craftedProblem,
 } from '../shared/game.js';
 import { parseVideo } from '../shared/watch.js';
+import { GUIDE_TIPS } from '../shared/guide.js';
 import { CHAT_KEY, DOC_TYPES, safeDocName, attachLabel, docName, usernameProblem, emailProblem, passwordProblem } from '../shared/game.js';
 // The two scars are the only accessories kept to a wound palette: black, dark red, or one of the skin tones.
 const SCAR_KEYS = new Set(SCAR_ACCS.map((a) => `acc:${a}`));
@@ -308,7 +309,7 @@ function broadcastHouse(code) {
   for (const id of h.members) {
     const p = db.players[id];
     // Personal to-dos ride along in `me`, which only this player receives.
-    send(sockets.get(id), { t: 'state', house: { ...house, todos: house.todos.filter((t) => canSee(t, h, id)) }, me: { id: p.id, home: p.home, ...houseLists(p), coins: p.coins, discount: !!p.discount, notes: p.notes ?? [], inbox: p.inbox ?? [], inboxSeen: p.inboxSeen ?? 0, events: p.events ?? [], inventory: p.inventory, crafted: p.crafted ?? [], petAccs: p.petAccs ?? [], ...(sentSessions.get(id) !== (p.sessions ?? []).length && { sessions: p.sessions ?? [] }), subjects: p.subjects ?? [], hiddenSubjects: p.hiddenSubjects ?? [], todos: p.todos ?? [], dm: p.dm ?? {}, groups: p.groups ?? {}, friends: friendList(p), notify: p.notify ?? {}, pushKey: pushOn ? PUSH_KEY : undefined } });
+    send(sockets.get(id), { t: 'state', house: { ...house, todos: house.todos.filter((t) => canSee(t, h, id)) }, me: { id: p.id, home: p.home, ...houseLists(p), coins: p.coins, discount: !!p.discount, notes: p.notes ?? [], inbox: p.inbox ?? [], inboxSeen: p.inboxSeen ?? 0, tipsSeen: p.tipsSeen ?? [], events: p.events ?? [], inventory: p.inventory, crafted: p.crafted ?? [], petAccs: p.petAccs ?? [], ...(sentSessions.get(id) !== (p.sessions ?? []).length && { sessions: p.sessions ?? [] }), subjects: p.subjects ?? [], hiddenSubjects: p.hiddenSubjects ?? [], todos: p.todos ?? [], dm: p.dm ?? {}, groups: p.groups ?? {}, friends: friendList(p), notify: p.notify ?? {}, pushKey: pushOn ? PUSH_KEY : undefined } });
     if (sockets.has(id)) sentSessions.set(id, (p.sessions ?? []).length);
   }
 }
@@ -754,6 +755,11 @@ function handle(p, m) {
       p.inbox = [];
       save();
       return send(sockets.get(p.id), { t: 'inbox', inbox: [] });
+    case 'tip_seen': // the Guide showed a nudge: remember it so it never shows again
+      if (!has(GUIDE_TIPS, m.id)) return;
+      p.tipsSeen = [...new Set([...(p.tipsSeen ?? []), m.id])];
+      save();
+      return;
     case 'notes_read':
       p.notes = [];
       break;

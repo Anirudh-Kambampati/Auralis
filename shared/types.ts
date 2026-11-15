@@ -46,6 +46,7 @@ export interface MeState {
   notes: Note[];
   inbox: InboxItem[];
   inboxSeen: number;
+  tipsSeen?: string[]; // the Guide nudges this player has already had, private to them
   events: CalEvent[];
   inventory: Record<string, number>;
   crafted?: { item: string; col: string }[]; // made by hand: one real piece each, private to its owner
@@ -321,6 +322,8 @@ export interface ClientMessages {
   inbox_read: { t: 'inbox_read' };
   inbox_clear: { t: 'inbox_clear' };
   notes_read: { t: 'notes_read' };
+  // Guide
+  tip_seen: { t: 'tip_seen'; id: string };
   // Watch
   watch: { t: 'watch'; url: string };
   // Join/leave

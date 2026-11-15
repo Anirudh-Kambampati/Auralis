@@ -345,24 +345,27 @@ A.send({ t: 'buy', item: 'coffeeMachine' });
 await sleep(400);
 ok('the coffee machine is in the inventory', (A.state.me.inventory.coffeeMachine ?? 0) === 1);
 
-// Marking a real tip sticks.
+// Marking a real tip sticks. Like `inbox_read`, `tip_seen` only saves, so the list is read back on
+// the next connect rather than off a broadcast.
 A.send({ t: 'tip_seen', id: 'coffeeMachine' });
 await sleep(400);
+await A.connect();
 ok('a real tip is remembered', A.tips().includes('coffeeMachine'), JSON.stringify(A.tips()));
 
 // A repeat does not duplicate it.
 A.send({ t: 'tip_seen', id: 'coffeeMachine' });
 await sleep(400);
+await A.connect();
 ok('sending it twice does not duplicate', A.tips().filter((x) => x === 'coffeeMachine').length === 1);
 
 // A bogus id changes nothing.
 A.send({ t: 'tip_seen', id: 'notAnItem' });
 A.send({ t: 'tip_seen', id: '__proto__' });
 await sleep(400);
+await A.connect();
 ok('a bogus tip changes nothing', A.tips().length === 1, JSON.stringify(A.tips()));
 
 // It survives a reconnect.
-await A.connect();
 ok('the list survives a reconnect', A.tips().includes('coffeeMachine'));
 
 // It is private: B, in the same house, cannot see it.
