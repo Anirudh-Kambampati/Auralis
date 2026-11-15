@@ -1421,8 +1421,10 @@ function render(t: number, dt: number) {
     const seated = !!m.focus && !!act && !!(ITEMS[act.item as ItemKey] as { chair?: boolean }).chair; // studying at a desk
     const stepFrame = walking ? 1 + (Math.floor(a.dist * 4) % 2) : 0;
     const pop = cheers.get(m.id), hop = pop?.hop && now - pop.at < 660 ? Math.round(Math.abs(Math.sin((now - pop.at) / 105)) * 3) : 0; // a high five: two quick hops
-    const ax = Math.round(a.x * T) + (tipsy(m) ? Math.round(Math.sin(now / 190) * 1.5) : 0);
-    const ay = Math.round(a.y * T) - hop - (tipsy(m) ? Math.abs(Math.sin(now / 190)) : 0);
+    // Tipsy is a slow, wide sway: a couple of pixels was invisible, so it leans properly and bobs.
+    const sway = tipsy(m) ? Math.sin(now / 260) : 0;
+    const ax = Math.round(a.x * T + sway * 3);
+    const ay = Math.round(a.y * T) - hop - (tipsy(m) ? Math.round(Math.abs(Math.sin(now / 260)) * 2) : 0);
     sprites.push({
       y: act ? Math.max(a.y + 0.99, act.z + 0.01) : a.y + 0.99, // on a bed's pillow row: drawn over the bed, not under it
       draw: () => (act ? drawActing(ctx, m.look, act.act, act.item, ax, ay, t, act.col, seated)
