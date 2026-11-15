@@ -147,7 +147,13 @@ So the move is presentational:
 
 Each announcement keeps its text, author, time, and a Delete button for the owner. The owner also gets a ＋ Post button that opens the existing `announcementModal`. Non-owners see the announcements and no buttons, which is the rule already applied at `src/main.ts:2078`.
 
-Announcements do not join the bell's unread count. They are not notifications, and counting them would make the badge lie.
+Announcements **do** join the bell's unread number, so a house post nags like any other notification rather than sitting quietly at the top of a menu nobody opens. They reuse the state that already exists:
+
+- `renderBell` counts announcements with `at > me.inboxSeen` alongside the unread inbox entries (`src/main.ts:3351`). `inboxSeen` already means "last time I opened the bell", so no new per-player field is needed.
+- `toggleBell` currently sends `inbox_read` only when an inbox item is new (`src/main.ts:3368`). It gains announcements in that `some()` check, so opening the bell with only a new announcement still clears it.
+- The bell's per-entry "new" highlight uses `bellOpenSeen`, which is snapshotted from the same `inboxSeen`, so a fresh announcement highlights while the menu is open.
+
+The accepted cost: someone joining a house that already has ten announcements sees a badge of ten on their first login. That reads as "here is what you missed", which is the intent.
 
 ### Data flow
 
@@ -163,7 +169,7 @@ One new per-player field:
 
 `tipsSeen` is private. It is never added to `publicPlayer`.
 
-Nothing else changes on the wire. Nudges are derived on the client.
+Nothing else changes on the wire. Nudges are derived on the client, and announcements reuse `inboxSeen` and `inbox_read` rather than adding a protocol of their own.
 
 ### Error handling
 
@@ -196,6 +202,7 @@ Nothing else changes on the wire. Nudges are derived on the client.
 - the `?` button opens the Guide
 - a card expands
 - the House panel no longer shows announcements
+- a new announcement raises the bell's count, and opening the bell clears it
 
 ## Files touched
 
@@ -208,7 +215,7 @@ Nothing else changes on the wire. Nudges are derived on the client.
 | `server/index.js` | `tipsSeen` in `me`; `tip_seen` case |
 | `index.html` | `?` button beside the coin chip |
 | `src/draw.ts` | `guide` icon in `UI_ICONS` |
-| `src/main.ts` | `THEMES.guide`, `guideBody`, `guideOpen`, `#help` handler and `.on`, nudge check, `welcome()` replaced, announcements moved to the bell |
+| `src/main.ts` | `THEMES.guide`, `guideBody`, `guideOpen`, `#help` handler and `.on`, nudge check, `welcome()` replaced, announcements moved to the bell and counted in its badge |
 | `src/style.css` | the Guide cards and the bell's announcements block |
 | `package.json` | `test` script gains `shared/guide.test.js` |
 | `scripts/e2e-tips.js` | new: the `tip_seen` round trip |
