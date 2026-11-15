@@ -3,7 +3,7 @@ import {
   WALLPAPERS, WALL_PATTERNS, FLOORS, FLOOR_STYLES, SKINS, HAIRS, SHIRTS, STYLES, FACES, OUTFITS, BODIES, SIZES, ACCESSORIES, FOCUS_LENGTHS, isFocusLength, SCAR_ACCS, SCAR_COLOURS,
   WALL_H, WALL, FLOOR, DOOR, BLOCKED, VOID, buddyMultiplier, focusEnd, streakDays, streakBonus, sellPrice, footprint, lying, canRotate, THIRSTY_MS, isPlant, discounted, GIFT_COINS, activeEvents, nextEvent,
   docName, attachLabel, DOC_TYPES, usernameProblem, emailProblem, passwordProblem, LIGHTS, DRINKS, caffeineMinutes,
-  CLAW_COST, clawReadyAt, CRAFT,
+  CLAW_COST, clawReadyAt, CRAFT, craftedPrice,
 } from '../shared/game.js';
 import {
   T, OVERHANG, SURFACE, AVATAR_H, avatarScale, lookKey, drawSeated, drawActing, drawSeam, drawFloor, drawWall, drawWallFace, drawWallTop, drawDoor, drawWindow, drawPainting, drawFurniture, drawAvatar, drawDeskLamp, drawGlow, drawUsing, drawFlames, drawClaw, skyNow, weatherNow, skyProgress, nightTint,
@@ -97,7 +97,7 @@ let openPanel: string | null = null;
 let shopTab = 'cozy';
 let placing: ItemKey | null = null;
 let placingCrafted = -1; // which handmade piece is being placed, or -1
-let gifting = -1; // which handmade piece is waiting for a housemate to be picked
+let gifting: { kind: 'crafted'; index: number } | { kind: 'item'; item: string } | null = null; // a piece waiting for a housemate to be picked
 let moving: number | null = null; // index of the furniture picked up in Decorate
 let drag: { index: number; gx: number; gy: number; lx: number; ly: number; moved: boolean } | null = null;
 let lastDoneTry = 0; // when we last told the server a finished session is done
@@ -330,6 +330,11 @@ function onMessage(m: any) {
     else if (m.to) toast(`🎁 Sent to your housemate.`);
     else toast(`✨ Made a ${name}. It's in Storage.`, 'reward');
     if (openPanel === 'decorate') renderPanel();
+  } else if (m.t === 'gift_item') { // a stored piece (a claw prize, say) was handed over
+    const name = esc(ITEMS[m.item as ItemKey]?.name ?? 'piece');
+    if (m.from) toast(`🎁 <b>${esc(m.from)}</b> gave you a ${name}! It's in your Storage.`, 'reward');
+    else if (m.to) toast(`🎁 Sent the ${name} to your housemate.`);
+    if (openPanel === 'decorate') renderPanel();
   } else if (m.t === 'inbox') {
     me.inbox = m.inbox;
     renderBell();
@@ -513,8 +518,7 @@ function startBreak(ms: number, text: string) {
 
 const TVS = new Set(['tv', 'retroTV', 'mediaConsole']);
 // Pieces a click does something special with, beyond act/use/light/sound (see tapAt).
-const CLICKABLE = new Set(['petBall', 'deskCalendar', 'giftBox', 'whiteboard', 'clawMachine',
-  'potteryWheel', 'easel', 'loom', 'craftTable', 'sewingTable']);
+const CLICKABLE = new Set(['petBall', 'deskCalendar', 'giftBox', 'whiteboard', 'clawMachine', ...CRAFT]);
 const STARS = ['🌠 A shooting star! Make a wish.', "✨ You spotted Orion's belt.", '🪐 Is that Saturn? It is!', '🌌 The Milky Way is out tonight.', '🌙 The moon is so bright.'];
 // What some furniture does once you've walked up to it, on top of the little animation.
 function afterUse(f: Furniture, owner: Member, ri: number, fi: number): (() => void) | null {
@@ -531,14 +535,10 @@ function afterUse(f: Furniture, owner: Member, ri: number, fi: number): (() => v
   if (f.item === 'foodBowl') return () => (owner.pets.some((p) => !p.away) ? send({ t: 'feed', owner: owner.id, r: ri, index: fi }) : toast('No pets here to feed yet.'));
   if (f.item === 'giftBox') return () => { setPanel('house'); toast('Pick a housemate to send a gift.'); };
   if (f.item === 'whiteboard') return () => { setPanel('todos'); openTodoModal(); };
-  if (CRAFT[f.item as keyof typeof CRAFT]) return () => {
+  if (CRAFT.includes(f.item)) return () => {
     const ready = clawReadyAt(f);
     if (ready) { toast(`⏳ Ready ${fmt(ready - Date.now())} from now.`); return; }
-    // setPanel clears `moving`, so open the panel first and select the piece afterwards.
-    setPanel('decorate');
-    editRoom = ri;
-    moving = fi;
-    renderPanel();
+    send({ t: 'craft', owner: owner.id, r: ri, index: fi });
   };
   if (f.item === 'clawMachine') return () => {
     const ready = clawReadyAt(f);
@@ -1717,8 +1717,8 @@ function copyCode(code = houseCode) {
 $('#code').addEventListener('click', () => copyCode());
 
 const icons = new Map<string, string>();
-function icon(item: string, cls = 'icon', style = 0) {
-  const key = `${item}|${style}`;
+function icon(item: string, cls = 'icon', style = 0, col?: string) {
+  const key = `${item}|${style}|${col ?? ''}`;
   if (!icons.has(key)) {
     const it = ITEMS[item as ItemKey];
     const c = document.createElement('canvas');
@@ -1727,7 +1727,7 @@ function icon(item: string, cls = 'icon', style = 0) {
     const g = c.getContext('2d')!;
     g.imageSmoothingEnabled = false;
     g.scale(AV, AV);
-    drawFurniture(g, item, 0, top, 0, undefined, false, it.w, style, 0, 0, it.h);
+    drawFurniture(g, item, 0, top, 0, col, false, it.w, style, 0, 0, it.h);
     icons.set(key, c.toDataURL());
   }
   return `<img class="${cls}" src="${icons.get(key)}" alt="">`;
@@ -1926,12 +1926,8 @@ function decorateBody(mine: Member) {
       ${palette.length ? `<h3>Colour</h3><div class="swatches">${palette.map((c: string, k: number) =>
         `<button class="swatch${!sel.col && (sel.v ?? -1) === k ? ' on' : ''}" style="background:${c}" data-act="recolor" data-v="${k}" aria-label="${c}"></button>`).join('')}${sel.col
         ? `<button class="swatch on" style="background:${sel.col}" data-act="noop" title="Your custom colour" aria-label="Your custom colour"></button>` : ''}<button class="swatch custom" data-act="paintfurn" title="Custom colour" aria-label="Custom colour" style="background:${CUSTOM_SWATCH}"></button></div>` : ''}` : '';
-  const craftPool = sel ? CRAFT[sel.item as keyof typeof CRAFT] : undefined;
-  const craftReadyAt = sel ? clawReadyAt(sel) : 0;
-  const craftBar = craftPool ? `<h3>Make something</h3>
-      <p class="hint">${craftReadyAt ? `Ready ${fmt(craftReadyAt - Date.now())} from now.` : 'Free. Ready when you are.'}</p>
-      <div class="row">${craftPool.map((item: string) => `<button class="off" data-act="craft" ${craftReadyAt ? 'disabled' : ''}>${icon(item)}${ITEMS[item as ItemKey].name}</button>`).join('')}</div>
-      <p class="hint">You choose whether to keep it or send it to a housemate once it is made.</p>` : '';
+  const craftedReadyAt = sel ? clawReadyAt(sel) : 0;
+  const craftBar = sel && CRAFT.includes(sel.item) ? `<p class="hint">${craftedReadyAt ? `Ready ${fmt(craftedReadyAt - Date.now())} from now.` : 'Tap the piece in your room to make something: free, and anything in the catalog can come out.'}</p>` : '';
   const hint = placing ? `Tap a spot in your room to place the <b>${ITEMS[placing].name}</b>.`
     : sel ? (canRot ? 'Drag it, or tap a new spot to move it there. Keys: arrows move · R rotate · F flip · Delete put away · Esc done.' : 'Drag it, or tap a new spot to move it there. Keys: arrows move · F flip · Delete put away · Esc done.')
     : 'Drag any furniture to move it, or tap it for more options. Tap a stack again to reach what is underneath.';
@@ -1942,14 +1938,15 @@ function decorateBody(mine: Member) {
     `<button class="small-chip ${storeShelf === sh.id ? 'on' : 'off'}" data-act="storeShelf" data-v="${sh.id}">${sh.label}</button>`).join('')}</div>` : '';
   const crafted = (me.crafted ?? []).map((e, i) => ({ ...e, i }));
   const craftedCards = crafted.map((e) => `<div class="card crafted">
-      <span class="swatch on" style="background:${e.col}" aria-hidden="true"></span>
+      ${icon(e.item, 'icon', 0, e.col)}
       <b>${esc(ITEMS[e.item as ItemKey]?.name ?? e.item)}</b>
       <button data-act="placeCrafted" data-v="${e.i}">Place</button>
+      ${craftedPrice(e.item) ? `<button class="off small" data-act="sellCrafted" data-v="${e.i}">Sell ${coin()} ${craftedPrice(e.item)}</button>` : ''}
       <button class="off small" data-act="giftCrafted" data-v="${e.i}">Gift</button>
     </div>`).join('');
   return `${roomPicker(mine)}${selBar}${craftBar}<p class="hint">${hint}</p>
     ${crafted.length ? `<h3>Handmade</h3><div class="grid">${craftedCards}</div>` : ''}
-    ${inv.length ? `<h3>Storage</h3>${filter}<div class="grid">${shown.map(([k, n]) => `<div class="card${placing === k ? ' on' : ''}"><b>${ITEMS[k as ItemKey].name} ×${n}</b>${icon(k)}<button data-act="place" data-v="${k}">Place</button>${sellPrice(k) ? `<button class="off small" data-act="sell" data-v="${k}">Sell ${coin()} ${sellPrice(k)}</button>` : ''}</div>`).join('')}</div>` : '<p class="hint">Storage is empty. Visit the Shop!</p>'}
+    ${inv.length ? `<h3>Storage</h3>${filter}<div class="grid">${shown.map(([k, n]) => `<div class="card${placing === k ? ' on' : ''}"><b>${ITEMS[k as ItemKey].name} ×${n}</b>${icon(k)}<button data-act="place" data-v="${k}">Place</button>${sellPrice(k) ? `<button class="off small" data-act="sell" data-v="${k}">Sell ${coin()} ${sellPrice(k)}</button>` : ''}${members.some((m) => m.id !== myId) ? `<button class="off small" data-act="giftItem" data-v="${k}">Gift</button>` : ''}</div>`).join('')}</div>` : '<p class="hint">Storage is empty. Visit the Shop!</p>'}
     <h3>Wallpaper</h3>${swatches('wallpaper', WALLPAPERS, myRoom()!.wallColor ?? myRoom()!.wallpaper, false, false)}<button class="swatch custom" data-act="paintroom" data-v="wall" title="Custom wall colour" aria-label="Custom wall colour" style="background:${CUSTOM_SWATCH}"></button>
     <h3>Pattern</h3>${tilePicker('pattern', WALL_PATTERNS, myRoom()!.pattern ?? 'plain', 'wall', myRoom()!.wallColor ?? myRoom()!.wallpaper)}
     <h3>Floor</h3>${swatches('floor', FLOORS, myRoom()!.floorColor ?? myRoom()!.floor, false, false)}<button class="swatch custom" data-act="paintroom" data-v="floor" title="Custom floor colour" aria-label="Custom floor colour" style="background:${CUSTOM_SWATCH}"></button>
@@ -2090,7 +2087,7 @@ function panelBody(mine: Member) {
     <div class="center"><button class="off" data-act="copy">Copy code</button></div>`}
     ${announcementsHtml}
     <h3>Housemates</h3>
-    <ul class="members">${members.map((m) => `<li><span class="dot${m.online ? ' on' : ''}"></span>${esc(m.name)}${m.id === myId ? ' (you)' : ''}${m.focus ? '<span class="tag">📖 studying</span>' : ''}${m.id !== myId ? `<button class="off small" data-act="gift" data-v="${m.id}" title="Send ${esc(m.name)} ${GIFT_COINS} coins">🎁 ${GIFT_COINS}</button><button class="off small" data-act="noteto" data-v="${m.id}" aria-label="Leave ${esc(m.name)} a note">✉️</button>` : ''}${!away && m.id !== myId ? `<button class="off small" data-act="kick" data-v="${m.id}">Remove</button>` : ''}</li>`).join('')}</ul>
+    <ul class="members">${members.map((m) => `<li><span class="dot${m.online ? ' on' : ''}"></span>${esc(m.name)}${m.id === myId ? ' (you)' : ''}${m.focus ? '<span class="tag">📖 studying</span>' : ''}${m.id !== myId ? `${gifting ? `<button data-act="gift" data-v="${m.id}" title="Send ${esc(m.name)} the ${esc(gifting.kind === 'crafted' ? (ITEMS[me.crafted?.[gifting.index]?.item as ItemKey]?.name ?? 'piece') : ITEMS[gifting.item as ItemKey].name)}">🎁 Give</button>` : `<button class="off small" data-act="gift" data-v="${m.id}" title="Send ${esc(m.name)} ${GIFT_COINS} coins">🎁 ${GIFT_COINS}</button>`}<button class="off small" data-act="noteto" data-v="${m.id}" aria-label="Leave ${esc(m.name)} a note">✉️</button>` : ''}${!away && m.id !== myId ? `<button class="off small" data-act="kick" data-v="${m.id}">Remove</button>` : ''}</li>`).join('')}</ul>
     ${noteTo && members.some((m) => m.id === noteTo) ? `<h3>Note for ${esc(members.find((m) => m.id === noteTo)!.name)}'s desk</h3>
     <div class="row"><input id="noteText" maxlength="140" placeholder="Good luck on the exam!"><button data-act="sendnote">Leave note</button></div>` : ''}
     <h3>Join a friend</h3>
@@ -2228,17 +2225,26 @@ panel.addEventListener('click', (e) => {
     }
     case 'giftCrafted': {
       const piece = me.crafted?.[Number(v)];
-      if (!piece) return;
+      if (!piece || !members.some((m) => m.id !== myId)) return;
       setPanel('house');
       toast(`Pick a housemate to send the ${esc(ITEMS[piece.item as ItemKey]?.name ?? 'piece')} to.`);
-      gifting = Number(v);
+      gifting = { kind: 'crafted', index: Number(v) };
+      renderPanel();
+      return;
+    }
+    case 'giftItem': {
+      const item = ITEMS[v as ItemKey];
+      if (!item) return;
+      setPanel('house');
+      toast(`Pick a housemate to send the ${esc(item.name)} to.`);
+      gifting = { kind: 'item', item: v };
       renderPanel();
       return;
     }
     case 'craft': {
       if (moving === null) return;
       const f = myRoom()?.furniture[moving];
-      if (!f || !CRAFT[f.item as keyof typeof CRAFT]) return;
+      if (!f || !CRAFT.includes(f.item)) return;
       if (clawReadyAt(f)) { toast(`⏳ Ready ${fmt(clawReadyAt(f) - Date.now())} from now.`); return; }
       send({ t: 'craft', owner: myId, r: editRoom, index: moving, keep: true });
       return;
@@ -2248,16 +2254,34 @@ panel.addEventListener('click', (e) => {
     case 'flip': if (moving !== null) send({ t: 'flip', r: editRoom, index: moving }); break;
     case 'rotate': if (moving !== null && canRotate(myRoom()?.furniture[moving]?.item ?? '')) send({ t: 'turn', r: editRoom, index: moving }); break;
     case 'storeShelf': storeShelf = v; renderPanel(); break;
-    case 'sell': // two taps, so nothing gets sold by a stray click
+    case 'sell': { // two taps, so nothing gets sold by a stray click
+      const gain = sellPrice(v);
       if (!b.classList.contains('armed')) {
         b.classList.add('armed');
-        b.textContent = `Tap to sell for ${sellPrice(v)}`;
+        b.textContent = `Tap to sell for ${gain}`;
         setTimeout(() => { if (b.isConnected) renderPanel(); }, 3000);
       } else {
         send({ t: 'sell', item: v });
-        toast(`Sold the <b>${ITEMS[v as ItemKey].name}</b> for ${sellPrice(v)} ${coin()}.`);
+        toast(`Sold the <b>${ITEMS[v as ItemKey].name}</b> for ${gain} ${coin()}.`);
       }
       break;
+    }
+    case 'sellCrafted': { // handmade or gifted pieces: one instance, a quarter of catalog price
+      const piece = me.crafted?.[Number(v)];
+      const gain = craftedPrice(piece?.item ?? '');
+      if (!piece || gain < 1) return;
+      // Read the name before sending: the state that comes back has already dropped the piece.
+      const name = ITEMS[piece.item as ItemKey]?.name ?? 'piece';
+      if (!b.classList.contains('armed')) {
+        b.classList.add('armed');
+        b.textContent = `Tap to sell for ${gain}`;
+        setTimeout(() => { if (b.isConnected) renderPanel(); }, 3000);
+      } else {
+        send({ t: 'sell_crafted', index: Number(v) });
+        toast(`Sold the handmade <b>${name}</b> for ${gain} ${coin()}.`);
+      }
+      break;
+    }
     case 'recolor': if (moving !== null) send({ t: 'restyle', r: editRoom, index: moving, v: Number(v) }); break;
     case 'paintfurn': {
       const index = moving;
@@ -2354,7 +2378,8 @@ panel.addEventListener('click', (e) => {
       renderPanel();
       break;
     case 'gift':
-      if (gifting >= 0) { send({ t: 'gift_crafted', index: gifting, to: v }); gifting = -1; break; }
+      if (gifting?.kind === 'crafted') { send({ t: 'gift_crafted', index: gifting.index, to: v }); gifting = null; break; }
+      if (gifting?.kind === 'item') { send({ t: 'gift_item', item: gifting.item, to: v }); gifting = null; break; }
       send({ t: 'gift', to: v });
       break;
     case 'install': installPrompt?.prompt(); installPrompt = null; renderPanel(); break;
@@ -2444,9 +2469,10 @@ function clickLabel(tx: number, ty: number): string | null {
   if (f.item === 'giftBox') return 'Send a gift';
   if (f.item === 'whiteboard') return 'House to-dos';
   if (f.item === 'clawMachine') return clawReadyAt(f) ? `Claw (ready ${fmt(clawReadyAt(f) - Date.now())})` : `Play the claw · ${CLAW_COST} coins`;
-  const craft = CRAFT[f.item as keyof typeof CRAFT];
+  const craft = CRAFT.includes(f.item);
   if (craft) {
-    // A tip is plain text, so no coin() markup here: just what it makes and whether it is ready.
+    // A tip is plain text, so no coin() markup here: just whether it is ready. Every piece makes one of the
+    // same pool at random, so there is nothing to choose.
     const what = CRAFT_LABELS[f.item] ?? 'Make something';
     const ready = clawReadyAt(f);
     return ready ? `${what} (ready ${fmt(ready - Date.now())})` : `${what} · free`;

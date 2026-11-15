@@ -6,7 +6,7 @@ import {
   DOOR, WALL, FLOOR, BLOCKED, VOID, ROOM_W, colsFor, isFocusLength, FOCUS_LENGTHS, bondLevel,
   DRINKS,
   CLAW_PRIZES, CLAW_COST, CLAW_COOLDOWN_MS, clawPrize, clawReadyAt,
-  CRAFT, CRAFT_COOLDOWN_MS, craftColour, craftedProblem, PASTELS,
+  CRAFT, CRAFT_POOL, CRAFT_COOLDOWN_MS, craftColour, craftItem, craftedPrice, craftedProblem, PASTELS,
 } from './game.js';
 
 const empty = (level = 0) => ({ level, furniture: [] });
@@ -341,22 +341,35 @@ test('the claw machine is solid, so a click always reaches it', () => {
   assert.equal(ITEMS.clawMachine.top, undefined);
 });
 
-test('every craft piece names a pool of real catalog items', () => {
-  for (const [piece, pool] of Object.entries(CRAFT)) {
-    assert.ok(ITEMS[piece], `${piece} is not in ITEMS`);
-    assert.ok(Array.isArray(pool) && pool.length > 0, `${piece} has no pool`);
-    for (const item of pool) assert.ok(ITEMS[item], `${piece} yields ${item}, which is not in ITEMS`);
-  }
+test('every craft piece and every pool entry is a real catalog item', () => {
+  for (const piece of CRAFT) assert.ok(ITEMS[piece], `${piece} is not in ITEMS`);
+  assert.ok(CRAFT_POOL.length > 0, 'the pool is empty');
+  for (const item of CRAFT_POOL) assert.ok(ITEMS[item], `the pool yields ${item}, which is not in ITEMS`);
+  for (const piece of CRAFT) assert.ok(ITEMS[piece].use === 'paint', `${piece} is not a paint piece`);
 });
 
-test('the five paint pieces are the craft pieces', () => {
-  for (const key of ['potteryWheel', 'easel', 'loom', 'craftTable', 'sewingTable']) {
-    assert.ok(CRAFT[key], `${key} is missing`);
+test('every object in the pool is equally likely', () => {
+  // Walk the whole range in steps small enough to hit every index at least twice.
+  const seen = new Map();
+  for (let i = 0; i < 20000; i++) {
+    const item = craftItem(i / 20000);
+    seen.set(item, (seen.get(item) ?? 0) + 1);
   }
+  assert.equal(seen.size, CRAFT_POOL.length, 'some pool entry never came up');
+  const counts = [...seen.values()];
+  const spread = Math.max(...counts) - Math.min(...counts);
+  assert.ok(spread <= 2, `uneven: ${JSON.stringify([...seen])}`);
+  assert.equal(craftItem(0), CRAFT_POOL[0]);
+  assert.equal(craftItem(1), CRAFT_POOL[CRAFT_POOL.length - 1]);
 });
 
 test('crafting is free and cools down for five minutes', () => {
   assert.equal(CRAFT_COOLDOWN_MS, 5 * 60_000);
+});
+
+test('a handmade piece sells for a quarter of its catalog price', () => {
+  assert.equal(craftedPrice('vase'), Math.floor(ITEMS.vase.price / 4));
+  assert.equal(craftedPrice('notAnItem'), 0);
 });
 
 test('craft colour comes from the item palette when it has one, and pastels otherwise', () => {

@@ -14,7 +14,7 @@ import {
   isPlant, TASK_COINS, TASK_REWARDS_PER_DAY, discounted, GIFT_COINS, GIFTS_PER_DAY, nextRot, canRotate, sellPrice,
   SCAR_ACCS, SCAR_COLOURS, LIGHTS, DRINKS, focusStart, caffeineOverlap, caffeineMinutes,
   CLAW_COST, CLAW_COOLDOWN_MS, clawPrize, clawReadyAt,
-  CRAFT, CRAFT_COOLDOWN_MS, craftColour, craftedProblem,
+  CRAFT, CRAFT_COOLDOWN_MS, craftColour, craftItem, craftedPrice, craftedProblem,
 } from '../shared/game.js';
 import { parseVideo } from '../shared/watch.js';
 import { CHAT_KEY, DOC_TYPES, safeDocName, attachLabel, docName, usernameProblem, emailProblem, passwordProblem } from '../shared/game.js';
@@ -561,6 +561,29 @@ function handle(p, m) {
       p.coins += gain;
       break;
     }
+    case 'sell_crafted': { // a handmade or gifted piece: one specific instance, at a quarter of catalog price
+      const list = p.crafted ?? [];
+      const piece = Number.isInteger(m.index) ? list[m.index] : null;
+      if (!piece) return;
+      const gain = craftedPrice(piece.item);
+      if (gain < 1) return;
+      p.crafted = [...list.slice(0, m.index), ...list.slice(m.index + 1)];
+      p.coins += gain;
+      break;
+    }
+    case 'gift_item': { // hand a stored piece (a claw prize, say) to a housemate
+      if (!has(ITEMS, m.item) || !(p.inventory[m.item] > 0)) return;
+      const to = db.houses[p.house].members.includes(m.to) ? db.players[m.to] : null;
+      if (!to || to.id === p.id) return;
+      p.inventory[m.item]--;
+      to.inventory[m.item] = (to.inventory[m.item] ?? 0) + 1;
+      inbox(to, 'gift', p, `gave you a ${ITEMS[m.item].name.toLowerCase()}`);
+      send(sockets.get(to.id), { t: 'gift_item', item: m.item, from: p.name });
+      send(sockets.get(p.id), { t: 'gift_item', item: m.item, to: to.id });
+      save();
+      broadcastHouse(p.house);
+      break;
+    }
     case 'place': {
       if (!has(ITEMS, m.item)) return;
       if (m.crafted) { // a handmade piece is one specific instance, so it is placed rather than counted
@@ -787,11 +810,10 @@ function handle(p, m) {
     case 'craft': {
       const owner = db.houses[p.house].members.includes(m.owner) ? db.players[m.owner] : null;
       const f = owner?.rooms?.[m.r ?? 0]?.furniture?.[m.index];
-      if (!owner || !f || !has(CRAFT, f.item)) return;
+      if (!owner || !f || !CRAFT.includes(f.item)) return;
       const now = Date.now();
       if (clawReadyAt(f, now)) return send(sockets.get(owner.id), { t: 'error', text: 'That is still being set up. Try again in a few minutes.' });
-      const pool = CRAFT[f.item];
-      const item = pool[Math.floor(Math.random() * pool.length)];
+      const item = craftItem();
       const piece = { item, col: craftColour(item) };
       f.state = { ...(f.state ?? {}), readyAt: now + CRAFT_COOLDOWN_MS };
       const to = !m.keep && db.houses[p.house].members.includes(m.to) ? db.players[m.to] : null;

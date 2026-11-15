@@ -441,15 +441,16 @@ export const clawReadyAt = (f, now = Date.now()) => {
   return Number.isFinite(at) && at > now ? at : 0;
 };
 
-// What each making piece can produce. All five already carry use: 'paint'.
-export const CRAFT = {
-  potteryWheel: ['vase', 'sculpture', 'bust', 'mushrooms'],
-  easel: ['photoFrames', 'vase', 'sculpture', 'bust'],
-  loom: ['rug', 'roundRug', 'ovalRug', 'runnerRug'],
-  craftTable: ['candles', 'photoFrames', 'snowGlobe'],
-  sewingTable: ['plush', 'bigTeddy', 'sharkPlush'],
-};
+// The making pieces, and the one flat pool everything comes out of. Every piece draws from that same pool,
+// so no object is more or less likely than another no matter which piece you click.
+export const CRAFT = ['potteryWheel', 'easel', 'loom', 'craftTable', 'sewingTable'];
+export const CRAFT_POOL = ['vase', 'sculpture', 'bust', 'mushrooms', 'photoFrames', 'rug', 'roundRug', 'ovalRug',
+  'runnerRug', 'candles', 'snowGlobe', 'plush', 'bigTeddy', 'sharkPlush'];
 export const CRAFT_COOLDOWN_MS = 5 * 60_000;
+// A random piece out of the pool, uniform across every object in it.
+export const craftItem = (r = Math.random()) => CRAFT_POOL[Math.floor(Math.min(Math.max(r, 0), 0.999999) * CRAFT_POOL.length)];
+// A handmade or gifted piece sells back for a quarter of the catalog price (free starter pieces fetch nothing).
+export const craftedPrice = (item) => Math.floor((ITEMS[item]?.price ?? 0) / 4);
 
 // A crafted piece comes out in one of its own colours when it has a palette, and a pastel otherwise.
 export function craftColour(item, r = Math.random()) {
