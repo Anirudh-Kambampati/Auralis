@@ -1169,6 +1169,19 @@ export function drawFlames(c: Ctx, x: number, y: number, t: number) {
   c.globalAlpha = 1;
 }
 
+// The claw machine's grabber, swinging over the glass for a few seconds after a play.
+// x, y is the top-left of the tile the machine stands on.
+export function drawClaw(c: Ctx, x: number, y: number, t: number, startedAt: number) {
+  const p = Math.min(1, Math.max(0, (t - startedAt) / 5000));
+  const swing = Math.round(Math.sin(p * Math.PI * 3) * 10);
+  const drop = Math.round(Math.min(1, p * 2) * 12);
+  const cx = x + 8 + swing;
+  r(c, cx, y - 16, 1, 10 + drop, '#8a8090');
+  r(c, cx - 3, y - 6 + drop, 7, 2, '#5a5070');
+  r(c, cx - 3, y - 4 + drop, 1, 3, '#5a5070');
+  r(c, cx + 3, y - 4 + drop, 1, 3, '#5a5070');
+}
+
 // Little gooseneck lamp switched on during late study sessions; x, y = where its base sits.
 export function drawDeskLamp(c: Ctx, x: number, y: number) {
   box(c, x, y - 2, 6, 3, '#7a6a8a');

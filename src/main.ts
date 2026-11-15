@@ -3,9 +3,10 @@ import {
   WALLPAPERS, WALL_PATTERNS, FLOORS, FLOOR_STYLES, SKINS, HAIRS, SHIRTS, STYLES, FACES, OUTFITS, BODIES, SIZES, ACCESSORIES, FOCUS_LENGTHS, isFocusLength, SCAR_ACCS, SCAR_COLOURS,
   WALL_H, WALL, FLOOR, DOOR, BLOCKED, VOID, buddyMultiplier, focusEnd, streakDays, streakBonus, sellPrice, footprint, lying, canRotate, THIRSTY_MS, isPlant, discounted, GIFT_COINS, activeEvents, nextEvent,
   docName, attachLabel, DOC_TYPES, usernameProblem, emailProblem, passwordProblem, LIGHTS, DRINKS, caffeineMinutes,
+  CLAW_COST, clawReadyAt,
 } from '../shared/game.js';
 import {
-  T, OVERHANG, SURFACE, AVATAR_H, avatarScale, lookKey, drawSeated, drawActing, drawSeam, drawFloor, drawWall, drawWallFace, drawWallTop, drawDoor, drawWindow, drawPainting, drawFurniture, drawAvatar, drawDeskLamp, drawGlow, drawUsing, drawFlames, skyNow, weatherNow, skyProgress, nightTint,
+  T, OVERHANG, SURFACE, AVATAR_H, avatarScale, lookKey, drawSeated, drawActing, drawSeam, drawFloor, drawWall, drawWallFace, drawWallTop, drawDoor, drawWindow, drawPainting, drawFurniture, drawAvatar, drawDeskLamp, drawGlow, drawUsing, drawFlames, drawClaw, skyNow, weatherNow, skyProgress, nightTint,
   coinURL, uiIconURL, AV, drawPaper, isDark, paintBlockText, drawWindow as drawWin, drawDroplet, drawHeart, tileURL, ACC_COL, ACC_COLORS, ACC_TINT, type Look,
 } from './draw';
 import { drawPet, petPos, petIconURL, seedOf } from './pets';
@@ -465,6 +466,7 @@ const pingOrHold = () => { if (myMember()?.focus) missed++; else notify(ping); }
 
 // Breaks: lying down in a bed you clicked (5 minutes) or a snack at the fridge (2), ending with a chime.
 const NAP_MS = 5 * 60_000, SNACK_MS = 2 * 60_000;
+const clawAt = new Map<string, number>(); // "member:room:index" -> when the claw was played, for the grabber animation
 let breakTimer = 0, breakEnds = 0; // breakEnds: shown counting down in the HUD
 function endBreak() { clearTimeout(breakTimer); breakTimer = 0; }
 function startBreak(ms: number, text: string) {
@@ -519,6 +521,13 @@ function afterUse(f: Furniture, owner: Member, ri: number, fi: number): (() => v
   if (f.item === 'foodBowl') return () => (owner.pets.some((p) => !p.away) ? send({ t: 'feed', owner: owner.id, r: ri, index: fi }) : toast('No pets here to feed yet.'));
   if (f.item === 'giftBox') return () => { setPanel('house'); toast('Pick a housemate to send a gift.'); };
   if (f.item === 'whiteboard') return () => { setPanel('todos'); openTodoModal(); };
+  if (f.item === 'clawMachine') return () => {
+    const ready = clawReadyAt(f);
+    if (ready) { toast(`🕹️ The claw is resetting. Ready ${fmt(ready - Date.now())} from now.`); return; }
+    if (me.coins < CLAW_COST) { toast(`The claw costs ${coin()} ${CLAW_COST}.`, 'error'); return; }
+    clawAt.set(`${owner.id}:${ri}:${fi}`, Date.now());
+    send({ t: 'claw', owner: owner.id, r: ri, index: fi });
+  };
   if (TVS.has(f.item)) return () => { openSide('chat', '#chatInput', '/watch '); toast('Paste a YouTube, Vimeo or Twitch link after <b>/watch</b> to watch it together.'); };
   if (it.use === 'read') return () => { if (!myMember()?.focus) setPanel('focus'); };
   if (it.use === 'snack' || it.use === 'tea') return () => startBreak(SNACK_MS, '🍪 Snack break: 2 minutes.');
@@ -1312,6 +1321,8 @@ function render(t: number, dt: number) {
         if (dragged) ctx.globalAlpha = 0.35;
         drawFurniture(ctx, f.item, (o.x + f.x) * T, (o.y + f.y) * T - lift, t, furnColor(f), f.flip, it.w, f.s, bare, f.rot, it.h, lying(it), thirsty);
         ctx.globalAlpha = 1;
+        const played = clawAt.get(`${m.id}:${ri}:${idx}`);
+        if (played && now - played < 5000) drawClaw(ctx, (o.x + f.x) * T, (o.y + f.y) * T - lift, now, played);
         if (thirsty) drawDroplet(ctx, (o.x + f.x) * T + T / 2, (o.y + f.y) * T - lift - 6 + Math.round(Math.sin(t / 300)));
       };
       if (it.top) sprites.push({ y: o.y + f.y + 0.6, draw });
@@ -2351,6 +2362,7 @@ function clickLabel(tx: number, ty: number): string | null {
   if (LIGHTS.has(f.item) && members.some((m) => m.id === hit.m.id)) return f.off ? 'Lights on' : 'Lights off';
   if (f.item === 'giftBox') return 'Send a gift';
   if (f.item === 'whiteboard') return 'House to-dos';
+  if (f.item === 'clawMachine') return clawReadyAt(f) ? `Claw (ready ${fmt(clawReadyAt(f) - Date.now())})` : `Play the claw · ${coin()} ${CLAW_COST}`;
   if (TVS.has(f.item)) return 'Watch together';
   if (it.act) return ACT_LABELS[it.act] ?? cap(it.act);
   if (it.use) return (USE_LABELS[it.use] ?? cap(it.use)) + sound;
