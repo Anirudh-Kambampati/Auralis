@@ -1154,6 +1154,21 @@ export function drawGlow(c: Ctx, x: number, y: number, rad: number, alpha: numbe
   c.restore();
 }
 
+// A character who drank coffee is on fire for ten minutes: a few flame licks rising off the sprite.
+// x, y is the top-left of the tile the character stands on.
+export function drawFlames(c: Ctx, x: number, y: number, t: number) {
+  for (let j = 0; j < 4; j++) {
+    const p = (t / 520 + j / 4) % 1;
+    const fx = Math.round(x + 3 + j * 3 + Math.sin(p * 7 + j * 2) * 1.6);
+    const fy = Math.round(y + T - 2 - p * 15);
+    c.globalAlpha = 1 - p * 0.85;
+    const col = j % 2 ? '#ffd34d' : '#f28a3a';
+    r(c, fx, fy, 2, 3, col);
+    r(c, fx, fy - 2, 1, 2, '#fff3b0');
+  }
+  c.globalAlpha = 1;
+}
+
 // Little gooseneck lamp switched on during late study sessions; x, y = where its base sits.
 export function drawDeskLamp(c: Ctx, x: number, y: number) {
   box(c, x, y - 2, 6, 3, '#7a6a8a');

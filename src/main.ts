@@ -5,7 +5,7 @@ import {
   docName, attachLabel, DOC_TYPES, usernameProblem, emailProblem, passwordProblem, LIGHTS, DRINKS, caffeineMinutes,
 } from '../shared/game.js';
 import {
-  T, OVERHANG, SURFACE, AVATAR_H, avatarScale, lookKey, drawSeated, drawActing, drawSeam, drawFloor, drawWall, drawWallFace, drawWallTop, drawDoor, drawWindow, drawPainting, drawFurniture, drawAvatar, drawDeskLamp, drawGlow, drawUsing, skyNow, weatherNow, skyProgress, nightTint,
+  T, OVERHANG, SURFACE, AVATAR_H, avatarScale, lookKey, drawSeated, drawActing, drawSeam, drawFloor, drawWall, drawWallFace, drawWallTop, drawDoor, drawWindow, drawPainting, drawFurniture, drawAvatar, drawDeskLamp, drawGlow, drawUsing, drawFlames, skyNow, weatherNow, skyProgress, nightTint,
   coinURL, uiIconURL, AV, drawPaper, isDark, paintBlockText, drawWindow as drawWin, drawDroplet, drawHeart, tileURL, ACC_COL, ACC_COLORS, ACC_TINT, type Look,
 } from './draw';
 import { drawPet, petPos, petIconURL, seedOf } from './pets';
@@ -1065,7 +1065,7 @@ function startLoop() { // a new loop on the current window; the old one stops at
 }
 
 function step(dt: number) {
-  const speed = 3.2; // tiles per second
+  const speed = caffeinated(myMember()) ? 4.2 : 3.2; // tiles per second; coffee makes you quick
   for (const [id, a] of avatars) {
     if (id === myId && a.x === a.tx && a.y === a.ty && path.length) {
       const n = path.shift()!;
@@ -1387,13 +1387,16 @@ function render(t: number, dt: number) {
     const seated = !!m.focus && !!act && !!(ITEMS[act.item as ItemKey] as { chair?: boolean }).chair; // studying at a desk
     const stepFrame = walking ? 1 + (Math.floor(a.dist * 4) % 2) : 0;
     const pop = cheers.get(m.id), hop = pop?.hop && now - pop.at < 660 ? Math.round(Math.abs(Math.sin((now - pop.at) / 105)) * 3) : 0; // a high five: two quick hops
-    const ax = Math.round(a.x * T), ay = Math.round(a.y * T) - hop;
+    const ax = Math.round(a.x * T) + (tipsy(m) ? Math.round(Math.sin(now / 190) * 1.5) : 0);
+    const ay = Math.round(a.y * T) - hop - (tipsy(m) ? Math.abs(Math.sin(now / 190)) : 0);
     sprites.push({
       y: act ? Math.max(a.y + 0.99, act.z + 0.01) : a.y + 0.99, // on a bed's pillow row: drawn over the bed, not under it
       draw: () => (act ? drawActing(ctx, m.look, act.act, act.item, ax, ay, t, act.col, seated)
         : a.use && !walking ? drawUsing(ctx, m.look, a.use, ax, ay, t)
         : drawAvatar(ctx, m.look, ax, ay, stepFrame, a.up)),
     });
+    // The flame sorts in front of the character, so it is a second sprite on the next row down.
+    if (caffeinated(m)) sprites.push({ y: a.y + 1.02, draw: () => drawFlames(ctx, ax, ay - 4, t) });
     // Both the bubble and the name tag clear the head, wherever a bigger or smaller character's head ends up.
     labels.push({ x: a.x, y: a.y, m, seated, lift: Math.round((seated ? 30 : act?.act === 'pullup' ? 28 : act ? 12 : 7) * avatarScale(m.look)) });
     // Studying after dark: a desk lamp clicks on, on the table in front of the chair. A wide, soft pool of light
