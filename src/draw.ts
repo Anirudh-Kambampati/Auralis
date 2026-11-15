@@ -949,9 +949,19 @@ function paintPattern(g: Ctx, paper: string, pattern: string, h: number) {
       for (const bx of [0, 8]) r(g, (k % 2) * 4 + bx, k * 4, 1, Math.min(3, h - k * 4), mark);
     }
   }
-  else if (pattern === 'gingham') { // picnic cloth: light bands both ways, a little darker where they cross
-    for (const xx of [0, 8]) r(g, xx, 0, 4, h, mark);
-    for (const yy of [0, 8]) if (yy < h) { const hh = Math.min(4, h - yy); r(g, 0, yy, T, hh, mark); r(g, 0, yy, 4, hh, mark); r(g, 8, yy, 4, hh, mark); }
+  else if (pattern === 'gingham') { // picnic cloth: fine bands both ways, with a deeper square where they cross
+    // Real gingham has three tones, so this needs its own fixed ramp rather than markColor's single mark.
+    const bandW = 2, period = bandW * 2;
+    const n = parseInt(hex.slice(1, 7), 16);
+    const lum = 0.299 * (n >> 16) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255);
+    const light = lum >= 128;
+    const band = shade(hex, light ? -0.26 : 0.30);
+    const cross = shade(hex, light ? -0.48 : 0.54);
+    for (let y = 0; y < h; y++) for (let x = 0; x < T; x++) {
+      const inX = x % period < bandW, inY = y % period < bandW;
+      if (inX && inY) r(g, x, y, 1, 1, cross);
+      else if (inX || inY) r(g, x, y, 1, 1, band);
+    }
   }
   else if (pattern === 'scallops') { // rows of little arches
     for (const yy of [4, 12]) if (yy + 2 < h) for (const x0 of [0, 8]) {
