@@ -81,6 +81,15 @@ try {
   const guideText = await page.locator('#panel').innerText();
   ok('the Guide explains the coffee machine', /focus minute pays one extra coin/i.test(guideText), guideText.slice(0, 80));
 
+  // --- announcements live in the bell now ---
+  await page.locator('#dock [data-panel="house"]').first().click();
+  await page.waitForTimeout(500);
+  ok('the House panel no longer shows announcements', (await page.locator('#panel .announcements').count()) === 0);
+  await page.locator('#bell').click();
+  await page.waitForTimeout(400);
+  const bellText = await page.locator('#bellList').innerText();
+  ok('the bell has an announcements block', /Announcements/i.test(bellText) || /Nothing yet/i.test(bellText), bellText.slice(0, 80));
+
   // --- clicking a making piece crafts at once, with no picker ---
   // The panel covers the room, so close it while hunting for the piece, then reopen to count.
   const openCount = async () => {

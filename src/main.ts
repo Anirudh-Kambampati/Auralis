@@ -2099,14 +2099,6 @@ function panelBody(mine: Member) {
   }
   // house
   const away = !!me.home && me.home !== houseCode;
-  // Format announcements
-  const announcementsHtml = houseAnnouncements.length ? `
-    <h3>📢 Announcements</h3>
-    <div class="announcements">
-      ${houseAnnouncements.map((a) => `<div class="announcement"><p>${linkify(a.text)}</p><small>— ${esc(a.by)} · ${new Date(a.at).toLocaleString([], { weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}</small>${members.find((m) => m.id === myId)?.id === houseCode.split(':')[0] ? `<button class="off small" data-act="announcement-del" data-v="${a.id}">Delete</button>` : ''}</div>`).join('')}
-    </div>
-    ${houseOwnerName && houseOwnerName === members.find((m) => m.id === myId)?.name ? `<button class="new-announcement" data-act="announcement-add">＋ Post announcement</button>` : ''}
-  ` : '';
   return `${away
     ? `<p class="hint">You're visiting ${houseOwnerName ? `<b>${esc(houseOwnerName)}</b>'s house` : "a friend's house"}. Your own home keeps its code, so you can always go back.</p>
     <div class="code-big">${houseCode}</div>
@@ -2114,7 +2106,6 @@ function panelBody(mine: Member) {
     : `<p class="hint">This is your home, and its code never changes. Share it: when friends join, their rooms open up into yours to make one big house.</p>
     <div class="code-big">${houseCode}</div>
     <div class="center"><button class="off" data-act="copy">Copy code</button></div>`}
-    ${announcementsHtml}
     <h3>Housemates</h3>
     <ul class="members">${members.map((m) => `<li><span class="dot${m.online ? ' on' : ''}"></span>${esc(m.name)}${m.id === myId ? ' (you)' : ''}${m.focus ? '<span class="tag">📖 studying</span>' : ''}${m.id !== myId ? `${gifting ? `<button data-act="gift" data-v="${m.id}" title="Send ${esc(m.name)} the ${esc(gifting.kind === 'crafted' ? (ITEMS[me.crafted?.[gifting.index]?.item as ItemKey]?.name ?? 'piece') : ITEMS[gifting.item as ItemKey].name)}">🎁</button>` : `<button class="off small" data-act="gift" data-v="${m.id}" title="Send ${esc(m.name)} ${GIFT_COINS} coins">🎁 ${GIFT_COINS}</button>`}<button class="off small" data-act="noteto" data-v="${m.id}" aria-label="Leave ${esc(m.name)} a note">✉️</button>` : ''}${!away && m.id !== myId ? `<button class="off small" data-act="kick" data-v="${m.id}">Remove</button>` : ''}</li>`).join('')}</ul>
     ${noteTo && members.some((m) => m.id === noteTo) ? `<h3>Note for ${esc(members.find((m) => m.id === noteTo)!.name)}'s desk</h3>
@@ -2378,17 +2369,6 @@ panel.addEventListener('click', (e) => {
       guideOpen = guideOpen === v ? null : v;
       renderPanel();
       break;
-    case 'announcement-add': {
-      const announcementModal = $<HTMLDialogElement>('#announcementModal');
-      $<HTMLFormElement>('#announcementNew').reset();
-      $('#announcementModalTitle').textContent = 'New announcement';
-      announcementModal.showModal();
-      break;
-    }
-    case 'announcement-del': {
-      if (confirm('Delete this announcement?')) send({ t: 'announcement_del', id: Number(v) });
-      break;
-    }
     case 'petrelease': // two taps: a pet can't be brought back
       if (!b.classList.contains('armed')) {
         b.classList.add('armed');
@@ -3222,6 +3202,11 @@ $('#groupNew').addEventListener('submit', (e) => {
 });
 // Announcement modal
 const announcementModal = $<HTMLDialogElement>('#announcementModal');
+function postAnnouncement() { // open the composer on a clean slate
+  $<HTMLFormElement>('#announcementNew').reset();
+  $('#announcementModalTitle').textContent = 'New announcement';
+  announcementModal.showModal();
+}
 $('#announcementCancel').addEventListener('click', () => announcementModal.close());
 $('#announcementNew').addEventListener('submit', (e) => {
   e.preventDefault();
@@ -3359,12 +3344,20 @@ function bellAction(n: Inbox) {
   return `<button class="small" data-bell="dm" data-v="${mate.id}">Message</button>`;
 }
 function renderBell() {
-  const list = me.inbox ?? [], seen = me.inboxSeen ?? 0, count = list.filter((n) => n.at > seen).length;
+  const list = me.inbox ?? [], seen = me.inboxSeen ?? 0;
+  const fresh = houseAnnouncements.filter((a) => a.at > seen).length;
+  const count = list.filter((n) => n.at > seen).length + fresh;
   $('#bellCount').textContent = count > 9 ? '9+' : String(count);
   $('#bellCount').hidden = !count;
   bellBtn.ariaLabel = bellBtn.title = count ? `Notifications (${count} new)` : 'Notifications';
   if (bellMenu.hidden) return;
-  $('#bellList').innerHTML =`<div class="bell-head"><h3>Notifications</h3>${list.length ? '<button class="small off" data-bell="clear">Clear all</button>' : ''}</div>`
+  const owner = !!houseOwnerName && houseOwnerName === members.find((m) => m.id === myId)?.name;
+  // The block stays for an owner with nothing posted yet, or they could never post the first one.
+  const notes = (houseAnnouncements.length || owner) ? `<div class="bell-head"><h3>📢 Announcements</h3>${owner ? '<button class="small off" data-bell="announce">＋ Post</button>' : ''}</div>
+    ${houseAnnouncements.length ? `<div class="announcements">${houseAnnouncements.map((a) => `<div class="announcement"><p>${linkify(a.text)}</p><small>— ${esc(a.by)} · ${new Date(a.at).toLocaleString([], { weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}</small>${owner ? `<button class="off small" data-bell="announce-del" data-v="${a.id}">Delete</button>` : ''}</div>`).join('')}</div>` : ''}`
+    : '';
+  $('#bellList').innerHTML = notes
+    + `<div class="bell-head"><h3>Notifications</h3>${list.length ? '<button class="small off" data-bell="clear">Clear all</button>' : ''}</div>`
     + (list.length ? `<ul>${list.slice().reverse().map((n) => `<li${n.at > bellOpenSeen ? ' class="new"' : ''}>
       <span class="bell-icon" aria-hidden="true">${BELL_ICONS[n.kind] ?? '🔔'}</span>
       <div class="bell-body"><p>${n.kind === 'remind' ? 'Reminder: ' : ''}${n.by ? `<b>${esc(n.by)}</b> ` : ''}${esc(n.text)}</p>
@@ -3377,7 +3370,7 @@ function toggleBell(open = bellMenu.hidden) {
   bellBtn.ariaExpanded = String(open);
   if (!open) return;
   bellOpenSeen = me.inboxSeen ?? 0;
-  if ((me.inbox ?? []).some((n) => n.at > bellOpenSeen)) { me.inboxSeen = Date.now(); send({ t: 'inbox_read' }); }
+  if ((me.inbox ?? []).some((n) => n.at > bellOpenSeen) || houseAnnouncements.some((a) => a.at > bellOpenSeen)) { me.inboxSeen = Date.now(); send({ t: 'inbox_read' }); }
   renderBell();
 }
 bellBtn.addEventListener('click', () => toggleBell());
@@ -3389,6 +3382,8 @@ bellMenu.addEventListener('click', (e) => {
   const v = b.dataset.v!;
   switch (b.dataset.bell) {
     case 'clear': send({ t: 'inbox_clear' }); return;
+    case 'announce': toggleBell(false); postAnnouncement(); return;
+    case 'announce-del': if (confirm('Delete this announcement?')) send({ t: 'announcement_del', id: Number(v) }); return;
     case 'join': send({ t: 'focus_join', id: v, tz: new Date().getTimezoneOffset() }); break;
     case 'todos': setPanel('todos'); break;
     case 'letin': case 'nope': send({ t: 'visit_answer', id: v, yes: b.dataset.bell === 'letin' }); break;

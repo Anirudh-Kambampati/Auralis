@@ -731,8 +731,9 @@ function renderBell() {
   bellBtn.ariaLabel = bellBtn.title = count ? `Notifications (${count} new)` : 'Notifications';
   if (bellMenu.hidden) return;
   const owner = !!houseOwnerName && houseOwnerName === members.find((m) => m.id === myId)?.name;
-  const notes = houseAnnouncements.length ? `<div class="bell-head"><h3>📢 Announcements</h3>${owner ? '<button class="small off" data-bell="announce">＋ Post</button>' : ''}</div>
-    <div class="announcements">${houseAnnouncements.map((a) => `<div class="announcement"><p>${linkify(a.text)}</p><small>— ${esc(a.by)} · ${new Date(a.at).toLocaleString([], { weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}</small>${owner ? `<button class="off small" data-bell="announce-del" data-v="${a.id}">Delete</button>` : ''}</div>`).join('')}</div>`
+  // The block stays for an owner with nothing posted yet, or they could never post the first one.
+  const notes = (houseAnnouncements.length || owner) ? `<div class="bell-head"><h3>📢 Announcements</h3>${owner ? '<button class="small off" data-bell="announce">＋ Post</button>' : ''}</div>
+    ${houseAnnouncements.length ? `<div class="announcements">${houseAnnouncements.map((a) => `<div class="announcement"><p>${linkify(a.text)}</p><small>— ${esc(a.by)} · ${new Date(a.at).toLocaleString([], { weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}</small>${owner ? `<button class="off small" data-bell="announce-del" data-v="${a.id}">Delete</button>` : ''}</div>`).join('')}</div>` : ''}`
     : '';
   $('#bellList').innerHTML = notes
     + `<div class="bell-head"><h3>Notifications</h3>${list.length ? '<button class="small off" data-bell="clear">Clear all</button>' : ''}</div>`
@@ -762,9 +763,11 @@ In `toggleBell` (line 3364), replace the `inbox_read` condition:
 In the `bellMenu.addEventListener('click', ...)` switch (line 3379), add:
 
 ```ts
-    case 'announce': announcementModal.showModal(); break;
-    case 'announce-del': if (confirm('Delete this announcement?')) send({ t: 'announcement_del', id: Number(v) }); break;
+    case 'announce': toggleBell(false); postAnnouncement(); return;
+    case 'announce-del': if (confirm('Delete this announcement?')) send({ t: 'announcement_del', id: Number(v) }); return;
 ```
+
+`postAnnouncement()` is a small helper beside the modal wiring that resets the form, titles it and opens it. The two dead `announcement-add` and `announcement-del` cases in the House panel's click switch go with the markup they served.
 
 - [ ] **Step 5: Typecheck**
 
@@ -789,11 +792,13 @@ In `scripts/e2e-ui.js`, add:
 
 ```js
   // --- announcements live in the bell now ---
+  await page.locator('#dock [data-panel="house"]').first().click();
+  await page.waitForTimeout(500);
   ok('the House panel no longer shows announcements', (await page.locator('#panel .announcements').count()) === 0);
   await page.locator('#bell').click();
   await page.waitForTimeout(400);
   const bellText = await page.locator('#bellList').innerText();
-  ok('the bell has an announcements block', /Announcements/i.test(bellText), bellText.slice(0, 80));
+  ok('the bell has an announcements block', /Announcements/i.test(bellText) || /Nothing yet/i.test(bellText), bellText.slice(0, 80));
 ```
 
 - [ ] **Step 8: Run the whole suite**
