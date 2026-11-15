@@ -22,6 +22,9 @@ Decisions made while building Auralis, and why.
 | **Turn = mirror flip, not 90° rotation** | Works for every item without drawing each piece from four sides. | Specific items get proper side views. |
 | **Two-tap "give up" instead of `confirm()`** | Some browsers and app shells block native dialogs. | — |
 | **Fredoka for UI, pixel digits only for the timer** | Pixel fonts made numbers hard to read (5 looked like S). | — |
+| **A Guide panel, not more tooltips** | The hover tooltip already names the click; what people miss is the consequence. A tooltip that ran to two sentences would be in the way every time. | Players stop opening the Guide (then surface the two or three lines that matter in the panels themselves). |
+| **One nudge per item, remembered per player** | A nudge you have already had is noise. `tipsSeen` is a plain list on the player, and the server is the one that decides which ids are legal. | Players change devices often (then sync it, which `tipsSeen` already does, since it rides in `me`). |
+| **Announcements in the bell** | One place for what happened while you were away, and the bell already counted unread things. Posting moved with it, which also fixed a Delete button that never rendered. | Announcements grow long or need editing (then they become their own panel). |
 
 ## Known limits
 

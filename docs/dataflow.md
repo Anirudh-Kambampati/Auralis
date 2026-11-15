@@ -36,13 +36,20 @@ client                         server                                    house m
 | `leaderboard` | Answered to the asker only, computed from saved sessions. |
 | `friend_search {q}` | At least 2 characters. Answered to the asker only with `friend_matches`: up to 8 usernames starting with `q`, never your own. |
 | `friend_request {name}` | A username, a housemate's name, or a house code (its owner); at most 20 requests waiting. |
+| `tip_seen {id}` | The id is one of the Guide's tips. Adds it to the player's `tipsSeen`, so that nudge never shows again. |
 
 ## State sent to clients
 
 `{ t: 'state', house: { code, members[], todos[], chat[] }, me: { id, coins, inventory, sessions, subjects } }`
 
 - `members[]` holds each housemate's public data: name, look, room, focus, pets, online, position. It never includes tokens or hashes.
-- `me` is private and only goes to its owner.
+- `me` is private and only goes to its owner. That includes `crafted` and `tipsSeen`: what you made by hand, and which Guide nudges you have had.
+
+## The Guide's nudges
+
+The Guide's words live in `shared/guide.js`, which both sides import. `GUIDE_SECTIONS` is the panel's content, `GUIDE_TIPS` is one line per item that deserves a nudge, and `GUIDE_START` is the opening card.
+
+When a `state` message arrives and the client sees an item it owns that is in `GUIDE_TIPS` but not in `me.tipsSeen`, it toasts the line once and sends `tip_seen`. The server adds the id to `tipsSeen` and saves. `tip_seen` saves without broadcasting, the same as `inbox_read`, so the client marks the tip as seen locally too — otherwise a broadcast arriving before the next `state` would show it twice.
 
 ## Room snapshots (Object Storage)
 

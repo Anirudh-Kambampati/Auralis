@@ -20,6 +20,7 @@ Auralis is one Node.js server plus a browser client. The server owns the truth; 
 | --- | --- |
 | `shared/game.js` | Rules used by both sides: furniture catalog, colours, pets, room sizes, house layout (`buildGrid`), placement checks, rewards. |
 | `shared/stats.js` | Study statistics: bucketing sessions by day/week/month/year, streaks, subject totals. |
+| `shared/guide.js` | The Guide's words: the panel's sections, the one-time nudges, and the five steps the first visit used to show. Both sides import it, so the server knows which ids a nudge may name. |
 | `server/index.js` | HTTP server (static files + JSON API) and the WebSocket game server. Validates every action. |
 | `server/store.js` | Local SQLite storage (Node's built-in `node:sqlite`) and password hashing. Used when there's no `DATABASE_URL`. |
 | `server/store-pg.js` | The same storage interface on Postgres (Neon), async. |

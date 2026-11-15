@@ -16,7 +16,15 @@ Calm, cozy and flat. A dollhouse cutaway sits on warm paper. The game should be 
 | `--gold` | `#f2c14e` | Selection, coins, rewards |
 | `--coral` | `#e06a5a` | Giving up, errors |
 
-Panel headers use a pastel per area: focus blue, decorate mint, shop butter, you pink, house lilac, stats peach.
+Panel headers use a pastel per area: focus blue, decorate mint, shop butter, you pink, house lilac, stats peach, guide mist.
+
+## The Guide
+
+A `?` chip sits in the HUD right of the coin count, beside the bell, and opens the Guide panel. The first visit opens it for you on its first card, and it never opens itself again.
+
+The panel is one card per system — fifteen of them, plus the opening card — and a card expands in place rather than navigating anywhere. Each card shows a sentence of prose, then either a numbered list of steps (the opening card) or a row per item: the item's own art, its name, and the one thing a hover tooltip cannot say, that a coffee buys ten minutes of extra pay, that the claw waits half an hour between plays.
+
+An item gets a row only when the tooltip does not already explain it. `Water`, `Nap`, `Play music` and `Send a gift` are on the tooltip, so plants, chairs, speakers and gift boxes are not listed.
 
 ## UI rules
 
