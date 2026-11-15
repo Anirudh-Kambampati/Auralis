@@ -409,6 +409,37 @@ export const DRINKS = {
   energyCan: { caffeine: 10 },
   wine: { rest: 2, tipsy: true },
 };
+
+// The claw machine: what it can drop and how likely each is. Weights are whole numbers that add up to 100.
+// Plushes and small decor, all existing catalog items.
+export const CLAW_PRIZES = [
+  { item: 'plush', weight: 30 },
+  { item: 'snowGlobe', weight: 20 },
+  { item: 'sculpture', weight: 18 },
+  { item: 'discoBall', weight: 12 },
+  { item: 'easterBunny', weight: 10 },
+  { item: 'reindeer', weight: 6 },
+  { item: 'sharkPlush', weight: 3 },
+  { item: 'bigTeddy', weight: 1 },
+];
+export const CLAW_COST = 5;
+export const CLAW_COOLDOWN_MS = 10 * 60_000;
+
+// r is a random number in [0, 1): injectable so the test can walk the whole range.
+export function clawPrize(r = Math.random()) {
+  let roll = Math.min(Math.max(r, 0), 0.999999) * 100;
+  for (const p of CLAW_PRIZES) {
+    roll -= p.weight;
+    if (roll < 0) return p;
+  }
+  return CLAW_PRIZES[0];
+}
+
+// When a piece is next ready, or 0 when it is ready now.
+export const clawReadyAt = (f, now = Date.now()) => {
+  const at = f?.state?.readyAt;
+  return Number.isFinite(at) && at > now ? at : 0;
+};
 // Furniture remembers its colour by position in these lists: only ever add to the end.
 export const PASTELS = ['#f4a6b8', '#9db4ee', '#8fd0a8', '#ffd27a', '#b89af0', '#f2b48a', '#e8e3dc', '#7a6a8a',
   '#e06a5a', '#f28a3a', '#6cbf7a', '#4fb0b0', '#5b7fd6', '#3a3448', '#fffaf3', '#c8805a'];

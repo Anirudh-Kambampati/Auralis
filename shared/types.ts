@@ -114,6 +114,7 @@ export interface Furniture {
   wateredAt?: number;
   off?: boolean;
   col?: string;
+  state?: { readyAt?: number }; // a piece's own cooldown, checked against the clock on both sides
 }
 
 export interface Pet {

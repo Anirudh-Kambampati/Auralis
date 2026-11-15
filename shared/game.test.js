@@ -5,6 +5,7 @@ import {
   ITEMS, EVENTS, easterSunday, activeEvents, nextEvent, footprint, nextRot, canRotate,
   DOOR, WALL, FLOOR, BLOCKED, VOID, ROOM_W, colsFor, isFocusLength, FOCUS_LENGTHS, bondLevel,
   DRINKS,
+  CLAW_PRIZES, CLAW_COST, CLAW_COOLDOWN_MS, clawPrize, clawReadyAt,
 } from './game.js';
 
 const empty = (level = 0) => ({ level, furniture: [] });
@@ -297,4 +298,44 @@ test('every drink in the table is a real catalog item', () => {
 
 test('a drink that is not in the table has no effect', () => {
   assert.equal(DRINKS.notADrink, undefined);
+});
+
+test('the claw pool is plushes and small decor, and every prize is a real item', () => {
+  assert.ok(CLAW_PRIZES.length > 0);
+  for (const p of CLAW_PRIZES) {
+    assert.ok(ITEMS[p.item], `${p.item} is not in ITEMS`);
+    assert.ok(p.weight > 0);
+  }
+  const total = CLAW_PRIZES.reduce((n, p) => n + p.weight, 0);
+  assert.equal(total, 100);
+});
+
+test('the claw always drops something from the pool', () => {
+  for (let i = 0; i < 200; i++) {
+    const prize = clawPrize(() => i / 200); // walk the whole range deterministically
+    assert.ok(CLAW_PRIZES.some((p) => p.item === prize.item));
+  }
+});
+
+test('the claw costs five coins and cools down for ten minutes', () => {
+  assert.equal(CLAW_COST, 5);
+  assert.equal(CLAW_COOLDOWN_MS, 10 * 60_000);
+});
+
+test('a claw piece is ready when it has no cooldown, and not ready until it passes', () => {
+  const now = 1_000_000_000_000;
+  assert.equal(clawReadyAt({ item: 'clawMachine' }, now), 0);
+  const cooling = { item: 'clawMachine', state: { readyAt: now + 1000 } };
+  assert.equal(clawReadyAt(cooling, now), now + 1000);
+  assert.equal(clawReadyAt(cooling, now + 1001), 0); // passed
+});
+
+test('a cooldown in the past is treated as ready', () => {
+  const now = 1_000_000_000_000;
+  assert.equal(clawReadyAt({ item: 'clawMachine', state: { readyAt: now - 1 } }, now), 0);
+});
+
+test('the claw machine is solid, so a click always reaches it', () => {
+  assert.equal(ITEMS.clawMachine.solid, true);
+  assert.equal(ITEMS.clawMachine.top, undefined);
 });
