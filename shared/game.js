@@ -401,6 +401,14 @@ function windows(now) {
 export const activeEvents = (now = new Date()) => windows(now).filter((e) => e.from <= now);
 export const nextEvent = (now = new Date()) => windows(now).find((e) => e.from > now) ?? null;
 export const USES = [...new Set(Object.values(ITEMS).map((i) => i.use).filter(Boolean))];
+// What clicking a drink does. caffeine: minutes of the shared effect. rest: minutes of break. tipsy: cosmetic sway.
+// Drinks cost nothing and are never consumed; the window they open is the only limit.
+export const DRINKS = {
+  coffeeMachine: { caffeine: 10 },
+  coffee: { caffeine: 10 },
+  energyCan: { caffeine: 10 },
+  wine: { rest: 2, tipsy: true },
+};
 // Furniture remembers its colour by position in these lists: only ever add to the end.
 export const PASTELS = ['#f4a6b8', '#9db4ee', '#8fd0a8', '#ffd27a', '#b89af0', '#f2b48a', '#e8e3dc', '#7a6a8a',
   '#e06a5a', '#f28a3a', '#6cbf7a', '#4fb0b0', '#5b7fd6', '#3a3448', '#fffaf3', '#c8805a'];

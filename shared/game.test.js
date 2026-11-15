@@ -4,6 +4,7 @@ import {
   buildGrid, canPlace, placeSwaps, focusReward, quitReward, quitMinutes, focusEnd, focusStart, caffeineOverlap, caffeineMinutes, streakDays, streakBonus, colorsFor, roomSize, PETS, EXPAND_COST,
   ITEMS, EVENTS, easterSunday, activeEvents, nextEvent, footprint, nextRot, canRotate,
   DOOR, WALL, FLOOR, BLOCKED, VOID, ROOM_W, colsFor, isFocusLength, FOCUS_LENGTHS, bondLevel,
+  DRINKS,
 } from './game.js';
 
 const empty = (level = 0) => ({ level, furniture: [] });
@@ -271,4 +272,20 @@ test('focusStart is the end minus the session length, with paused time frozen', 
   assert.equal(focusStart(f, now), now - 25 * 60_000);
   const paused = { minutes: 25, endsAt: now, pausedAt: now - 100_000 };
   assert.equal(focusStart(paused, now), paused.endsAt + 100_000 - 25 * 60_000);
+});
+
+test('the drinks table names a caffeine length for the three caffeinated drinks', () => {
+  assert.equal(DRINKS.coffeeMachine.caffeine, 10);
+  assert.equal(DRINKS.coffee.caffeine, 10);
+  assert.equal(DRINKS.energyCan.caffeine, 10);
+  assert.equal(DRINKS.wine.rest, 2);
+  assert.ok(DRINKS.wine.tipsy);
+});
+
+test('every drink in the table is a real catalog item', () => {
+  for (const key of Object.keys(DRINKS)) assert.ok(ITEMS[key], `${key} is not in ITEMS`);
+});
+
+test('a drink that is not in the table has no effect', () => {
+  assert.equal(DRINKS.notADrink, undefined);
 });
