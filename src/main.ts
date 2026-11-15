@@ -518,7 +518,8 @@ function startBreak(ms: number, text: string) {
 
 const TVS = new Set(['tv', 'retroTV', 'mediaConsole']);
 // Pieces a click does something special with, beyond act/use/light/sound (see tapAt).
-const CLICKABLE = new Set(['petBall', 'deskCalendar', 'giftBox', 'whiteboard', 'clawMachine', ...CRAFT]);
+const CLICKABLE = new Set(['petBall', 'deskCalendar', 'giftBox', 'whiteboard', 'clawMachine',
+  'potteryWheel', 'easel', 'loom', 'craftTable', 'sewingTable']);
 const STARS = ['🌠 A shooting star! Make a wish.', "✨ You spotted Orion's belt.", '🪐 Is that Saturn? It is!', '🌌 The Milky Way is out tonight.', '🌙 The moon is so bright.'];
 // What some furniture does once you've walked up to it, on top of the little animation.
 function afterUse(f: Furniture, owner: Member, ri: number, fi: number): (() => void) | null {
@@ -535,7 +536,7 @@ function afterUse(f: Furniture, owner: Member, ri: number, fi: number): (() => v
   if (f.item === 'foodBowl') return () => (owner.pets.some((p) => !p.away) ? send({ t: 'feed', owner: owner.id, r: ri, index: fi }) : toast('No pets here to feed yet.'));
   if (f.item === 'giftBox') return () => { setPanel('house'); toast('Pick a housemate to send a gift.'); };
   if (f.item === 'whiteboard') return () => { setPanel('todos'); openTodoModal(); };
-  if (CRAFT.includes(f.item)) return () => {
+  if (CRAFT[f.item as keyof typeof CRAFT]) return () => {
     const ready = clawReadyAt(f);
     if (ready) { toast(`⏳ Ready ${fmt(ready - Date.now())} from now.`); return; }
     send({ t: 'craft', owner: owner.id, r: ri, index: fi });
@@ -1927,7 +1928,7 @@ function decorateBody(mine: Member) {
         `<button class="swatch${!sel.col && (sel.v ?? -1) === k ? ' on' : ''}" style="background:${c}" data-act="recolor" data-v="${k}" aria-label="${c}"></button>`).join('')}${sel.col
         ? `<button class="swatch on" style="background:${sel.col}" data-act="noop" title="Your custom colour" aria-label="Your custom colour"></button>` : ''}<button class="swatch custom" data-act="paintfurn" title="Custom colour" aria-label="Custom colour" style="background:${CUSTOM_SWATCH}"></button></div>` : ''}` : '';
   const craftedReadyAt = sel ? clawReadyAt(sel) : 0;
-  const craftBar = sel && CRAFT.includes(sel.item) ? `<p class="hint">${craftedReadyAt ? `Ready ${fmt(craftedReadyAt - Date.now())} from now.` : 'Tap the piece in your room to make something: free, and anything in the catalog can come out.'}</p>` : '';
+  const craftBar = sel && CRAFT[sel.item as keyof typeof CRAFT] ? `<p class="hint">${craftedReadyAt ? `Ready ${fmt(craftedReadyAt - Date.now())} from now.` : 'Tap the piece in your room to make something: free, and it only makes what that piece is for.'}</p>` : '';
   const hint = placing ? `Tap a spot in your room to place the <b>${ITEMS[placing].name}</b>.`
     : sel ? (canRot ? 'Drag it, or tap a new spot to move it there. Keys: arrows move · R rotate · F flip · Delete put away · Esc done.' : 'Drag it, or tap a new spot to move it there. Keys: arrows move · F flip · Delete put away · Esc done.')
     : 'Drag any furniture to move it, or tap it for more options. Tap a stack again to reach what is underneath.';
@@ -2244,7 +2245,7 @@ panel.addEventListener('click', (e) => {
     case 'craft': {
       if (moving === null) return;
       const f = myRoom()?.furniture[moving];
-      if (!f || !CRAFT.includes(f.item)) return;
+      if (!f || !CRAFT[f.item as keyof typeof CRAFT]) return;
       if (clawReadyAt(f)) { toast(`⏳ Ready ${fmt(clawReadyAt(f) - Date.now())} from now.`); return; }
       send({ t: 'craft', owner: myId, r: editRoom, index: moving, keep: true });
       return;
@@ -2469,10 +2470,10 @@ function clickLabel(tx: number, ty: number): string | null {
   if (f.item === 'giftBox') return 'Send a gift';
   if (f.item === 'whiteboard') return 'House to-dos';
   if (f.item === 'clawMachine') return clawReadyAt(f) ? `Claw (ready ${fmt(clawReadyAt(f) - Date.now())})` : `Play the claw · ${CLAW_COST} coins`;
-  const craft = CRAFT.includes(f.item);
+  const craft = CRAFT[f.item as keyof typeof CRAFT];
   if (craft) {
-    // A tip is plain text, so no coin() markup here: just whether it is ready. Every piece makes one of the
-    // same pool at random, so there is nothing to choose.
+    // A tip is plain text, so no coin() markup here: just whether it is ready. Each piece makes one of its own
+    // things at random, so there is nothing to choose.
     const what = CRAFT_LABELS[f.item] ?? 'Make something';
     const ready = clawReadyAt(f);
     return ready ? `${what} (ready ${fmt(ready - Date.now())})` : `${what} · free`;

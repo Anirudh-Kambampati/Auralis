@@ -1,7 +1,7 @@
 // End-to-end check of gifting and selling, against a throwaway server this script runs itself.
 //
 //   1. claw prizes are giftable (they are storage pieces, not handmade ones)
-//   2. every making piece produces a random piece from one flat pool, with nothing to choose
+//   2. every making piece produces one of its own things, at random, with nothing to choose
 //   3. handmade pieces carry their own colour, so the client can draw them
 //   4. handmade pieces sell for a quarter of catalog price
 //   5. a piece gifted to a housemate stays sellable, at the same quarter price
@@ -14,7 +14,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import WebSocket from 'ws';
-import { CRAFT, CRAFT_POOL, ITEMS, craftedPrice, craftItem } from '../shared/game.js';
+import { CRAFT, ITEMS, craftedPrice, craftItem } from '../shared/game.js';
 import { openStore } from '../server/store.js';
 
 const PORT = Number(process.env.E2E_PORT ?? 8792);
@@ -134,8 +134,9 @@ try {
   ok('gifting a piece moves no coins', A.coins() === beforeGift && B.coins() === bCoinsBefore, `${beforeGift}/${bCoinsBefore}`);
   ok('the receiver was told', !!B.last('gift_item'));
 
-  // ---------- 2. every making piece makes a random piece from one flat pool ----------
-  const indices = CRAFT.map((item) => at(A, item));
+  // ---------- 2. every making piece makes one of its own things, at random ----------
+  const pieces = Object.keys(CRAFT);
+  const indices = pieces.map((item) => at(A, item));
   ok('all five making pieces are on the floor', indices.every((i) => i >= 0), JSON.stringify(indices));
   const made = [];
   for (const index of indices) {
@@ -145,18 +146,24 @@ try {
     made.push(list[list.length - 1]);
   }
   ok('every making piece produced something', made.every(Boolean), `${made.filter(Boolean).length}/${indices.length}`);
-  ok('everything made is in the one flat pool', made.every((p) => p && CRAFT_POOL.includes(p.item)), JSON.stringify(made.map((p) => p?.item)));
+  ok('each piece only makes things that suit it',
+    made.every((p, i) => p && CRAFT[pieces[i]].includes(p.item)),
+    made.map((p, i) => `${pieces[i]} -> ${p?.item ?? 'nothing'}`).join(', '));
+  ok('the kiln never made a plush', made.every((p) => p?.item !== 'plush' || p === made[pieces.indexOf('sewingTable')]),
+    JSON.stringify(made.map((p) => p?.item)));
   ok('crafting needed no item choice from the client', made.every((p) => p && !('choice' in p)));
 
-  // The shared picker is uniform across every object in the pool, so no piece is favoured.
-  const counts = new Map();
-  for (let i = 0; i < CRAFT_POOL.length * 200; i++) {
-    const it = craftItem(i / (CRAFT_POOL.length * 200));
-    counts.set(it, (counts.get(it) ?? 0) + 1);
+  // The picker is uniform inside each piece's own pool, so nothing in a pool is rarer than another.
+  for (const [piece, pool] of Object.entries(CRAFT)) {
+    const counts = new Map();
+    for (let i = 0; i < pool.length * 400; i++) {
+      const it = craftItem(piece, i / (pool.length * 400));
+      counts.set(it, (counts.get(it) ?? 0) + 1);
+    }
+    const spread = Math.max(...counts.values()) - Math.min(...counts.values());
+    ok(`${piece} picks evenly from its own ${pool.length} things`, counts.size === pool.length && spread <= 2,
+      `spread ${spread}`);
   }
-  const spread = Math.max(...counts.values()) - Math.min(...counts.values());
-  ok('every object in the pool is equally likely', counts.size === CRAFT_POOL.length && spread <= 2,
-    `${counts.size}/${CRAFT_POOL.length} entries, spread ${spread}`);
 
   // ---------- 3. handmade pieces carry their colour, so the client can draw them ----------
   ok('every handmade piece has a hex colour', made.every((p) => /^#[0-9a-f]{6}$/i.test(p.col)), JSON.stringify(made.map((p) => p.col)));

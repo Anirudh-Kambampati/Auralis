@@ -810,10 +810,11 @@ function handle(p, m) {
     case 'craft': {
       const owner = db.houses[p.house].members.includes(m.owner) ? db.players[m.owner] : null;
       const f = owner?.rooms?.[m.r ?? 0]?.furniture?.[m.index];
-      if (!owner || !f || !CRAFT.includes(f.item)) return;
+      if (!owner || !f || !has(CRAFT, f.item)) return;
       const now = Date.now();
       if (clawReadyAt(f, now)) return send(sockets.get(owner.id), { t: 'error', text: 'That is still being set up. Try again in a few minutes.' });
-      const item = craftItem();
+      const item = craftItem(f.item);
+      if (!item) return;
       const piece = { item, col: craftColour(item) };
       f.state = { ...(f.state ?? {}), readyAt: now + CRAFT_COOLDOWN_MS };
       const to = !m.keep && db.houses[p.house].members.includes(m.to) ? db.players[m.to] : null;
