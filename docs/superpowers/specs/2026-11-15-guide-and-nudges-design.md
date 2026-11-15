@@ -2,7 +2,7 @@
 
 **Date:** 2026-11-15
 **Status:** Approved (brainstorming)
-**Scope:** One new content module, one new panel, one new header button, a nudge toast, the first-run tour folded into the Guide, and house announcements moved from the House panel into the bell. One new client→server message and one new per-player field.
+**Scope:** One new content module, one new panel, one new header button, a first-run tour that lists every step at once, and house announcements moved from the House panel into the bell. One new client→server message and one new per-player field.
 
 ## Problem
 
@@ -27,7 +27,7 @@ The hover tooltip already names the click — "Water", "Nap", "Play the claw · 
 - Prose for all 284 items. The Guide lists only items whose consequence the tooltip cannot express.
 - Search, filtering or favourites inside the Guide.
 - Any change to how items behave, what they cost or what they pay.
-- A replayable step-by-step tour. The old tour's words become the Guide's first section.
+- Toasts as the delivery for a hidden feature. A toast is one line, gone in three seconds, and it marks the thing seen whether or not it was read.
 
 ## Design
 
@@ -116,26 +116,30 @@ Each card shows its title, then its blurb, then either its item rows (item icon,
 
 `start` is simply the first card.
 
-### The nudge
+### The tour
 
 On every `state`, the client compares `me.inventory` against `me.tipsSeen`:
 
 ```
-for (const id of Object.keys(GUIDE_TIPS))
-  if (me.inventory[id] && !me.tipsSeen.includes(id)) → toast(GUIDE_TIPS[id]); send({ t: 'tip_seen', id })
+const fresh = unseenTips(me.inventory, me.tipsSeen ?? []);   // shared/guide.js
+if (fresh.length && !tourRows.length) openTour(fresh.map((s) => ({ item: s.item, text: s.text })));
 ```
 
 This hooks in beside the existing notes check at `src/main.ts:186`.
 
 It deliberately does **not** diff inventory on the server. Every acquisition path — buying, a claw prize, a craft piece gifted by a housemate, a claw prize handed over — is covered by the same check, with no per-event plumbing.
 
-One consequence is intended: a player who already owned a coffee machine the day this ships gets its nudge on their next login, because the check is "in the inventory and not yet seen", not "acquired while I was watching". After that first login they are exactly as caught up as anyone else.
+**The tour lists every step at once.** The dialog is a scrollable column of rows: the current one expanded to its sentence, the rest collapsed to their titles, with `n / total`, Back, Next and Got it. Any row can be tapped to jump to it. This is the answer to the failure of the toasts this replaces: they showed one line at a time, three seconds each, and marked every tip as seen before it was shown — a player who owned ten of these things saw two and lost the other eight. Here nothing is marked seen unless it is on screen.
+
+Opening the tour is what consumes the tips: `openTour` calls `markTipSeen` for every row it shows, which updates `me.tipsSeen` locally and sends `tip_seen`. One tour at a time — if the dialog is already open, a new set waits, and `finishTour` picks it up on close, which is what makes a purchase while a tour is open still get its own tour.
+
+One consequence is intended: a player who already owned a coffee machine the day this ships gets its step on their next login, because the check is "in the inventory and not yet seen", not "acquired while I was watching". After that first login they are exactly as caught up as anyone else.
 
 ### First visit
 
-`welcome()` (`src/main.ts:2570`) is replaced. When `localStorage.auralis.tour` is absent, the Guide opens with `start` expanded and the flag is written. The five steps move into `GUIDE_START`.
+`welcome()` (`src/main.ts:2594`) runs when the first `state` of a session arrives and `localStorage.auralis.tour` is absent. It writes the flag, opens the Guide on `start` behind the dialog, and opens the tour on the five `GUIDE_START` steps — a new player owns nothing worth a tip yet, so the intro is all there is.
 
-Players who already dismissed the tour keep that flag, so nothing opens by itself for them; they reach the same words from the button.
+Players who already dismissed the tour keep that flag. They still get the item tour on their first load, because that is driven by `tipsSeen` on the server rather than by the local flag, and for everyone it is empty until the tour ships.
 
 ### Announcements into the bell
 
@@ -188,6 +192,9 @@ Nothing else changes on the wire. Nudges are derived on the client, and announce
 - every `GUIDE_TIPS` key exists in `ITEMS`
 - every tipped item appears in some section
 - `GUIDE_START` is non-empty
+- the tour is every tipped thing the player owns, and nothing they do not
+- a tour only shows what has not been shown yet
+- a player with nothing to teach gets no tour
 
 **`scripts/e2e-tips.js`**, following `scripts/e2e-bell.js` and spawning its own throwaway server:
 
@@ -196,10 +203,12 @@ Nothing else changes on the wire. Nudges are derived on the client, and announce
 - `tipsSeen` survives a reconnect
 - another player's public view does not contain `tipsSeen`
 
-**Playwright, extending `scripts/e2e-ui.js`:**
+**Playwright:**
 
-- owning an item that is in `GUIDE_TIPS` and not in `tipsSeen` produces a nudge toast
-- after `tip_seen`, a reload produces no second nudge
+- owning two tipped things opens the tour on its own, and lists both at once
+- Next moves the tour on and the open row follows; a row can be tapped to jump
+- Got it closes it, and a reload does not bring it back
+- buying a third tipped thing afterwards opens a tour of just that one
 - the `?` button opens the Guide
 - a card expands
 - the House panel no longer shows announcements
@@ -209,14 +218,14 @@ Nothing else changes on the wire. Nudges are derived on the client, and announce
 
 | File | Change |
 |---|---|
-| `shared/guide.js` | new: `GUIDE_SECTIONS`, `GUIDE_TIPS`, `GUIDE_START` |
-| `shared/guide.test.js` | new: content integrity |
+| `shared/guide.js` | new: `GUIDE_SECTIONS`, `GUIDE_TIPS`, `GUIDE_START`, `tourSteps`, `unseenTips` |
+| `shared/guide.test.js` | new: content integrity, and the tour's membership |
 | `shared/game.js` | unchanged |
 | `shared/types.ts` | `tipsSeen` on `MeState`; `tip_seen` in the message union |
 | `server/index.js` | `tipsSeen` in `me`; `tip_seen` case |
-| `index.html` | `?` button beside the coin chip |
+| `index.html` | `?` button beside the coin chip; the `#tour` dialog |
 | `src/draw.ts` | `guide` icon in `UI_ICONS` |
-| `src/main.ts` | `THEMES.guide`, `guideBody`, `guideOpen`, `#help` handler and `.on`, nudge check, `welcome()` replaced, announcements moved to the bell and counted in its badge |
-| `src/style.css` | the Guide cards and the bell's announcements block |
+| `src/main.ts` | `THEMES.guide`, `guideBody`, `guideOpen`, `#help` handler and `.on`, the tour and its triggers, `welcome()` replaced, announcements moved to the bell and counted in its badge |
+| `src/style.css` | the Guide cards, the tour, and the bell's announcements block |
 | `package.json` | `test` script gains `shared/guide.test.js` |
 | `scripts/e2e-tips.js` | new: the `tip_seen` round trip |

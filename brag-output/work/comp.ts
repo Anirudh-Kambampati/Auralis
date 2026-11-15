@@ -277,7 +277,7 @@ function furnitureArt(item: string) {
 }
 function buildShop() {
   const furn = ['sofa', 'piano', 'aquarium', 'arcade', 'bonsai', 'fireplace', 'catTower', 'drumKit', 'cherryTree', 'telescope', 'bookshelf', 'discoBall'];
-  const order = [0, 'cat', 1, 2, 'frog', 3, 4, 'capybara', 5, 6, 'axolotl', 7, 8, 'unicorn', 9, 10, 'panda', 11] as const;
+  const order = [0, 'cat', 1, 2, 'frog', 3, 4, 'capybara', 5, 6, 'axolotl', 7, 8, 'unicorn', 9, 10, 'cow', 11] as const;
   for (const o of order) {
     if (typeof o === 'number') { const k = furn[o]; things.push({ name: ITEMS[k].name, price: ITEMS[k].price, art: furnitureArt(k) }); }
     else things.push({ name: PETS[o].name, price: PETS[o].price, art: trim(petCanvas(o, 0)) });
@@ -339,7 +339,7 @@ function sceneDragon(t: number) {
 }
 
 // ---------- scene 6: outro ----------
-const PARADE = ['hamster', 'duckling', 'frog', 'penguin', 'cat', 'puppy', 'capybara', 'fox', 'panda', 'axolotl', 'unicorn', 'dragon'];
+const PARADE = ['hamster', 'duckling', 'frog', 'penguin', 'cat', 'puppy', 'capybara', 'fox', 'cow', 'axolotl', 'unicorn', 'dragon'];
 function sceneOutro(t: number) {
   if (t < 18.7) return;
   const now = BASE + t * 1000;

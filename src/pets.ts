@@ -1,13 +1,14 @@
 // Pets: original chibi sprites (12x10 faces, or 16x12 side-on animals), and wandering that every viewer
 // sees the same way (positions come from the clock and a per-pet seed, so nothing needs to be synced).
 import { PETS } from '../shared/game.js';
-import { shade } from './draw';
+import { shade, OUT } from './draw';
 
 // a = coat colour (swapped for the owner's pick), b = a darker/accent tone, i = eye shine, e = eye, p = blush, n = nose.
 // o is the outline: a dark version of the coat, so pets read soft instead of harsh.
+// body: the char a sprite draws its coat in when it isn't 'a' (the hedgehog's spines are all 'b').
 // acc: where hats, bows and glasses go, as a shift from the 12x10 face they were drawn for (side-on heads sit to the right).
 // frames: other poses for parts that move (the elephant's trunk), same size as rows.
-type Sprite = { rows: string[]; pal: Record<string, string>; b?: number; acc?: [number, number]; frames?: Record<string, string[]> };
+type Sprite = { rows: string[]; pal: Record<string, string>; b?: number; acc?: [number, number]; body?: string; frames?: Record<string, string[]> };
 const EYES = { i: '#ffffff', e: '#3a2633', p: '#f7a0b0', n: '#e86a8a', m: '#c8606a' };
 const SPRITES: Record<string, Sprite> = {
   hamster: {
@@ -33,7 +34,7 @@ const SPRITES: Record<string, Sprite> = {
   hedgehog: {
     rows: ['................', '....o.o.o.o.....', '...obobobobo....', '..obbbbbbbbbo...', '.obbbbbbbbbbwoo.', 'obbbbbbbbbbwwwwo',
       'obbbbbbbbbbwwewo', 'obbbbbbbbbwwwpno', '.obbbbbbbbwwwwo.', '..oowwwwwwwwoo..', '...ow.ow..ow.ow.', '...oo.oo..oo.oo.'],
-    pal: { w: '#fff0dc' }, b: -0.2, acc: [4, 3],
+    pal: { w: '#fff0dc' }, b: -0.2, acc: [4, 3], body: 'b',
   },
   penguin: {
     rows: ['................', '.......oooo.....', '......oaaaao....', '.....oaaaeaao...', '.....oaaawwaayyo', '.....oaawwwwao..',
@@ -60,7 +61,7 @@ const SPRITES: Record<string, Sprite> = {
       '.....owwaaaawwo.', '....obaawwwwaabo', '....obbawwwwabbo', '.....obawwwwabo.', '......oooooooo..', '.......yy..yy...'],
     pal: { w: '#fff4e6', y: '#f2a03a' }, acc: [2, 1],
   },
-  panda: {
+  cow: {
     rows: ['................', '........kk...kk.', '.......okaaaaako', '.......oaaaaaaao', '.......oakiaakio', '.......oaapanapo',
       '..oooookkkaaaao.', '.oaaaaakkkaaaao.', '.oaaaaaakkaaaao.', '..oaaaaaaaaaao..', '..ok.ok..ok.ok..', '..kk.kk..kk.kk..'],
     pal: { k: '#3a3448' }, acc: [4, 1],
@@ -154,6 +155,16 @@ export function petCanvas(kind: string, coat = 0, frame?: string) {
     sp.rows.forEach((row, y) => {
       for (let x = 0; x < row.length; x++) if (row[x] !== '.') { g.fillStyle = pal[row[x]] ?? a; g.fillRect(x, y, 1, 1); }
     });
+    // A subtle shine: the lit top of every column of coat turns one shade brighter, so a pet looks glossy under
+    // the same top light as the furniture without losing its soft outline or its candy-bright accessories.
+    const body = sp.body ?? 'a';
+    g.fillStyle = shade(a, 0.25);
+    for (let x = 0; x < cv.width; x++) {
+      let y = 0;
+      while (y < sp.rows.length && sp.rows[y][x] === '.') y++;
+      if (sp.rows[y]?.[x] !== body) y++; // the top pixel is the outline: shine the coat just under it
+      if (sp.rows[y]?.[x] === body) g.fillRect(x, y, 1, 1);
+    }
     cache.set(key, cv);
   }
   return cv;
@@ -170,30 +181,74 @@ export function petIconURL(kind: string, coat = 0, acc?: string) {
   return cv.toDataURL();
 }
 
-// Accessories, drawn relative to the pet sprite's top-left (px, py).
+// Accessories, drawn relative to the pet sprite's top-left (px, py). Every piece is a stack of 1-px rects in a
+// candy palette (hot pink, gold, sky blue, red, violet) lit by a cream highlight, and each one is stamped with
+// the game's ink outline first, so a bow or a crown pops off a coat instead of melting into it.
+const PINK = '#ff5c9d', PINK_D = '#d8386f', PINK_L = '#ffb6d4';
+const GOLD = '#ffcc2e', GOLD_L = '#fff3b0', CREAM = '#fff6e4';
+const BLUE = '#3d9bff', BLUE_D = '#2a6fd0', BLUE_L = '#9fd0ff', RED = '#ff4d4d', RED_D = '#d62f3c', RED_L = '#ffa39a';
+const PURPLE = '#9b6bff', PURPLE_D = '#7247d6', PURPLE_L = '#c6adff';
+const BROWN = '#c08a4e', BROWN_D = '#8f6337', BROWN_L = '#e0b078', INK_HAT = '#332a3c';
 function drawAcc(c: CanvasRenderingContext2D, acc: string, px: number, py: number) {
-  const r = (x: number, y: number, w: number, h: number, col: string) => { c.fillStyle = col; c.fillRect(px + x, py + y, w, h); };
-  if (acc === 'bow') { r(8, -1, 2, 3, '#f48a8a'); r(11, -1, 2, 3, '#f48a8a'); r(10, 0, 1, 1, '#d9607a'); }
-  else if (acc === 'bell') { r(2, 8, 8, 1, '#f48a8a'); r(5, 9, 2, 1, '#ffd34d'); }
-  else if (acc === 'bandana') { r(2, 8, 8, 1, '#7fb2e8'); r(4, 9, 4, 1, '#7fb2e8'); r(5, 9, 1, 1, '#fffaf3'); }
-  else if (acc === 'flowers') ['#f48a8a', '#ffd27a', '#b89af0', '#8fd0a8', '#f4a6c8'].forEach((col, k) => r(1 + k * 2, 0 - (k % 2), 2, 2, col));
-  else if (acc === 'beanie') { r(2, -2, 8, 3, '#9db4ee'); r(2, 0, 8, 1, '#7a94d0'); r(5, -3, 2, 1, '#fffaf3'); }
-  else if (acc === 'glasses') { r(1, 5, 4, 2, '#f48a8a'); r(7, 5, 4, 2, '#f48a8a'); r(5, 5, 2, 1, '#d9607a'); r(2, 5, 1, 1, '#ffd0d8'); r(8, 5, 1, 1, '#ffd0d8'); }
-  else if (acc === 'partyHat') { r(5, -5, 2, 1, '#ffd34d'); r(5, -4, 2, 1, '#b89af0'); r(4, -3, 4, 1, '#f48a8a'); r(4, -2, 4, 1, '#b89af0'); r(3, -1, 6, 1, '#f48a8a'); }
-  else if (acc === 'scarf') { r(1, 8, 10, 2, '#e06a5a'); r(3, 8, 1, 2, '#fffaf3'); r(7, 8, 1, 2, '#fffaf3'); r(8, 9, 2, 3, '#e06a5a'); }
-  else if (acc === 'shades') { r(1, 4, 4, 2, '#2b2530'); r(7, 4, 4, 2, '#2b2530'); r(5, 4, 2, 1, '#2b2530'); r(2, 4, 1, 1, '#7a7090'); r(8, 4, 1, 1, '#7a7090'); }
-  else if (acc === 'cap') { r(2, -2, 8, 3, '#f48a8a'); r(8, 0, 4, 1, '#e06a5a'); r(5, -3, 2, 1, '#fffaf3'); }
-  else if (acc === 'topHat') { r(3, -5, 6, 5, '#2b2530'); r(2, -1, 8, 1, '#2b2530'); r(3, -2, 6, 1, '#f48a8a'); }
-  else if (acc === 'witchHat') { r(5, -6, 2, 2, '#5a3a7a'); r(4, -4, 4, 2, '#5a3a7a'); r(3, -2, 6, 1, '#5a3a7a'); r(1, -1, 10, 1, '#5a3a7a'); r(4, -3, 4, 1, '#ffd34d'); }
-  else if (acc === 'halo') { r(3, -4, 6, 1, '#ffd34d'); r(2, -3, 1, 1, '#ffd34d'); r(9, -3, 1, 1, '#ffd34d'); r(3, -2, 6, 1, '#fff3b0'); }
-  else if (acc === 'santaHat') { r(3, -3, 6, 3, '#e06a5a'); r(8, -4, 3, 2, '#e06a5a'); r(11, -4, 2, 2, '#fffaf3'); r(2, -1, 8, 2, '#fffaf3'); }
-  else if (acc === 'headphones') { r(2, -1, 8, 1, '#5a5070'); r(1, 0, 1, 4, '#5a5070'); r(10, 0, 1, 4, '#5a5070'); r(0, 3, 2, 3, '#f48a8a'); r(10, 3, 2, 3, '#f48a8a'); }
-  else if (acc === 'bunnyEars') { r(3, -6, 2, 6, '#fffaf3'); r(7, -6, 2, 6, '#fffaf3'); r(4, -5, 1, 4, '#f4a6c8'); r(8, -5, 1, 4, '#f4a6c8'); r(2, -1, 8, 1, '#f4a6c8'); }
-  else if (acc === 'starClip') { r(9, 0, 3, 1, '#ffd34d'); r(10, -1, 1, 3, '#ffd34d'); }
-  else if (acc === 'flower') { r(9, -1, 3, 3, '#f48a8a'); r(10, 0, 1, 1, '#ffd34d'); }
-  else if (acc === 'cape') { r(0, 6, 2, 4, '#e06a5a'); r(10, 6, 2, 4, '#e06a5a'); r(2, 8, 8, 1, '#ffd34d'); }
-  else if (acc === 'fedora') { r(3, -4, 6, 3, '#8a6a48'); r(5, -4, 2, 1, '#6a4a32'); r(3, -2, 6, 1, '#3a2633'); r(1, -1, 10, 1, '#6a4a32'); }
-  else if (acc === 'crown') { r(3, -1, 6, 2, '#ffd34d'); r(3, -2, 1, 1, '#ffd34d'); r(5, -3, 2, 2, '#ffd34d'); r(8, -2, 1, 1, '#ffd34d'); r(5, 0, 2, 1, '#f48a8a'); }
+  const rects: [number, number, number, number, string][] = [];
+  const r = (x: number, y: number, w: number, h: number, col: string) => rects.push([x, y, w, h, col]);
+  if (acc === 'bow') {
+    r(8, -1, 2, 3, PINK); r(11, -1, 2, 3, PINK); r(8, -1, 1, 1, PINK_L); r(12, -1, 1, 1, PINK_L); r(10, 0, 2, 1, PINK_D);
+  } else if (acc === 'bell') {
+    r(2, 8, 8, 1, PINK); r(5, 9, 2, 2, GOLD); r(5, 9, 1, 1, GOLD_L); r(6, 10, 1, 1, '#e0a000');
+  } else if (acc === 'bandana') {
+    r(2, 8, 8, 1, BLUE); r(2, 8, 3, 1, BLUE_L); r(4, 9, 4, 1, BLUE); r(4, 9, 1, 1, CREAM); r(7, 9, 1, 1, CREAM);
+  } else if (acc === 'flowers') {
+    ['#ff5c9d', '#ffcc2e', '#9b6bff', '#43d17a', '#ff8fc0'].forEach((col, k) => {
+      const y = -(k % 2);
+      r(1 + k * 2, y, 2, 2, col); r(1 + k * 2, y, 1, 1, CREAM);
+    });
+  } else if (acc === 'beanie') {
+    r(2, -2, 8, 3, BLUE); r(3, -2, 4, 1, BLUE_L); r(2, 0, 8, 1, BLUE_D); r(5, -3, 2, 2, CREAM);
+  } else if (acc === 'glasses') { // two little hearts joined at the bridge
+    const heart = (x: number, y: number) => { r(x, y, 1, 1, PINK); r(x + 3, y, 1, 1, PINK); r(x, y + 1, 4, 1, PINK); r(x + 1, y + 2, 2, 1, PINK); };
+    heart(1, 4); heart(7, 4); r(5, 4, 2, 1, PINK_D); r(1, 5, 1, 1, PINK_L); r(7, 5, 1, 1, PINK_L);
+  } else if (acc === 'partyHat') {
+    r(5, -6, 2, 1, GOLD); r(4, -5, 4, 1, PURPLE); r(4, -4, 4, 1, PINK); r(3, -3, 6, 1, GOLD); r(3, -2, 6, 1, PINK); r(2, -1, 8, 1, PURPLE);
+    r(4, -5, 1, 1, PURPLE_L); r(3, -3, 1, 1, GOLD_L);
+  } else if (acc === 'scarf') {
+    r(1, 8, 10, 2, RED); r(1, 8, 4, 1, RED_L); r(3, 8, 1, 2, CREAM); r(7, 8, 1, 2, CREAM); r(8, 9, 2, 3, RED); r(8, 11, 2, 1, CREAM);
+  } else if (acc === 'shades') {
+    r(1, 4, 4, 2, INK_HAT); r(7, 4, 4, 2, INK_HAT); r(5, 4, 2, 1, INK_HAT); r(2, 4, 1, 1, BLUE_L); r(8, 4, 1, 1, BLUE_L); r(2, 5, 1, 1, BLUE); r(8, 5, 1, 1, BLUE);
+  } else if (acc === 'cap') {
+    r(2, -2, 8, 3, RED); r(3, -2, 4, 1, RED_L); r(5, -3, 2, 1, CREAM); r(8, 0, 4, 1, RED_D);
+  } else if (acc === 'topHat') {
+    r(3, -5, 6, 5, INK_HAT); r(3, -5, 1, 3, '#4c4260'); r(2, -1, 8, 1, INK_HAT); r(3, -2, 6, 1, PINK); r(7, -2, 1, 1, PINK_L);
+  } else if (acc === 'witchHat') {
+    r(5, -6, 2, 2, PURPLE); r(4, -4, 4, 2, PURPLE); r(3, -2, 6, 1, PURPLE); r(1, -1, 10, 1, PURPLE_D); r(4, -3, 4, 1, GOLD); r(5, -6, 1, 1, PURPLE_L);
+  } else if (acc === 'halo') {
+    r(3, -4, 6, 1, GOLD); r(2, -3, 1, 1, GOLD); r(9, -3, 1, 1, GOLD); r(3, -2, 6, 1, GOLD_L); r(5, -4, 2, 1, '#fffbe0');
+  } else if (acc === 'santaHat') {
+    r(3, -3, 6, 3, RED); r(3, -3, 2, 1, RED_L); r(8, -4, 3, 2, RED); r(10, -4, 2, 2, CREAM); r(2, -1, 8, 2, CREAM);
+  } else if (acc === 'headphones') {
+    r(2, -1, 8, 1, '#6f5fa8'); r(1, 0, 1, 4, '#6f5fa8'); r(10, 0, 1, 4, '#6f5fa8'); r(0, 3, 2, 3, PINK); r(10, 3, 2, 3, PINK); r(0, 3, 1, 1, PINK_L); r(11, 3, 1, 1, PINK_L);
+  } else if (acc === 'bunnyEars') {
+    r(3, -6, 2, 6, CREAM); r(7, -6, 2, 6, CREAM); r(3, -6, 1, 2, '#ffffff'); r(4, -5, 1, 4, PINK_L); r(8, -5, 1, 4, PINK_L); r(2, -1, 8, 1, PINK_L);
+  } else if (acc === 'starClip') {
+    r(9, 0, 3, 1, GOLD); r(10, -1, 1, 3, GOLD); r(10, 0, 1, 1, GOLD_L);
+  } else if (acc === 'flower') {
+    r(9, -1, 3, 3, PINK); r(9, -1, 1, 1, PINK_L); r(10, 0, 1, 1, GOLD);
+  } else if (acc === 'cape') {
+    r(0, 6, 2, 4, RED); r(10, 6, 2, 4, RED); r(0, 6, 1, 1, RED_L); r(11, 6, 1, 1, RED_L); r(2, 8, 8, 1, GOLD);
+  } else if (acc === 'fedora') {
+    r(3, -4, 6, 3, BROWN); r(3, -4, 1, 2, BROWN_L); r(5, -4, 2, 1, BROWN_D); r(3, -2, 6, 1, '#4a3626'); r(1, -1, 10, 1, BROWN_D); r(7, -2, 1, 1, GOLD);
+  } else if (acc === 'crown') {
+    r(3, -1, 6, 2, GOLD); r(3, -2, 1, 1, GOLD); r(5, -3, 2, 2, GOLD); r(8, -2, 1, 1, GOLD);
+    r(3, -1, 1, 1, GOLD_L); r(4, -1, 1, 1, PINK); r(7, -1, 1, 1, BLUE); r(5, 0, 2, 1, PINK_D);
+  }
+  // Ink first: each rect spills one pixel past its edges, and the fills that follow cover the ink inside the
+  // shapes, so the accessory ends up wearing a clean one-pixel border all the way around.
+  c.fillStyle = OUT;
+  for (const [x, y, w, h] of rects) {
+    c.fillRect(px + x - 1, py + y, w + 2, h);
+    c.fillRect(px + x, py + y - 1, w, h + 2);
+  }
+  for (const [x, y, w, h, col] of rects) { c.fillStyle = col; c.fillRect(px + x, py + y, w, h); }
 }
 
 const hash = (a: number, b: number) => {

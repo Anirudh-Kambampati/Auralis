@@ -202,6 +202,14 @@
         <div class="end"><button type="button" class="off" id="announcementCancel">Cancel</button><button>Post announcement</button></div>
       </form>
     </dialog>
+    <dialog id="tour" class="modal tour" aria-labelledby="tourTitle">
+      <div class="tour-head">
+        <h2 id="tourTitle"><img data-icon="guide" alt="" /> A quick look around</h2>
+        <button type="button" id="tourClose" aria-label="Close the tour">✕</button>
+      </div>
+      <p class="tour-lede">These are the things the catalog cannot explain. Every one is already yours, and every step is listed below.</p>
+      <div id="tourBody"></div>
+    </dialog>
     <div id="toast" hidden></div>
     <!-- What the toast just said, for screen readers: the toast itself is hidden and shown again to animate. -->
     <p id="announce" class="sr-only" role="status" aria-live="polite"></p>

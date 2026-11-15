@@ -1,7 +1,7 @@
 // All art is original pixel art drawn in code. Coordinates are art pixels; one tile is 16x16.
 import { canRotate, skyProgress, skyColor, tintAlpha, moonPhase, nightBrightness, weatherIntensity } from '../shared/game.js';
 export const T = 16;
-const OUT = '#3a2633';
+export const OUT = '#3a2633';
 
 type Ctx = CanvasRenderingContext2D;
 export type Look = { skin: string; hair: string; shirt: string; style?: string; face?: string; outfit?: string; body?: string; accs?: string[]; size?: string; color?: Record<string, string> };

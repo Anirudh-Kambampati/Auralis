@@ -125,3 +125,11 @@ export const GUIDE_TIPS = {
   craftTable: 'The craft table is shared: click it to make one random piece, free, then wait twenty minutes before using it again.',
   sewingTable: 'The sewing table is shared: click it to make one random plush, free, then wait twenty minutes before using it again.',
 };
+
+// The tour is the Guide's own words, shown at the moment they matter: one step per thing the player actually
+// owns that has a line worth reading. Built from `GUIDE_TIPS`, so the set is known up front and every step can
+// be listed at once rather than doled out one toast at a time.
+export const tourSteps = (owned = {}) => Object.keys(GUIDE_TIPS).filter((id) => owned[id]).map((id) => ({ item: id, text: GUIDE_TIPS[id] }));
+
+// The steps this player has not been shown yet: everything the tour would open with on the next state.
+export const unseenTips = (owned = {}, seen = []) => tourSteps(owned).filter((s) => !seen.includes(s.item));

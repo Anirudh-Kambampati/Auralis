@@ -5,7 +5,7 @@ import {
   docName, attachLabel, DOC_TYPES, usernameProblem, emailProblem, passwordProblem, LIGHTS, DRINKS, caffeineMinutes,
   CLAW_COST, readyKey, pieceReadyAt, CRAFT, craftedPrice,
 } from '../shared/game.js';
-import { GUIDE_SECTIONS, GUIDE_TIPS } from '../shared/guide.js';
+import { GUIDE_SECTIONS, GUIDE_START, tourSteps, unseenTips } from '../shared/guide.js';
 import {
   T, OVERHANG, SURFACE, AVATAR_H, avatarScale, lookKey, drawSeated, drawActing, drawSeam, drawFloor, drawWall, drawWallFace, drawWallTop, drawDoor, drawWindow, drawPainting, drawFurniture, drawAvatar, drawDeskLamp, drawGlow, drawUsing, drawFlames, drawClaw, skyNow, weatherNow, skyProgress, nightTint,
   coinURL, uiIconURL, AV, drawPaper, isDark, paintBlockText, drawWindow as drawWin, drawDroplet, drawHeart, tileURL, ACC_COL, ACC_COLORS, ACC_TINT, type Look,
@@ -192,13 +192,10 @@ function onMessage(m: any) {
       for (const n of notes) toast(`📝 Note from <b>${esc(n.from)}</b>: ${esc(n.text)}`, 'reward');
       send({ t: 'notes_read' });
     }
-    // Something I own has something to teach, and I have not been taught it yet.
-    const seen = (me.tipsSeen ??= []);
-    for (const id of Object.keys(GUIDE_TIPS)) {
-      if (!me.inventory[id] || seen.includes(id)) continue;
-      nudge(GUIDE_TIPS[id as keyof typeof GUIDE_TIPS]);
-      seen.push(id); // mark it here too: a broadcast can land before the server's answer does
-      send({ t: 'tip_seen', id });
+    // Something I own has something to teach and I have not been shown it yet: that is the tour's cue.
+    if (!tourRows.length) {
+      const fresh = unseenTips(myThings(), seenTips());
+      if (fresh.length) openTour(fresh.map((s) => ({ item: s.item, text: s.text })));
     }
     syncWatch(m.house.watch ?? null, myId, send);
     noteNewDms();
@@ -1724,21 +1721,93 @@ function toast(html: string, kind = '', opts: { ms?: number; onClick?: () => voi
   toastTimer = window.setTimeout(() => (el.hidden = true), opts.ms ?? 3200);
 }
 
-// Nudges are rare, but several can arrive at once — a returning player who has had nothing new for a
-// while can own a shelf's worth of them. One toast would overwrite the next, so they queue up instead.
-let nudgeQueue: string[] = [];
-let nudgeBusy = false;
-function nudgeNext() {
-  const next = nudgeQueue.shift();
-  if (next === undefined) { nudgeBusy = false; return; }
-  nudgeBusy = true;
-  toast(next);
-  setTimeout(nudgeNext, 3600); // the toast's own 3.2s, plus a breath between them
+// The tour replaces the old per-item toasts: one toast per thing was two or three lines and then silence. A tour
+// lists every step at once, so the player can see how much there is and pick where to start. Each step is a thing
+// they actually own, and opening the tour is what marks those things as seen — so it never asks twice.
+type TourRow = { item?: string; title?: string; text: string; html?: boolean };
+let tourRows: TourRow[] = [];
+let tourAt = 0;
+
+// What I have been shown this session. A state message can land after the tour has marked its steps but before
+// the server has stored them, and it would carry the old `tipsSeen` — so the session's own set is merged in.
+const shownHere = new Set<string>();
+const seenTips = () => [...new Set([...(me.tipsSeen ?? []), ...shownHere])];
+
+const markTipSeen = (id: string) => {
+  shownHere.add(id);
+  const seen = (me.tipsSeen ??= []);
+  if (seen.includes(id)) return;
+  seen.push(id); // mark it here too: a broadcast can land before the server's answer does
+  send({ t: 'tip_seen', id });
+};
+
+// What I have: in storage, or already out in one of my rooms. Placing a piece takes it out of the inventory, so
+// counting storage alone would miss the very things the tour exists to explain.
+function myThings(): Record<string, number> {
+  const owned: Record<string, number> = { ...(me.inventory ?? {}) };
+  for (const r of myMember()?.rooms ?? []) for (const f of r.furniture) owned[f.item] = (owned[f.item] ?? 0) + 1;
+  return owned;
 }
-function nudge(html: string) {
-  nudgeQueue.push(html);
-  if (!nudgeBusy) nudgeNext();
+
+function openTour(rows: TourRow[]) {
+  if (!rows.length) return;
+  const d = $<HTMLDialogElement>('#tour');
+  if (d?.open) return; // one at a time: finishTour picks up anything that turned up meanwhile
+  tourRows = rows;
+  tourAt = 0;
+  for (const r of rows) if (r.item) markTipSeen(r.item);
+  renderTour();
+  if (d && !d.open) d.showModal();
 }
+
+function closeTour() {
+  const d = $<HTMLDialogElement>('#tour');
+  if (d?.open) d.close(); // the dialog's own close event picks up the pieces
+}
+
+// After a tour ends, anything that turned up while it was open gets its own short tour.
+function finishTour() {
+  tourRows = [];
+  const fresh = unseenTips(myThings(), seenTips());
+  if (fresh.length) setTimeout(() => openTour(fresh.map((s) => ({ item: s.item, text: s.text }))), 0);
+}
+
+// A row with no item needs a title of its own: the first words of its sentence, cut at a word.
+function shortTitle(text: string, i: number) {
+  const plain = text.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
+  if (!plain) return `Step ${i + 1}`;
+  return plain.length > 46 ? `${plain.slice(0, 46).replace(/\s+\S*$/, '')}…` : plain;
+}
+
+function renderTour() {
+  const body = $<HTMLDivElement>('#tourBody');
+  if (!body || !tourRows.length) return;
+  const at = Math.max(0, Math.min(tourAt, tourRows.length - 1));
+  const name = (r: TourRow, i: number) => r.title ?? (r.item ? ITEMS[r.item as ItemKey]?.name ?? r.item : shortTitle(r.text, i));
+  body.innerHTML = `<ol class="tour-list">${tourRows.map((r, i) => `<li class="${i === at ? 'on' : ''}${i < at ? ' past' : ''}">
+      <button type="button" data-tour="${i}"${i === at ? ' aria-current="step"' : ''}>
+        ${r.item ? icon(r.item) : '<b class="tour-n">i</b>'}
+        <span class="tour-line"><b>${esc(name(r, i))}</b>${i === at ? `<em>${r.html ? r.text : esc(r.text)}</em>` : ''}</span>
+      </button></li>`).join('')}</ol>
+    <div class="tour-foot">
+      <span class="tour-count">${at + 1} / ${tourRows.length}</span>
+      <button type="button" class="off" data-tour="prev"${at === 0 ? ' disabled' : ''}>‹ Back</button>
+      ${at < tourRows.length - 1 ? '<button type="button" data-tour="next">Next ›</button>' : '<button type="button" data-tour="done">Got it</button>'}
+    </div>`;
+}
+
+$('#tourBody').addEventListener('click', (e) => {
+  const b = (e.target as HTMLElement).closest<HTMLElement>('[data-tour]');
+  if (!b) return;
+  const v = b.dataset.tour!;
+  if (v === 'next') tourAt = Math.min(tourAt + 1, tourRows.length - 1);
+  else if (v === 'prev') tourAt = Math.max(tourAt - 1, 0);
+  else if (v === 'done') return closeTour();
+  else tourAt = Number(v);
+  renderTour();
+});
+$('#tourClose').addEventListener('click', closeTour);
+$('#tour').addEventListener('close', finishTour); // Esc, or the browser closing it for us
 
 function copyCode(code = houseCode) {
   const shown = () => toast(`The house code is <b>${code}</b>`);
@@ -2053,7 +2122,8 @@ function guideBody() {
         ${rows.length ? `<ul class="guide-items">${rows.map((r) => `<li>${icon(r.item)}<div><b>${esc(ITEMS[r.item as ItemKey].name)}</b><p>${esc(r.text)}</p></div></li>`).join('')}</ul>` : ''}
       </div>` : ''}
     </div>`;
-  }).join('')}</div>`;
+  }).join('')}</div>
+    <div class="guide-foot"><button type="button" data-act="tour">Take the tour again</button></div>`;
 }
 
 function panelBody(mine: Member) {
@@ -2388,6 +2458,11 @@ panel.addEventListener('click', (e) => {
       guideOpen = guideOpen === v ? null : v;
       renderPanel();
       break;
+    case 'tour': { // the tour is the same words at the moment they matter, and this is where to ask for them again
+      const mine = tourSteps(myThings());
+      openTour(mine.length ? mine.map((s) => ({ item: s.item, text: s.text })) : GUIDE_START.map((text) => ({ text, html: true })));
+      break;
+    }
     case 'petrelease': // two taps: a pet can't be brought back
       if (!b.classList.contains('armed')) {
         b.classList.add('armed');
@@ -2590,12 +2665,17 @@ function calendarBody() {
       <input id="calTime" type="time" aria-label="Time (optional)"><button data-act="caladd">Add</button></div>`;
 }
 
-// ---------- first visit: open the Guide on its first card ----------
+// ---------- first visit: the tour, with the Guide's first card waiting behind it ----------
 function welcome() {
   if (localStorage.getItem('auralis.tour')) return;
   localStorage.setItem('auralis.tour', 'done');
   guideOpen = 'start';
   setPanel('guide');
+  // The item tour may have opened during the same second: it has already spoken, so the five welcome steps
+  // wait for the button instead of talking over it.
+  if (shownHere.size || tourRows.length) return;
+  // A new player owns nothing worth a tip yet, so they get the five welcome steps instead.
+  openTour(GUIDE_START.map((text) => ({ text, html: true })));
 }
 
 const requestBoard = () => send({ t: 'leaderboard', scope: boardScope, period: boardPeriod });

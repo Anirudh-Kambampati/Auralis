@@ -45,13 +45,13 @@ client                         server                                    house m
 - `members[]` holds each housemate's public data: name, look, room, focus, pets, online, position. It never includes tokens or hashes.
 - `me` is private and only goes to its owner. That includes `crafted`, `ready` and `tipsSeen`: what you made by hand, which waits are yours, and which Guide nudges you have had. A wait never rides in `publicPlayer`, because it belongs to a person rather than to a piece.
 
-## The Guide's nudges
+## The Guide's tour
 
-The Guide's words live in `shared/guide.js`, which both sides import. `GUIDE_SECTIONS` is the panel's content, `GUIDE_TIPS` is one line per item that deserves a nudge, and `GUIDE_START` is the opening card.
+The Guide's words live in `shared/guide.js`, which both sides import. `GUIDE_SECTIONS` is the panel's content, `GUIDE_TIPS` is one line per item worth a step, `GUIDE_START` is the opening card, and `tourSteps` / `unseenTips` build the tour from what a player actually owns.
 
-When a `state` message arrives and the client sees an item it owns that is in `GUIDE_TIPS` but not in `me.tipsSeen`, it toasts the line once and sends `tip_seen`. The server adds the id to `tipsSeen` and saves. `tip_seen` saves without broadcasting, the same as `inbox_read`, so the client marks the tip as seen locally too — otherwise a broadcast arriving before the next `state` would show it twice.
+When a `state` message arrives and the client sees an item it owns that is in `GUIDE_TIPS` but not in `me.tipsSeen`, it opens the tour on those steps and sends `tip_seen` for each of them. The server adds the id to `tipsSeen` and saves. `tip_seen` saves without broadcasting, the same as `inbox_read`, so the client marks the tip as seen locally too — otherwise a broadcast arriving before the next `state` would open it twice.
 
-There is one toast element, so a second toast replaces the first. Nudges go through a small queue (`nudge()`) that shows them one at a time, because a player who has owned several of these things since before the Guide existed gets them all in a single `state`.
+The tour replaces the per-item toasts, which had the failure this one is built to avoid: each toast marked its tip as seen before it was shown, so a player who owned ten of these things saw two and lost the other eight. Opening the tour is what consumes the tips, and it lists all of them at once, so nothing is ever marked seen without being on screen.
 
 ## Room snapshots (Object Storage)
 
