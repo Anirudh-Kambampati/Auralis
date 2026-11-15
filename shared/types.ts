@@ -356,6 +356,8 @@ export interface ClientMessages {
   // Drinks
   brew: { t: 'brew'; owner: string; r: number; index: number };
   claw: { t: 'claw'; owner: string; r: number; index: number };
+  craft: { t: 'craft'; owner: string; r: number; index: number; keep: boolean; to?: string };
+  gift_crafted: { t: 'gift_crafted'; index: number; to: string };
 }
 
 // Server-to-client message types
@@ -375,6 +377,8 @@ export interface ServerMessages {
   todo_completed: { t: 'todo_completed'; by: string; text: string; id: number };
   // Chat
   chat: Chat;
+  // A handmade piece was made, or arrived from a housemate.
+  crafted: { t: 'crafted'; piece: { item: string; col: string }; from?: string; to?: string };
   dm: Chat;
   gmsg: Chat;
   history: { t: 'history'; k: 'h' | 'd' | 'g'; id: string | null; msgs: Chat[] };

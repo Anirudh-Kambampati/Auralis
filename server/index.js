@@ -328,7 +328,7 @@ function handle(p, m) {
   if (['place', 'move', 'pickup', 'room', 'flip', 'restyle', 'shape', 'expand', 'curtains', 'turn'].includes(m.t) && !room) return;
   // Furniture is addressed by position. Anything but a real integer fetches a built-in
   // (`furniture['toString']`) or nothing, so those messages only run for real indices.
-  if (['move', 'pickup', 'turn', 'flip', 'restyle', 'shape', 'light', 'paint', 'water', 'brew', 'claw'].includes(m.t) && !Number.isInteger(m.index)) return;
+  if (['move', 'pickup', 'turn', 'flip', 'restyle', 'shape', 'light', 'paint', 'water', 'brew', 'claw', 'craft'].includes(m.t) && !Number.isInteger(m.index)) return;
   if (m.t === 'water' && !Number.isInteger(m.r)) return;
   switch (m.t) {
     case 'look': {
@@ -770,6 +770,44 @@ function handle(p, m) {
       save();
       send(sockets.get(owner.id), { t: 'reward', text: `🕹️ The claw dropped a ${ITEMS[prize.item].name}! It's in your Storage.` });
       broadcastHouse(p.house);
+      break;
+    }
+    case 'craft': {
+      const owner = db.houses[p.house].members.includes(m.owner) ? db.players[m.owner] : null;
+      const f = owner?.rooms?.[m.r ?? 0]?.furniture?.[m.index];
+      if (!owner || !f || !has(CRAFT, f.item)) return;
+      const now = Date.now();
+      if (clawReadyAt(f, now)) return send(sockets.get(owner.id), { t: 'error', text: 'That is still being set up. Try again in a few minutes.' });
+      const pool = CRAFT[f.item];
+      const item = pool[Math.floor(Math.random() * pool.length)];
+      const piece = { item, col: craftColour(item) };
+      f.state = { ...(f.state ?? {}), readyAt: now + CRAFT_COOLDOWN_MS };
+      const to = !m.keep && db.houses[p.house].members.includes(m.to) ? db.players[m.to] : null;
+      if (to && to.id !== owner.id) {
+        to.crafted = [...(to.crafted ?? []), piece];
+        inbox(to, 'gift', owner, `made you a ${ITEMS[item].name.toLowerCase()}`);
+        send(sockets.get(to.id), { t: 'crafted', piece, from: owner.name });
+        save();
+        send(sockets.get(owner.id), { t: 'crafted', piece, to: to.id });
+      } else {
+        owner.crafted = [...(owner.crafted ?? []), piece];
+        save();
+        send(sockets.get(owner.id), { t: 'crafted', piece });
+      }
+      broadcastHouse(p.house);
+      break;
+    }
+    case 'gift_crafted': { // hand a piece you already made to a housemate
+      const list = p.crafted ?? [];
+      const piece = Number.isInteger(m.index) ? list[m.index] : null;
+      const to = db.houses[p.house].members.includes(m.to) ? db.players[m.to] : null;
+      if (!piece || !to || to.id === p.id) return;
+      p.crafted = [...list.slice(0, m.index), ...list.slice(m.index + 1)];
+      to.crafted = [...(to.crafted ?? []), piece];
+      inbox(to, 'gift', p, `made you a ${ITEMS[piece.item].name.toLowerCase()}`);
+      send(sockets.get(to.id), { t: 'crafted', piece, from: p.name });
+      save();
+      send(sockets.get(p.id), { t: 'crafted', piece, to: to.id });
       break;
     }
     case 'room': {
