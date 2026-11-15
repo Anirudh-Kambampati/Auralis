@@ -5,7 +5,7 @@ import {
   docName, attachLabel, DOC_TYPES, usernameProblem, emailProblem, passwordProblem, LIGHTS, DRINKS, caffeineMinutes,
   CLAW_COST, readyKey, pieceReadyAt, CRAFT, craftedPrice,
 } from '../shared/game.js';
-import { GUIDE_SECTIONS, GUIDE_START, tourSteps, unseenTips } from '../shared/guide.js';
+import { GUIDE_SECTIONS, GUIDE_START, GUIDE_TIPS, tourSteps, unseenTips } from '../shared/guide.js';
 import {
   T, OVERHANG, SURFACE, AVATAR_H, avatarScale, lookKey, drawSeated, drawActing, drawSeam, drawFloor, drawWall, drawWallFace, drawWallTop, drawDoor, drawWindow, drawPainting, drawFurniture, drawAvatar, drawDeskLamp, drawGlow, drawUsing, drawFlames, drawClaw, skyNow, weatherNow, skyProgress, nightTint,
   coinURL, uiIconURL, AV, drawPaper, isDark, paintBlockText, drawWindow as drawWin, drawDroplet, drawHeart, tileURL, ACC_COL, ACC_COLORS, ACC_TINT, type Look,
@@ -1734,7 +1734,7 @@ type TourRow = { item?: string; title?: string; text: string; html?: boolean };
 let tourRows: TourRow[] = [];
 let tourAt = 0;
 
-// Unseen object types in the current house, shown once per item (remembered per user across houses).
+// Unseen object types with special features/actions in the current house, shown once per item (remembered per user across houses).
 function maybeShowHouseItemsTour() {
   const rows: TourRow[] = [];
   const seen = new Set(seenTips());
@@ -1743,7 +1743,7 @@ function maybeShowHouseItemsTour() {
     for (let ri = 0; ri < m.rooms.length; ri++) {
       const where = m.rooms.length > 1 ? `${who} room ${ri + 1}` : `${who} room`;
       for (const f of m.rooms[ri].furniture) {
-        if (!ITEMS[f.item as ItemKey] || seen.has(f.item)) continue;
+        if (!ITEMS[f.item as ItemKey] || !(f.item in GUIDE_TIPS) || seen.has(f.item)) continue;
         seen.add(f.item);
         rows.push({ item: f.item, title: ITEMS[f.item as ItemKey].name, text: where });
       }
