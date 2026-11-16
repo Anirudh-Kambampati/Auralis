@@ -289,17 +289,26 @@ export function petPos(seed: number, now: number, areas: Area[], home = 0, near:
     return toys.length && hash(seed + 0.5, n) < 0.45 ? toys[Math.floor(hash(seed + 0.25, n) * toys.length)] : spots[Math.floor(hash(seed, n) * spots.length)];
   };
   const a = target(k), b = target(k + 1);
-  if (roomAt(k) !== roomAt(k + 1)) {
-    // Off to another room: follow the floor through the opening, taking the whole period.
-    const path = route?.(a, b);
-    if (!path || path.length < 2) return { x: a.x, y: a.y, moving: false, left: false, act: undefined }; // no way through: wait
-    const e = f * f * (3 - 2 * f), t = e * (path.length - 1), i = Math.min(path.length - 2, Math.floor(t)), p = path[i], q = path[i + 1];
-    return { x: p.x + (q.x - p.x) * (t - i), y: p.y + (q.y - p.y) * (t - i), moving: f < 1, left: q.x < p.x, act: undefined };
+  const movingRooms = roomAt(k) !== roomAt(k + 1);
+  if ((movingRooms || a.x !== b.x || a.y !== b.y) && route) {
+    const path = route(a, b);
+    if (path && path.length >= 2) {
+      const dur = movingRooms ? 1 : 0.45;
+      const m = movingRooms ? f : Math.min(1, f / dur);
+      const e = m * m * (3 - 2 * m);
+      if (!movingRooms && m === 1 && b.act === 'chase') {
+        const w = now / 350, r = Math.sin((Math.PI * (f - 0.45)) / 0.55);
+        return { x: b.x + Math.sin(w) * 0.6 * r, y: b.y + Math.cos(w) * 0.3 * r, moving: true, left: Math.cos(w) < 0, act: b.act };
+      }
+      const t = e * (path.length - 1), i = Math.min(path.length - 2, Math.floor(t)), p = path[i], q = path[i + 1];
+      const left = q.x < p.x || (q.x === p.x && b.x < a.x);
+      return { x: p.x + (q.x - p.x) * (t - i), y: p.y + (q.y - p.y) * (t - i), moving: movingRooms ? f < 1 : m < 1, left, act: !movingRooms && m === 1 ? b.act : undefined };
+    }
+    if (movingRooms) return { x: a.x, y: a.y, moving: false, left: b.x < a.x, act: undefined }; // no way through: wait
   }
   const m = Math.min(1, f / 0.45);
   const e = m * m * (3 - 2 * m);
   if (m === 1 && b.act === 'chase') {
-    // Running rings around the ball, widening from it and closing back in before the next trot (no jump either end).
     const w = now / 350, r = Math.sin((Math.PI * (f - 0.45)) / 0.55);
     return { x: b.x + Math.sin(w) * 0.6 * r, y: b.y + Math.cos(w) * 0.3 * r, moving: true, left: Math.cos(w) < 0, act: b.act };
   }

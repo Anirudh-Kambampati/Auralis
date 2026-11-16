@@ -454,15 +454,21 @@ function onMessage(m: any) {
 // New chat lines pop up as speech bubbles over the speaker for a few seconds.
 function receiveChat(list: Chat[]) {
   const first = lastChatId < 0;
+  const thread = threadKey(null);
+  const muted = isMuted(thread);
   for (const c of list) {
     if (c.id <= lastChatId) continue;
     if (!first) {
       bubbles.set(c.from, { text: c.img ? `${attachLabel(c.img)} ${c.text}`.trim() : c.text, until: Date.now() + 6000 });
       if (c.from !== myId) {
-        if (chatHidden()) pingOrHold();
-        countUnseen();
-        if (!viewing(null)) { houseUnread++; unread = true; sysNotify('house', `${c.by} · house chat`, c.img ? attachLabel(c.img) : c.text); }
-        noteUnreadChat();
+        if (!muted) {
+          if (chatHidden()) pingOrHold();
+          countUnseen();
+          if (!viewing(null)) { houseUnread++; unread = true; sysNotify('house', `${c.by} · house chat`, c.img ? attachLabel(c.img) : c.text); }
+          noteUnreadChat();
+        } else if (!viewing(null)) {
+          houseUnread++; unread = true; noteUnreadChat(); // silent: show unread badge but no sound/notification
+        }
       }
     }
   }
@@ -2979,14 +2985,15 @@ function noteNewDms() {
     const fresh = list.filter((c) => c.id > seen && c.from !== myId).length;
     // Unread unless that thread is open on screen right now.
     const onScreen = viewing(peer);
-    if (dmReady) countUnseen(fresh);
-    if (dmReady && fresh && !onScreen) {
-      pingOrHold();
-      const g = groupOf(peer), name = g?.name ?? person(peer)?.name ?? 'New message';
-      sysNotify('dm', name, `${g ? `${last.by}: ` : ''}${last.img ? attachLabel(last.img) : last.text}`);
-      dmUnread[peer] = (dmUnread[peer] ?? 0) + fresh;
-      unread = true;
-      noteUnreadChat();
+    if (dmReady) {
+      const muted = isMuted(threadKey(peer));
+      if (!muted) countUnseen(fresh);
+      if (fresh && !onScreen) {
+        if (!muted) { pingOrHold(); const g = groupOf(peer), name = g?.name ?? person(peer)?.name ?? 'New message'; sysNotify('dm', name, `${g ? `${last.by}: ` : ''}${last.img ? attachLabel(last.img) : last.text}`); }
+        dmUnread[peer] = (dmUnread[peer] ?? 0) + fresh;
+        unread = true;
+        noteUnreadChat();
+      }
     }
   }
   dmReady = true;
@@ -3012,17 +3019,14 @@ function muteThread(thread: string, until: number) {
 // Apply chat theme color
 function applyThreadTheme(thread: string) {
   const color = threadThemes.get(thread);
-  const log = $('#chatLog');
-  const input = $('#chatInput');
-  const form = $('#chatForm');
-  if (color) {
-    log.style.setProperty('--thread-accent', color);
-    input.style.setProperty('--thread-accent', color);
-    form.style.setProperty('--thread-accent', color);
-  } else {
-    log.style.removeProperty('--thread-accent');
-    input.style.removeProperty('--thread-accent');
-    form.style.removeProperty('--thread-accent');
+  const log = document.getElementById('chatLog') as HTMLElement | null;
+  const input = document.getElementById('chatInput') as HTMLElement | null;
+  const form = document.getElementById('chatForm') as HTMLElement | null;
+  const accent = color || '';
+  for (const el of [log, input, form]) {
+    if (!el) continue;
+    if (accent) { el.style.setProperty('--thread-accent', accent); el.style.setProperty('--theme', accent); }
+    else { el.style.removeProperty('--thread-accent'); el.style.removeProperty('--theme'); }
   }
 }
 
@@ -3100,15 +3104,17 @@ function activeTypingHTML(thread: string): string {
 
 // Search in thread
 function openSearch() {
-  const bar = $('#chatSearch');
-  if (bar) { bar.hidden = false; $<HTMLInputElement>('#searchInput').focus(); return; }
-  // Create search bar if not exists
-  const html = `<div id="chatSearch" class="chat-search"><input id="searchInput" type="text" placeholder="Search messages…" aria-label="Search in thread"><span id="searchCount"></span><button id="searchPrev" title="Previous match" aria-label="Previous match">↑</button><button id="searchNext" title="Next match" aria-label="Next match">↓</button><button id="searchClose" aria-label="Close search">✕</button></div>`;
-  $('#chatLog').insertAdjacentHTML('beforebegin', html);
-  $<HTMLInputElement>('#searchInput').addEventListener('input', (e) => doSearch((e.target as HTMLInputElement).value));
-  $('#searchPrev').addEventListener('click', () => navigateSearch(-1));
-  $('#searchNext').addEventListener('click', () => navigateSearch(1));
-  $('#searchClose').addEventListener('click', closeSearch);
+  let bar = document.getElementById('chatSearch');
+  if (!bar) {
+    const html = `<div id="chatSearch" class="chat-search"><input id="searchInput" type="text" placeholder="Search messages…" aria-label="Search in thread"><span id="searchCount"></span><button type="button" id="searchPrev" title="Previous match" aria-label="Previous match">↑</button><button type="button" id="searchNext" title="Next match" aria-label="Next match">↓</button><button type="button" id="searchClose" aria-label="Close search">✕</button></div>`;
+    $('#chatLog').insertAdjacentHTML('beforebegin', html);
+    bar = document.getElementById('chatSearch')!;
+    $<HTMLInputElement>('#searchInput').addEventListener('input', (e) => doSearch((e.target as HTMLInputElement).value));
+    $('#searchPrev').addEventListener('click', () => navigateSearch(-1));
+    $('#searchNext').addEventListener('click', () => navigateSearch(1));
+    $('#searchClose').addEventListener('click', closeSearch);
+  }
+  bar.hidden = false;
   $<HTMLInputElement>('#searchInput').focus();
 }
 
