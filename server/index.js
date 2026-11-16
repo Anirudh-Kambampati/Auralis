@@ -129,10 +129,65 @@ function push(p, body, kind) {
 const sockets = new Map(); // playerId -> ws
 const positions = new Map(); // playerId -> { x, y }
 const lastChat = new Map(); // playerId -> ms, simple flood guard
-// house code -> the video it is watching together: { src, by, byName, playing, pos, at }. Not saved: a restart ends it.
+// house code -> the video the house is watching together: { src, by, byName, playing, pos, at }. Not saved: a restart ends it.
 const watches = new Map();
+// Private watch parties between two users (can be in different houses). key = pairKey(a,b) -> { src, by, byName, playing, pos, at }
+const dmWatches = new Map();
+// Group watch parties. key = group id -> { src, by, byName, playing, pos, at }
+const groupWatches = new Map();
+const houseDmWatch = (p) => {
+  for (const [key, w] of dmWatches) if (key.split('|').includes(p.id)) return [key, w];
+  return null;
+};
+const houseGroupWatch = (p) => {
+  for (const gid of Object.keys(p.groups ?? {})) { const w = groupWatches.get(gid); if (w) return [gid, w]; }
+  return null;
+};
+const dmWatchPayload = (key, w, meId) => {
+  const [a, b] = key.split('|');
+  const other = meId === a ? b : a;
+  return { ...w, now: Date.now(), scope: 'dm', with: other, withName: db.players[other]?.name ?? null };
+};
+const groupWatchPayload = (gid, w) => ({ ...w, now: Date.now(), scope: 'group', g: gid, groupName: db.players[w.by]?.groups?.[gid]?.name ?? w.groupName ?? null });
+const endDmWatch = (key, byId) => {
+  const w = dmWatches.get(key);
+  if (!w) return;
+  dmWatches.delete(key);
+  const [a, b] = key.split('|');
+  const by = db.players[byId ?? w.by]?.name ?? 'Someone';
+  const msg = { id: nextId++, from: byId ?? w.by, by, text: 'ended the watch party', at: Date.now() };
+  const pa = db.players[a], pb = db.players[b];
+  if (pa && pb) {
+    pa.dm ??= {}; pb.dm ??= {};
+    pa.dm[b] = [...(pa.dm[b] ?? []), msg].slice(-50);
+    pb.dm[a] = [...(pb.dm[a] ?? []), msg].slice(-50);
+    trimDmThreads(pa.dm); trimDmThreads(pb.dm);
+    store.addMessage(dmThread(a, b), msg);
+  }
+  for (const id of [a, b]) send(sockets.get(id), { t: 'watch_ended', scope: 'dm' });
+  refresh(a, b);
+  save();
+};
+const endGroupWatch = (gid, byId) => {
+  const w = groupWatches.get(gid);
+  if (!w) return;
+  groupWatches.delete(gid);
+  const by = db.players[byId ?? w.by]?.name ?? 'Someone';
+  const msg = { id: nextId++, from: byId ?? w.by, by, text: 'ended the watch party', at: Date.now() };
+  const g = db.players[w.by]?.groups?.[gid] ?? Object.values(db.players).map((q) => q.groups?.[gid]).find(Boolean);
+  const members = g?.members ?? [];
+  store.addMessage(`g:${gid}`, msg);
+  for (const id of members) {
+    const qg = db.players[id]?.groups?.[gid];
+    if (qg) qg.msgs = [...qg.msgs, msg].slice(-50);
+    send(sockets.get(id), { t: 'watch_ended', scope: 'group' });
+  }
+  refresh(...members);
+  save();
+};
 const lastDm = new Map(); // playerId -> ms, same guard for private messages
   const lastCheer = new Map(); // playerId -> ms, so cheers and high fives can't be spammed
+  const cheerCount = new Map(); // playerId -> number of cheers received in current focus session
   const lastInvite = new Map(); // 'from>to' -> ms: one study invite per pair every 30 s
   const MAX_EVENTS = 100; // per calendar; the earliest dates drop off first
   let nextId = Date.now();
@@ -257,8 +312,13 @@ function trimDmThreads(rec) {
 
 function publicPlayer(p) {
   for (const r of p.rooms ?? []) for (const f of r.furniture ?? []) if (!canRotate(f.item) && f.rot !== undefined) delete f.rot;
-return {
-    id: p.id, name: p.name, look: p.look, rooms: p.rooms, focus: p.focus, pets: p.pets ?? [],
+  // Include pets with visitorBonds for AI simulation; UI should not display visitorBonds for other players' pets
+  const pets = (p.pets ?? []).map(pet => ({
+    ...pet,
+    visitorBonds: pet.visitorBonds ?? {}
+  }));
+  return {
+    id: p.id, name: p.name, look: p.look, rooms: p.rooms, focus: p.focus, pets,
     totalMinutes: p.totalMinutes, online: sockets.has(p.id), pos: positions.get(p.id) ?? null, fedAt: p.fedAt ?? 0,
     exams: p.exams ?? [],
     caffeineSince: p.caffeineSince, caffeineUntil: p.caffeineUntil, tipsyUntil: p.tipsyUntil,
@@ -303,12 +363,15 @@ function broadcastHouse(code) {
   const house = {
     code, owner: h.owner ?? null, ownerName: db.players[h.owner]?.name ?? null,
     members: h.members.map((id) => publicPlayer(db.players[id])), todos: h.todos ?? [], chat: h.chat ?? [],
-    events: h.events ?? [], announcements: h.announcements ?? [], watch: w ? { ...w, now: Date.now() } : null,
+    events: h.events ?? [], announcements: h.announcements ?? [], watch: w ? { ...w, now: Date.now(), scope: 'house' } : null,
   };
   for (const id of h.members) {
     const p = db.players[id];
     // Personal to-dos ride along in `me`, which only this player receives.
-    send(sockets.get(id), { t: 'state', house: { ...house, todos: house.todos.filter((t) => canSee(t, h, id)) }, me: { id: p.id, home: p.home, ...houseLists(p), coins: p.coins, discount: !!p.discount, notes: p.notes ?? [], inbox: p.inbox ?? [], inboxSeen: p.inboxSeen ?? 0, tipsSeen: p.tipsSeen ?? [], events: p.events ?? [], inventory: p.inventory, crafted: p.crafted ?? [], ready: p.ready ?? {}, petAccs: p.petAccs ?? [], ...(sentSessions.get(id) !== (p.sessions ?? []).length && { sessions: p.sessions ?? [] }), subjects: p.subjects ?? [], hiddenSubjects: p.hiddenSubjects ?? [], todos: p.todos ?? [], dm: p.dm ?? {}, groups: p.groups ?? {}, friends: friendList(p), notify: p.notify ?? {}, pushKey: pushOn ? PUSH_KEY : undefined } });
+    const dmw = houseDmWatch(p);
+    const gw = houseGroupWatch(p);
+    const privateWatch = gw ? groupWatchPayload(gw[0], gw[1]) : dmw ? dmWatchPayload(dmw[0], dmw[1], id) : null;
+    send(sockets.get(id), { t: 'state', house: { ...house, todos: house.todos.filter((t) => canSee(t, h, id)) }, me: { id: p.id, home: p.home, ...houseLists(p), coins: p.coins, discount: !!p.discount, notes: p.notes ?? [], inbox: p.inbox ?? [], inboxSeen: p.inboxSeen ?? 0, tipsSeen: p.tipsSeen ?? [], events: p.events ?? [], inventory: p.inventory, crafted: p.crafted ?? [], ready: p.ready ?? {}, petAccs: p.petAccs ?? [], ...(sentSessions.get(id) !== (p.sessions ?? []).length && { sessions: p.sessions ?? [] }), subjects: p.subjects ?? [], hiddenSubjects: p.hiddenSubjects ?? [], todos: p.todos ?? [], dm: p.dm ?? {}, groups: p.groups ?? {}, friends: friendList(p), notify: p.notify ?? {}, pushKey: pushOn ? PUSH_KEY : undefined, watch: privateWatch } });
     if (sockets.has(id)) sentSessions.set(id, (p.sessions ?? []).length);
   }
 }
@@ -511,6 +574,7 @@ function handle(p, m) {
         p.sessions.push({ at: now, minutes, tag: p.focus.tag ?? 'Study', early: true });
         if (p.sessions.length > 3000) p.sessions.splice(0, p.sessions.length - 3000);
       }
+      cheerCount.delete(p.id);
       p.focus = null;
       if (reward) send(sockets.get(p.id), { t: 'reward', coins: reward, text: `Ended early: +${reward} coins and ${minutes} focus min for the time you put in.` });
       else send(sockets.get(p.id), { t: 'error', text: 'Ended too early to earn anything. Stay a quarter of the way for a reward.' });
@@ -528,10 +592,14 @@ function handle(p, m) {
       const streak = streakDays(p.sessions, now, p.tz); // includes today, now that this session counts
       const reward = focusReward(p.focus.minutes, buddies) + Math.ceil(p.focus.minutes * streakBonus(streak))
         + caffeineMinutes(p.focus, p.caffeineSince, p.caffeineUntil, now); // one extra coin per caffeinated minute of the session
-      p.coins += reward;
+      // Cheer bonus: 2 coins per cheer, max 5 cheers (10 coins)
+      const cheers = cheerCount.get(p.id) ?? 0;
+      const cheerBonus = Math.min(cheers, 5) * 2;
+      p.coins += reward + cheerBonus;
       const studied = p.focus.minutes;
+      cheerCount.delete(p.id);
       p.focus = null;
-      send(sockets.get(p.id), { t: 'reward', coins: reward, buddies, streak });
+      send(sockets.get(p.id), { t: 'reward', coins: reward + cheerBonus, buddies, streak, cheerBonus });
       // Pets out in the room bond with you as you study; a well-bonded one sometimes digs up a few coins.
       const out = (p.pets ?? []).filter((x) => !x.away);
       for (const x of out) x.bond = (x.bond ?? 0) + studied;
@@ -655,6 +723,8 @@ function handle(p, m) {
       const h = db.houses[p.house], them = h.members.includes(m.to) && m.to !== p.id ? db.players[m.to] : null;
       if (!them?.focus || Date.now() - (lastCheer.get(p.id) ?? 0) < 5000) return;
       lastCheer.set(p.id, Date.now());
+      const count = (cheerCount.get(them.id) ?? 0) + 1;
+      cheerCount.set(them.id, count);
       for (const id of h.members) send(sockets.get(id), { t: 'cheer', from: p.name, to: them.id });
       return; // nothing saved, nothing to rebroadcast
     }
@@ -673,8 +743,13 @@ function handle(p, m) {
       const h = db.houses[p.house], owner = h.members.includes(m.owner) ? db.players[m.owner] : null;
       if (!owner?.pets?.[m.slot] || Date.now() - (lastCheer.get(p.id) ?? 0) < 1500) return;
       lastCheer.set(p.id, Date.now());
+      const pet = owner.pets[m.slot];
+      if (owner.id !== p.id) {
+        pet.visitorBonds = pet.visitorBonds ?? {};
+        pet.visitorBonds[p.id] = (pet.visitorBonds[p.id] ?? 0) + 1;
+        inbox(owner, 'pet', p, `petted ${pet.name ?? `your ${pet.kind}`}`);
+      }
       for (const id of h.members) send(sockets.get(id), { t: 'pat', owner: owner.id, slot: m.slot, by: p.id, name: p.name });
-      if (owner.id !== p.id) inbox(owner, 'pet', p, `petted ${owner.pets[m.slot].name ?? `your ${owner.pets[m.slot].kind}`}`);
       return;
     }
     case 'fetch': { // threw the pet ball: the thrower's pets (or the room owner's) run for it
@@ -687,7 +762,9 @@ function handle(p, m) {
       const h = db.houses[p.house], them = h.members.includes(m.to) && m.to !== p.id ? db.players[m.to] : null;
       if (!them || p.focus || them.focus || Date.now() - (lastCheer.get(p.id) ?? 0) < 3000) return;
       lastCheer.set(p.id, Date.now());
-      for (const id of h.members) send(sockets.get(id), { t: 'highfive', from: p.id, to: them.id, by: p.name });
+      // Pets of both players play together
+      const petPlay = { from: p.id, to: them.id };
+      for (const id of h.members) send(sockets.get(id), { t: 'highfive', from: p.id, to: them.id, by: p.name, petPlay });
       inbox(them, 'highfive', p, 'high-fived you');
       return;
     }
@@ -1254,11 +1331,35 @@ case 'chat': {
       for (const id of h.members) if (id !== p.id && !mentionedIds.has(id) && !sockets.has(id)) push(db.players[id], { title: `${p.name} · house chat`, body: text || attachLabel(img), tag: `house-${h.code}` }, 'house');
       break;
     }
-    case 'watch': { // /watch <link> starts a watch party for the whole house; /watch stop ends it
-      const h = db.houses[p.house];
+    case 'watch': { // /watch <link>: in house chat starts for the whole house, in a DM starts for just us two
       const stop = String(m.url ?? '').trim().toLowerCase() === 'stop';
       const src = stop ? null : parseVideo(String(m.url ?? '').slice(0, 600));
       if (!stop && !src) return send(sockets.get(p.id), { t: 'error', text: "Can't play that link. Try YouTube, Vimeo, Twitch, Dailymotion or a direct .mp4/.webm link." });
+      if (m.to) {
+        const to = db.players[String(m.to)];
+        if (!to) return;
+        // Only allow private watch with someone you can DM (housemate or friend), in either house.
+        if (!(db.houses[p.house]?.members.includes(to.id) || isFriend(p.id, to.id))) return send(sockets.get(p.id), { t: 'error', text: 'You can only start a private watch party with a friend or housemate.' });
+        const key = pairKey(p.id, to.id), w = dmWatches.get(key);
+        if (stop) {
+          if (!w) return;
+          endDmWatch(key, p.id);
+          save();
+          return;
+        }
+        dmWatches.set(key, { src, by: p.id, byName: p.name, playing: true, pos: src.start, at: Date.now() });
+        const msg = { id: nextId++, from: p.id, by: p.name, text: 'started a watch party', at: Date.now() };
+        p.dm ??= {}; to.dm ??= {};
+        p.dm[to.id] = [...(p.dm[to.id] ?? []), msg].slice(-50);
+        to.dm[p.id] = [...(to.dm[p.id] ?? []), msg].slice(-50);
+        trimDmThreads(p.dm); trimDmThreads(to.dm);
+        store.addMessage(dmThread(p.id, to.id), msg);
+        if (!sockets.has(to.id)) push(to, { title: `${p.name} - watch party`, body: 'started a watch party with you', tag: `dm-watch-${p.id}` }, 'dm');
+        save();
+        refresh(p.id, to.id);
+        return;
+      }
+      const h = db.houses[p.house];
       if (stop && !watches.has(p.house)) return;
       if (stop) watches.delete(p.house);
       else watches.set(p.house, { src, by: p.id, byName: p.name, playing: true, pos: src.start, at: Date.now() });
@@ -1268,14 +1369,107 @@ case 'chat': {
       h.chat = h.chat.slice(-50);
       break;
     }
-    case 'watchCtl': { // someone pressed play/pause or seeked: everyone follows
+    case 'watchCtl': { // someone pressed play/pause or seeked: everyone in that watch party follows
+      if (!Number.isFinite(m.pos) || m.pos < 0 || m.pos > 1e6) return;
+      if (m.scope === 'group' || m.g) {
+        const gid = m.g ? String(m.g) : (houseGroupWatch(p)?.[0] ?? null);
+        const w = gid ? groupWatches.get(gid) : null;
+        if (!gid || !w || !p.groups?.[gid]) return;
+        w.playing = !!m.playing;
+        w.pos = m.pos;
+        w.at = Date.now();
+        refresh(...(p.groups[gid].members ?? []));
+        return;
+      }
+      if (m.scope === 'dm' || m.to) {
+        const key = m.to ? pairKey(p.id, String(m.to)) : (houseDmWatch(p)?.[0] ?? null);
+        const w = key ? dmWatches.get(key) : null;
+        if (!key || !w) return;
+        w.playing = !!m.playing;
+        w.pos = m.pos;
+        w.at = Date.now();
+        refresh(...key.split('|'));
+        return;
+      }
       const w = watches.get(p.house);
-      if (!w || !Number.isFinite(m.pos) || m.pos < 0 || m.pos > 1e6) return;
+      if (!w) return;
       w.playing = !!m.playing;
       w.pos = m.pos;
       w.at = Date.now();
       broadcastHouse(p.house);
       return;
+    }
+    case 'typing': { // typing indicator: broadcast to thread participants
+      const thread = m.thread;
+      if (!thread) return;
+      // Broadcast to all members in the thread
+      if (thread.startsWith('h:')) {
+        const h = db.houses[thread.slice(2)];
+        if (h) for (const id of h.members) if (id !== p.id) send(sockets.get(id), { t: 'typing', thread, user: p.id, name: p.name, typing: m.typing });
+      } else if (thread.startsWith('g:')) {
+        const g = p.groups?.[thread.slice(2)];
+        if (g) for (const id of g.members) if (id !== p.id) send(sockets.get(id), { t: 'typing', thread, user: p.id, name: p.name, typing: m.typing });
+      } else { // dm
+        const other = db.players[thread];
+        if (other && other.id !== p.id) send(sockets.get(other.id), { t: 'typing', thread, user: p.id, name: p.name, typing: m.typing });
+      }
+      break;
+    }
+    case 'presence': { // user presence/status
+      const status = { id: p.id, status: m.status, custom: m.custom, until: m.until };
+      // Broadcast to all houses the user is in and their friends
+      const houses = new Set();
+      if (p.house) houses.add(p.house);
+      for (const [key, f] of friends) if (f.status === 'friend' && (key.startsWith(p.id + '|') || key.endsWith('|' + p.id))) {
+        const otherId = key.startsWith(p.id + '|') ? key.split('|')[1] : key.split('|')[0];
+        if (db.players[otherId]?.house) houses.add(db.players[otherId].house);
+      }
+      for (const code of houses) broadcastHouse(code, { t: 'presence', ...status });
+      break;
+    }
+    case 'mute': { // mute/unmute thread
+      const thread = m.thread, until = m.until;
+      p.mutedThreads ??= {};
+      if (until === -1) delete p.mutedThreads[thread];
+      else p.mutedThreads[thread] = until;
+      // Persist to store
+      if (store.setMuteThread) await store.setMuteThread(p.id, thread, until);
+      break;
+    }
+    case 'theme': { // chat theme color
+      const thread = m.thread, color = m.color;
+      p.chatThemes ??= {};
+      if (color) p.chatThemes[thread] = color;
+      else delete p.chatThemes[thread];
+      // Persist to store
+      if (store.setChatTheme) await store.setChatTheme(p.id, thread, color);
+      // Broadcast to thread participants
+      if (thread.startsWith('h:')) {
+        const h = db.houses[thread.slice(2)];
+        if (h) for (const id of h.members) if (id !== p.id) send(sockets.get(id), { t: 'theme', thread, color });
+      } else if (thread.startsWith('g:')) {
+        const g = p.groups?.[thread.slice(2)];
+        if (g) for (const id of g.members) if (id !== p.id) send(sockets.get(id), { t: 'theme', thread, color });
+      } else { // dm
+        const other = db.players[thread];
+        if (other && other.id !== p.id) send(sockets.get(other.id), { t: 'theme', thread, color });
+      }
+      break;
+    }
+    case 'read': { // read receipt
+      const thread = m.thread, id = m.id;
+      // Broadcast to sender
+      if (thread.startsWith('h:')) {
+        const h = db.houses[thread.slice(2)];
+        if (h) for (const memId of h.members) if (memId !== p.id) send(sockets.get(memId), { t: 'read', id, by: p.id, at: Date.now() });
+      } else if (thread.startsWith('g:')) {
+        const g = p.groups?.[thread.slice(2)];
+        if (g) for (const memId of g.members) if (memId !== p.id) send(sockets.get(memId), { t: 'read', id, by: p.id, at: Date.now() });
+      } else { // dm
+        const other = db.players[thread];
+        if (other && other.id !== p.id) send(sockets.get(other.id), { t: 'read', id, by: p.id, at: Date.now() });
+      }
+      break;
     }
     default:
       return;

@@ -7,13 +7,13 @@ import {
 } from '../shared/game.js';
 import { GUIDE_SECTIONS, GUIDE_START, GUIDE_TIPS, tourSteps, unseenTips } from '../shared/guide.js';
 import {
-  T, OVERHANG, SURFACE, AVATAR_H, avatarScale, lookKey, drawSeated, drawActing, drawSeam, drawFloor, drawWall, drawWallFace, drawWallTop, drawDoor, drawWindow, drawPainting, drawFurniture, drawAvatar, drawDeskLamp, drawGlow, drawUsing, drawFlames, drawClaw, skyNow, weatherNow, skyProgress, nightTint,
+  T, OVERHANG, SURFACE, AVATAR_H, avatarScale, lookKey, drawSeated, drawActing, drawSeam, drawFloor, drawWall, drawWallFace, drawWallTop, drawDoor, drawWindow, drawPainting, drawFurniture, drawAvatar, drawDeskLamp, drawGlow, drawUsing, drawSingSpotlight, drawFlames, drawClaw, skyNow, weatherNow, skyProgress, nightTint,
   coinURL, uiIconURL, AV, drawPaper, isDark, paintBlockText, drawWindow as drawWin, drawDroplet, drawHeart, tileURL, ACC_COL, ACC_COLORS, ACC_TINT, type Look,
 } from './draw';
-import { drawPet, petPos, petIconURL, seedOf } from './pets';
+import { drawPet, petPos, petIconURL, seedOf, singPetAct } from './pets';
 import { toggleSound, soundName, chime, ping, taskComplete, stopAllSounds, setVolume } from './sounds';
 import { countUnseen } from './tabBadge';
-import { syncWatch } from './watch';
+import { syncWatch, type Watch } from './watch';
 import { parseVideo } from '../shared/watch.js';
 import { chart, streak, rangeTitle, shift, hm, RANGES } from '../shared/stats.js';
 import './style.css';
@@ -22,7 +22,7 @@ type Furniture = { item: string; x: number; y: number; v?: number; s?: number; f
 type Room = { wallpaper: string; floor: string; pattern?: string; floorStyle?: string; level?: number; curtains?: boolean; wallColor?: string; floorColor?: string; furniture: Furniture[] };
 type Member = {
   id: string; name: string; look: Look; rooms: Room[]; focus: Focus | null;
-  totalMinutes: number; online: boolean; pos: { x: number; y: number } | null; pets: { kind: string; name?: string; coat?: number; acc?: string; away?: boolean; follow?: boolean; bond?: number }[]; fedAt?: number;
+  totalMinutes: number; online: boolean; pos: { x: number; y: number } | null; pets: { kind: string; name?: string; coat?: number; acc?: string; away?: boolean; follow?: boolean; bond?: number; visitorBonds?: Record<string, number> }[]; fedAt?: number;
   exams?: { subject: string; date: string }[]; // YYYY-MM-DD, soonest first
   caffeineSince?: number; caffeineUntil?: number; tipsyUntil?: number; // the caffeine window rides on the member, so housemates see the flame
 };
@@ -35,7 +35,7 @@ type Focus = { minutes: number; endsAt: number; tag?: string; pausedAt?: number 
 type Session = { at: number; minutes: number; tag: string; early?: boolean };
 type Inbox = { kind: string; from?: string; by?: string; text: string; at: number; n?: number };
 type Friend = { id: string; name: string; look: Look; online: boolean; focus: boolean; status: 'friend' | 'incoming' | 'outgoing'; here?: boolean; visit?: boolean; asked?: boolean };
-type Me = { id: string; home?: string; visited?: { code: string; ownerName: string | null; online: number }[]; banned?: { id: string; name: string }[]; coins: number; discount?: boolean; notes?: { from: string; text: string; at: number }[]; inbox?: Inbox[]; inboxSeen?: number; tipsSeen?: string[]; events?: CalEvent[]; pushKey?: string; notify?: Record<string, boolean>; groups?: Record<string, { name: string; members: string[]; msgs: Chat[] }>; friends?: Friend[]; inventory: Record<string, number>; crafted?: { item: string; col: string }[]; sessions: Session[]; subjects: string[]; hiddenSubjects: string[]; todos: Todo[]; dm: Record<string, Chat[]>; petAccs?: string[] };
+type Me = { id: string; home?: string; visited?: { code: string; ownerName: string | null; online: number }[]; banned?: { id: string; name: string }[]; coins: number; discount?: boolean; notes?: { from: string; text: string; at: number }[]; inbox?: Inbox[]; inboxSeen?: number; tipsSeen?: string[]; events?: CalEvent[]; pushKey?: string; notify?: Record<string, boolean>; groups?: Record<string, { name: string; members: string[]; msgs: Chat[] }>; friends?: Friend[]; inventory: Record<string, number>; crafted?: { item: string; col: string }[]; sessions: Session[]; subjects: string[]; hiddenSubjects: string[]; todos: Todo[]; dm: Record<string, Chat[]>; petAccs?: string[]; watch?: Watch | null };
 type Board = { scope: string; period: string; rows: { name: string; me: boolean; minutes: number; members?: number }[] };
 type Avatar = { x: number; y: number; tx: number; ty: number; up: boolean; dist: number; use?: string };
 type ItemKey = keyof typeof ITEMS;
@@ -46,7 +46,7 @@ type SessionTemplate = { id: string; name: string; work: number; break: number; 
 const SESSION_TEMPLATES: SessionTemplate[] = [
   { id: 'pomodoro', name: 'Pomodoro', work: 25, break: 5, sessions: 4 },
   { id: 'deep', name: 'Deep Work', work: 50, break: 10, sessions: 2 },
-  { id: 'ultradian', name: 'Ultradian', work: 90, break: 20, sessions: 1 },
+  { id: 'ultradian', name: 'Ultradian', work: 90, break: 20, sessions: 2 },
   { id: 'short', name: 'Quick Sprint', work: 15, break: 5, sessions: 6 },
 ];
 
@@ -55,6 +55,19 @@ let ui: Document = document, win: Window = window;
 const $ = <E extends HTMLElement>(s: string) => ui.querySelector(s) as E;
 const keyFns: ((e: KeyboardEvent) => void)[] = []; // keyboard shortcuts, attached to whichever window has the app
 const onKey = (fn: (e: KeyboardEvent) => void) => { keyFns.push(fn); addEventListener('keydown', fn); };
+
+// Global keyboard shortcuts
+onKey((e) => {
+  // Cmd/Ctrl+K for search in chat
+  if ((e.metaKey || e.ctrlKey) && e.key === 'k' && chatOpen && dmPeer) {
+    e.preventDefault();
+    openSearch();
+  }
+  // Escape to close search
+  if (e.key === 'Escape' && searchQuery) {
+    closeSearch();
+  }
+});
 const canvas = $<HTMLCanvasElement>('#game');
 const ctx = canvas.getContext('2d')!;
 const panel = $('#panel');
@@ -80,6 +93,8 @@ let noteTo: string | null = null; // housemate I'm writing a desk note for
 let finishedSession = false; // the session that just ended ran to the end (not given up): take a break
 let missed = 0; // messages that arrived while I was focusing, quietly
 const cheers = new Map<string, { text: string; at: number; hop?: boolean }>(); // 👏 or ✋ floating up over a player (hop: a little jump too)
+const petCheers = new Map<string, { text: string; at: number }>(); // 👏 floating up over a pet cheering its owner
+const petPlay = new Map<string, number>(); // key -> until timestamp (pets play together after high-five)
 let me: Me = { id: myId, coins: 0, inventory: {}, sessions: [], subjects: [], hiddenSubjects: [], todos: [], dm: {} };
 let statsTab = 'mine';
 let statsRange = 'week';
@@ -90,6 +105,31 @@ let grid = buildGrid([]);
 let petSpots: { x: number; y: number }[][] = []; // walkable floor tiles per room, for pets to wander
 let petNear: number[][] = []; // per room: the rooms its pets can walk into (through an opening or doorway)
 let petRoutes = new Map<string, { x: number; y: number }[] | null>(); // pet walks between rooms, cached until the house changes
+
+// The nearest person who is singing, within earshot of a pet (4 tiles).
+function nearestSinger(px: number, py: number) {
+  let best: { x: number; y: number; d: number } | null = null;
+  for (const m of members) {
+    const a = avatars.get(m.id);
+    if (!a || (!m.online && m.id !== myId) || a.use !== 'sing' || m.focus) continue;
+    const d = Math.hypot(a.x - px, a.y - py);
+    if (d <= 4 && (!best || d < best.d)) best = { x: a.x, y: a.y, d };
+  }
+  return best;
+}
+
+// A microphone within one tile of the singer, not counting the piece they are standing in front of:
+// that extra mic is what turns a solo into a duet. A pure placement check, done while drawing.
+function micNearTile(x: number, y: number) {
+  const gx = Math.round(x), gy = Math.round(y);
+  const si = grid.owner[gy * grid.w + gx];
+  const hit = slots[si];
+  if (!hit) return false;
+  const o = grid.origins[si];
+  return hit.room.furniture.some((f) => f.item === 'microphone'
+    && Math.abs(o.x + f.x - gx) <= 1 && Math.abs(o.y + f.y - gy) <= 1
+    && !(o.x + f.x === gx && o.y + f.y === gy - 1));
+}
 const avatars = new Map<string, Avatar>();
 const bubbles = new Map<string, { text: string; until: number }>();
 let lastChatId = -1;
@@ -203,7 +243,7 @@ function onMessage(m: any) {
       const fresh = unseenTips(myThings(), seenTips());
       if (fresh.length) openTour(fresh.map((s) => ({ item: s.item, text: s.text })));
     }
-    syncWatch(m.house.watch ?? null, myId, send);
+    syncWatch((m.me?.watch ?? m.house.watch ?? null) as Watch, myId, send);
     noteNewDms();
     renderBell();
     slots = members.flatMap((mem) => mem.rooms.map((room, ri) => ({ m: mem, room, ri })));
@@ -329,6 +369,18 @@ function onMessage(m: any) {
     const at = Date.now();
     for (const id of [m.from, m.to]) cheers.set(id, { text: '✋', at, hop: true });
     if (m.to === myId) toast(`✋ <b>${esc(m.by)}</b> high-fived you!`);
+    // Pets of both players play together for 5 seconds
+    if (m.petPlay) {
+      const fromPets = members.find(o => o.id === m.petPlay.from)?.pets ?? [];
+      const toPets = members.find(o => o.id === m.petPlay.to)?.pets ?? [];
+      [...fromPets, ...toPets].forEach((p, slot) => {
+        if (!p.away) {
+          const owner = m.petPlay.from === m.from ? m.petPlay.from : m.petPlay.to;
+          const key = `${owner}:${slot}`;
+          petPlay.set(key, at + 5000); // play for 5 seconds
+        }
+      });
+    }
   } else if (m.t === 'reward') {
     notify(chime);
     if (!m.text) {
@@ -336,7 +388,7 @@ function onMessage(m: any) {
       sysNotify('focus', 'Auralis', `Session complete! +${m.coins} coins`);
     }
     if (m.text) toast(esc(m.text), 'reward');
-    else toast(`Session complete! +${m.coins} ${coin()}${m.buddies ? ` (×${buddyMultiplier(m.buddies)} for studying together!)` : ''}${streakBonus(m.streak) ? ` 🔥 ${m.streak}-day streak +${streakBonus(m.streak) * 100}%` : ''}`, 'reward');
+    else toast(`Session complete! +${m.coins} ${coin()}${m.buddies ? ` (×${buddyMultiplier(m.buddies)} for studying together!)` : ''}${streakBonus(m.streak) ? ` 🔥 ${m.streak}-day streak +${streakBonus(m.streak) * 100}%` : ''}${m.cheerBonus ? ` 👏 Cheers +${m.cheerBonus}` : ''}`, 'reward');
   } else if (m.t === 'crafted') { // a handmade piece was made, or arrived from a housemate
     const name = esc(ITEMS[m.piece.item as ItemKey]?.name ?? 'piece');
     if (m.from) toast(`🎁 <b>${esc(m.from)}</b> made you a ${name}! It's in your Storage.`, 'reward');
@@ -363,6 +415,28 @@ function onMessage(m: any) {
     toast(esc(m.text), 'error');
   } else if (m.t === 'info') { // news that isn't a refusal: a plain toast
     toast(esc(m.text));
+  } else if (m.t === 'read') { // read receipt
+    if (m.by !== myId) readTimes.set(m.id, { by: m.by, at: m.at });
+    renderSide();
+  } else if (m.t === 'typing') { // typing indicator
+    if (typingThread && typingThread.thread === m.thread && m.user !== myId) {
+      if (m.typing) typingThread.users.set(m.user, { name: m.name, at: Date.now() });
+      else typingThread.users.delete(m.user);
+      renderSide();
+    }
+  } else if (m.t === 'presence') { // user presence/status
+    if (m.id !== myId) userPresence.set(m.id, { status: m.status, custom: m.custom, until: m.until, at: Date.now() });
+    syncChatList();
+  } else if (m.t === 'mute') { // mute thread
+    if (m.until === -1) mutedThreads.delete(m.thread);
+    else if (m.until === 0) mutedThreads.set(m.thread, 0);
+    else mutedThreads.set(m.thread, m.until);
+    syncChatList();
+  } else if (m.t === 'theme') { // chat theme
+    if (m.color) threadThemes.set(m.thread, m.color);
+    else threadThemes.delete(m.thread);
+    if (threadKey(dmPeer) === m.thread) applyThreadTheme(m.thread);
+    syncChatList();
   }
 }
 
@@ -1391,12 +1465,63 @@ function render(t: number, dt: number) {
     const by = fe && avatars.get(fe.by), tr = trails.get(m.id), gap = 2.5 + slot * 0.9;
     if (fe && fa < 4500) x.goal = fa < 2000 || !by ? fe : { x: by.x + side, y: by.y + back };
     else if (here && m.focus && !p.follow) { x.goal = { x: here.x + side, y: here.y + back }; x.act = 'sleep'; }
+    // Pet cheers owner during focus (like a supportive housemate)
+    if (here && m.focus && !p.follow && x.act === 'sleep' && Math.random() < 0.001 * dt * 60) {
+      petCheers.set(key, { text: '👏', at: now });
+    }
     else if (now - (petDone.get(m.id) ?? 0) < 3000 || (now - (patAt.get(key) ?? 0) < 1200 && bondLevel(p.bond) >= 2)) x.run = true;
     else if (here && p.follow && !m.focus && tr && now - tr.movedAt < 600) x.goal = trailPoint(tr.pts, gap);
     else if (here && now - (petGreet.get(m.id) ?? 0) < 5000) { // greeting: run up, but stop a little way off
       const cur = petFx.get(key) ?? x.pos, dx = cur.x - here.x, dy = cur.y - here.y, d = Math.hypot(dx, dy) || 1;
       x.goal = d > gap ? { x: here.x + (dx / d) * gap, y: here.y + (dy / d) * gap } : { x: cur.x, y: cur.y };
     }
+    // Visit bonded visitors (after owner priority)
+    else if (!x.goal && p.visitorBonds) {
+      const visitorEntries = Object.entries(p.visitorBonds);
+      if (visitorEntries.length) {
+        // Sort by bond strength, highest first
+        visitorEntries.sort((a, b) => b[1] - a[1]);
+        for (const [visitorId, bond] of visitorEntries) {
+          if (bond < 3) break; // only visit if bond >= 3
+          const visitor = members.find(mem => mem.id === visitorId);
+          const vAvatar = visitor && avatars.get(visitorId);
+          if (visitor && vAvatar && (visitor.online || visitorId === myId)) {
+            const vHere = vAvatar;
+            const cur = petFx.get(key) ?? x.pos;
+            const dx = vHere.x - cur.x, dy = vHere.y - cur.y, d = Math.hypot(dx, dy) || 1;
+            // Visit more frequently for higher bonds, and much more when owner is offline
+            const ownerOnline = here && (m.online || m.id === myId);
+            const baseChance = Math.min(0.008 * bond, 0.06); // 0.8% per bond level, max 6% per frame
+            const visitChance = ownerOnline ? baseChance : baseChance * 5; // 5x more likely when owner away
+            if (d > gap && Math.random() < visitChance * dt * 60) {
+              x.goal = { x: vHere.x + (Math.random() - 0.5) * 1.5, y: vHere.y + (Math.random() - 0.5) * 1.5 };
+              x.act = 'sleep'; // nap near visitor
+            }
+            // If owner is offline and we're already near the visitor, stay there (hang out)
+            if (!ownerOnline && d < 2 && !x.goal) {
+              x.goal = { x: vHere.x + (Math.random() - 0.5) * 0.8, y: vHere.y + (Math.random() - 0.5) * 0.8 };
+              x.act = 'sleep';
+            }
+            break; // only visit the top bonded visitor at a time
+          }
+        }
+      }
+    }
+    // A pet near someone singing stops to watch, or bounces along on the beat. Which one is a pure function
+    // of the pet's seed and the clock; a second microphone nearby makes pets prefer the quiet watch.
+    const singer = !x.goal && !x.run ? nearestSinger(x.pos.x, x.pos.y) : null;
+    if (singer) {
+      const side = x.pos.x < singer.x ? -0.9 : 0.9;
+      x.goal = { x: singer.x + side, y: singer.y + 0.55 };
+      x.act = micNearTile(singer.x, singer.y) ? 'watch' : singPetAct(seedOf(m.id, slot), now);
+    }
+  }
+  // Pet play from high-five: pets with active play state chase each other
+  const playingPets = pets.filter(x => petPlay.get(`${x.m.id}:${x.slot}`) ?? 0 > now);
+  for (const A of playingPets) for (const B of playingPets) {
+    if (A === B || A.goal || B.goal || Math.hypot(A.pos.x - B.pos.x, A.pos.y - B.pos.y) > 3) continue;
+    const cx = (A.pos.x + B.pos.x) / 2, cy = (A.pos.y + B.pos.y) / 2, sx = Math.sin(now / 300) * 1.2, sy = Math.cos(now / 300) * 0.6;
+    A.goal = { x: cx + sx, y: cy + sy }; B.goal = { x: cx - sx, y: cy - sy }; A.run = B.run = true; A.act = 'dance'; B.act = 'dance';
   }
   // Two idle pets close together play chase around each other.
   const idle = pets.filter((x) => !x.goal && !x.run && !x.pos.moving && !x.pos.act);
@@ -1423,9 +1548,18 @@ function render(t: number, dt: number) {
     petHits.push({ m, slot, x: px, y: py });
     if (p.name) petLabels.push({ x: px, y: py - (pact === 'perch' ? 1 : 0), name: p.name });
     const love = Math.min(now - (m.fedAt ?? 0), (now - (patAt.get(key) ?? 0)) * 4); // fed or petted: a heart floats up
+    const petCheer = petCheers.get(key);
     sprites.push({ y: py + (pact === 'lap' ? 2 : 0.9), draw: () => {
       drawPet(ctx, p.kind, Math.round(px * T), Math.round(py * T), moving, left, now, pact, p.coat, p.acc);
       if (love < 6000) drawHeart(ctx, px * T + T / 2, py * T - love / 400);
+      // Pet cheer: 👏 floating up like a housemate cheer
+      if (petCheer && now - petCheer.at < 2500) {
+        ctx.font = `600 ${T * 0.9}px 'Fredoka', system-ui, sans-serif`;
+        ctx.globalAlpha = 1 - (now - petCheer.at) / 2500;
+        ctx.fillStyle = '#2b2530';
+        ctx.fillText(petCheer.text, px * T, py * T - T * 1.2 - (now - petCheer.at) / 40);
+        ctx.globalAlpha = 1;
+      }
     } });
   }
   const labels: { x: number; y: number; m: Member; seated: boolean; lift: number }[] = [];
@@ -1442,9 +1576,14 @@ function render(t: number, dt: number) {
     const sway = tipsy(m) ? Math.sin(now / 260) : 0;
     const ax = Math.round(a.x * T + sway * 3);
     const ay = Math.round(a.y * T) - hop - (tipsy(m) ? Math.round(Math.abs(Math.sin(now / 260)) * 2) : 0);
+    const singing = !act && a.use === 'sing' && !walking;
+    const duet = singing && micNearTile(a.x, a.y);
+    // The spotlight is its own sprite just behind the singer, so the mic stand, notes and singer stay crisp on top.
+    if (singing) sprites.push({ y: a.y - 0.8, draw: () => drawSingSpotlight(ctx, ax, ay, t, duet) });
     sprites.push({
       y: act ? Math.max(a.y + 0.99, act.z + 0.01) : a.y + 0.99, // on a bed's pillow row: drawn over the bed, not under it
       draw: () => (act ? drawActing(ctx, m.look, act.act, act.item, ax, ay, t, act.col, seated)
+        : singing ? drawUsing(ctx, m.look, 'sing', ax, ay, t, duet)
         : a.use && !walking ? drawUsing(ctx, m.look, a.use, ax, ay, t)
         : drawAvatar(ctx, m.look, ax, ay, stepFrame, a.up)),
     });
@@ -1692,6 +1831,10 @@ function tickTimers() {
   const pt = panel.querySelector('#ptimer'), pb = panel.querySelector<HTMLElement>('#pbar');
   if (pt) pt.textContent = left;
   if (pb) pb.style.width = `${progress(f)}%`;
+  // Clean up old pet cheers (older than 3 seconds) and pet play (older than 5 seconds)
+  const now = Date.now();
+  for (const [key, cheer] of petCheers) if (now - cheer.at > 3000) petCheers.delete(key);
+  for (const [key, until] of petPlay) if (now > until) petPlay.delete(key);
 }
 setInterval(tickTimers, 500);
 
@@ -1737,6 +1880,7 @@ let tourAt = 0;
 // Unseen object types with special features/actions in the current house, shown once per item (remembered per user across houses).
 function maybeShowHouseItemsTour() {
   const MUSIC_USES = new Set(['music', 'dance', 'dj', 'drum', 'strum']);
+  const SING_USE = 'sing';
   const WATCH_ITEMS = new Set(['tv', 'retroTV', 'mediaConsole']);
   const rows: TourRow[] = [];
   const forceOnce = !localStorage.getItem('auralis.houseItemsTour.once.v3');
@@ -1750,11 +1894,13 @@ function maybeShowHouseItemsTour() {
         if (!it || seen.has(f.item)) continue;
         const use = (it as { use?: string }).use;
         const isMusic = !!use && MUSIC_USES.has(use);
+        const isSing = use === SING_USE;
         const isWatch = WATCH_ITEMS.has(f.item);
-        if (!(f.item in GUIDE_TIPS) && !isMusic && !isWatch) continue;
+        if (!(f.item in GUIDE_TIPS) && !isMusic && !isSing && !isWatch) continue;
         seen.add(f.item);
         let text = where;
         if (f.item in GUIDE_TIPS) text = `${where}. ${(GUIDE_TIPS as Record<string, string>)[f.item]}`;
+        else if (isSing) text = `${where}. Click to sing: a pose, floating notes and a spotlight, just for show.`;
         else if (isMusic) text = `${where}. Click to play music (shared with the house).`;
         else if (isWatch) text = `${where}. Watch videos together with housemates here.`;
         rows.push({ item: f.item, title: it.name, text });
@@ -2582,7 +2728,7 @@ const CRAFT_LABELS: Record<string, string> = {
 const ACT_LABELS: Record<string, string> = { sit: 'Sit', sleep: 'Nap (5-min break)', bounce: 'Bounce', lift: 'Work out', pullup: 'Pull-ups', run: 'Run', punch: 'Box', bike: 'Ride', stretch: 'Stretch' };
 const USE_LABELS: Record<string, string> = {
   water: 'Water', read: 'Study here', snack: 'Snack (2-min break)', tea: 'Tea (2-min break)', primp: 'Change your look', dress: 'Change your look',
-  stargaze: 'Stargaze', feed: 'Feed the pets', music: 'Play music', strum: 'Play guitar', drum: 'Drum', dj: 'DJ', warm: 'Warm up', wind: 'Wind it up',
+  stargaze: 'Stargaze', feed: 'Feed the pets', sing: 'Sing', music: 'Play music', strum: 'Play guitar', drum: 'Drum', dj: 'DJ', warm: 'Warm up', wind: 'Wind it up',
 };
 const cap = (s: string) => s[0].toUpperCase() + s.slice(1);
 
@@ -2783,6 +2929,32 @@ const dmUnread: Record<string, number> = {};
 const dmSeen: Record<string, number> = {};
 let dmReady = false;
 
+// Mute threads: thread -> until (0 = forever, timestamp = temporary)
+const mutedThreads = new Map<string, number>();
+
+// Chat colors/themes per thread
+const CHAT_PALETTE = ['#f48a8a', '#ffd27a', '#8fd0a8', '#7fb2e8', '#b89af0', '#f4a6b8', '#f2b48a', '#9db4ee', '#d9a06a', '#cfe1f7', '#fff4e6', '#e8e3dc'];
+const threadThemes = new Map<string, string>();
+
+// Typing indicator state
+const typingTimers = new Map<string, number>();
+let typingThread: { thread: string; users: Map<string, { name: string; at: number }> } | null = null;
+
+// Search in thread state
+let searchQuery = '', searchResults: { msg: Chat; idx: number; score: number }[] = [], searchIndex = -1;
+
+// Image gallery state
+let galleryOpen = false, galleryIndex = -1, galleryImages: { key: string; at: number; by: string }[] = [];
+
+// Presence/status state
+const userPresence = new Map<string, { status: string; custom: string; until: number; at: number }>();
+const PRESENCE_TTL = 5 * 60 * 1000;
+let myPresenceTimer: number | null = null;
+
+// Read receipts
+const readReceiptsEnabled = true;
+const readTimes = new Map<number, { by: string; at: number }>();
+
 function noteNewDms() {
   const threads: [string, Chat[]][] = [...Object.entries(me.dm ?? {}), ...Object.entries(me.groups ?? {}).map(([id, g]) => [`g:${id}`, g.msgs] as [string, Chat[]])];
   for (const [peer, list] of threads) {
@@ -2809,6 +2981,306 @@ function noteNewDms() {
   }
   dmReady = true;
 }
+
+// ===== NEW CHAT FEATURES =====
+
+// Check if thread is muted
+function isMuted(thread: string): boolean {
+  const until = mutedThreads.get(thread);
+  if (!until) return false;
+  if (until === 0) return true;
+  return Date.now() < until;
+}
+
+// Mute a thread
+function muteThread(thread: string, until: number) {
+  mutedThreads.set(thread, until);
+  send({ t: 'mute', thread, until });
+  syncChatList();
+}
+
+// Apply chat theme color
+function applyThreadTheme(thread: string) {
+  const color = threadThemes.get(thread);
+  const log = $('#chatLog');
+  const input = $('#chatInput');
+  const form = $('#chatForm');
+  if (color) {
+    log.style.setProperty('--thread-accent', color);
+    input.style.setProperty('--thread-accent', color);
+    form.style.setProperty('--thread-accent', color);
+  } else {
+    log.style.removeProperty('--thread-accent');
+    input.style.removeProperty('--thread-accent');
+    form.style.removeProperty('--thread-accent');
+  }
+}
+
+// Get thread theme color
+function getThreadTheme(thread: string): string | undefined {
+  return threadThemes.get(thread);
+}
+
+// Set thread theme
+function setThreadTheme(thread: string, color: string) {
+  threadThemes.set(thread, color);
+  send({ t: 'theme', thread, color });
+  applyThreadTheme(thread);
+}
+
+// Presence status helpers
+const PRESENCE_STATUSES = ['idle', 'focus', 'break', 'afk', 'chat'] as const;
+type PresenceStatus = typeof PRESENCE_STATUSES[number];
+
+function setMyPresence(status: PresenceStatus, custom = '', until = 0) {
+  const presence = { status, custom, until, at: Date.now() };
+  userPresence.set(myId, presence);
+  send({ t: 'presence', ...presence });
+  if (myPresenceTimer) clearInterval(myPresenceTimer);
+  if (status === 'focus' || status === 'break') {
+    myPresenceTimer = setInterval(() => send({ t: 'presence', ...presence }), 30000);
+  }
+}
+
+function getPresence(userId: string) {
+  const p = userPresence.get(userId);
+  if (!p) return null;
+  if (Date.now() - p.at > PRESENCE_TTL) { userPresence.delete(userId); return null; }
+  return p;
+}
+
+function presenceIcon(status: string, custom: string) {
+  switch (status) {
+    case 'focus': return `📚 ${custom || 'Focusing'}`;
+    case 'break': return `☕ ${custom || 'Break'}`;
+    case 'afk': return '🌙 AFK';
+    case 'chat': return '💬 Chatting';
+    case 'idle': return '🟢 Available';
+    default: return custom || '🟢 Available';
+  }
+}
+
+// Typing indicator
+function sendTyping(thread: string, typing: boolean) {
+  send({ t: 'typing', thread, typing });
+}
+
+function onTypingUpdate(thread: string, user: string, name: string, typing: boolean) {
+  if (!typingThread) return;
+  if (typingThread.thread !== thread) return;
+  if (typing) {
+    typingThread.users.set(user, { name, at: Date.now() });
+  } else {
+    typingThread.users.delete(user);
+  }
+  renderSide();
+}
+
+function typingIndicatorHTML(thread: string): string {
+  if (!typingThread || typingThread.thread !== thread) return '';
+  const names = [...typingThread.users.values()].filter(u => Date.now() - u.at < 4000).map(u => u.name);
+  if (!names.length) return '';
+  return `<div class="typing-indicator">${names.length === 1 ? `${names[0]} is typing…` : `${names.join(', ')} are typing…`}</div>`;
+}
+
+// Search in thread
+function openSearch() {
+  const bar = $('#chatSearch');
+  if (bar) { bar.hidden = false; $<HTMLInputElement>('#searchInput').focus(); return; }
+  // Create search bar if not exists
+  const html = `<div id="chatSearch" class="chat-search"><input id="searchInput" type="text" placeholder="Search messages…" aria-label="Search in thread"><span id="searchCount"></span><button id="searchPrev" title="Previous match" aria-label="Previous match">↑</button><button id="searchNext" title="Next match" aria-label="Next match">↓</button><button id="searchClose" aria-label="Close search">✕</button></div>`;
+  $('#chatLog').insertAdjacentHTML('beforebegin', html);
+  $<HTMLInputElement>('#searchInput').addEventListener('input', (e) => doSearch((e.target as HTMLInputElement).value));
+  $('#searchPrev').addEventListener('click', () => navigateSearch(-1));
+  $('#searchNext').addEventListener('click', () => navigateSearch(1));
+  $('#searchClose').addEventListener('click', closeSearch);
+  $<HTMLInputElement>('#searchInput').focus();
+}
+
+function closeSearch() {
+  const bar = $('#chatSearch');
+  if (bar) bar.hidden = true;
+  searchQuery = ''; searchResults = []; searchIndex = -1;
+  renderSide(); // re-render without highlights
+}
+
+function doSearch(q: string) {
+  searchQuery = q.toLowerCase().trim();
+  const msgs = threadMsgs(dmPeer);
+  searchResults = msgs.map((m, i) => ({ msg: m, idx: i, score: scoreMatch(m, searchQuery) }))
+    .filter(r => r.score > 0).sort((a, b) => b.score - a.score);
+  searchIndex = searchResults.length ? 0 : -1;
+  $('#searchCount').textContent = searchResults.length ? `${searchIndex + 1} / ${searchResults.length}` : 'No matches';
+  renderSide();
+}
+
+function scoreMatch(m: Chat, q: string): number {
+  if (!m.text || !q) return 0;
+  const t = m.text.toLowerCase();
+  if (t === q) return 100;
+  if (t.includes(q)) return 50;
+  return t.split(' ').some(w => w.startsWith(q)) ? 25 : 0;
+}
+
+function navigateSearch(dir: number) {
+  if (!searchResults.length) return;
+  searchIndex = (searchIndex + dir + searchResults.length) % searchResults.length;
+  $('#searchCount').textContent = `${searchIndex + 1} / ${searchResults.length}`;
+  const target = searchResults[searchIndex].msg.id;
+  const el = $('#chatLog').querySelector(`[data-quote="${target}"]`);
+  if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  renderSide(); // re-render with highlight
+}
+
+function highlightSearch(text: string): string {
+  if (!searchQuery) return esc(text);
+  const parts = text.split(new RegExp(`(${escapeRegExp(searchQuery)})`, 'gi'));
+  return parts.map(p => p.toLowerCase() === searchQuery ? `<mark>${esc(p)}</mark>` : esc(p)).join('');
+}
+
+function escapeRegExp(s: string) { return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
+
+// Image Gallery
+function collectThreadImages(): { key: string; at: number; by: string }[] {
+  return threadMsgs(dmPeer).filter(m => m.img).map(m => ({ key: m.img!, at: m.at, by: m.by }));
+}
+
+function openGallery(index: number) {
+  galleryImages = collectThreadImages();
+  if (!galleryImages.length) return;
+  galleryIndex = index;
+  galleryOpen = true;
+  renderGallery();
+  document.body.classList.add('gallery-open');
+  // Preload adjacent
+  [galleryIndex - 1, galleryIndex + 1].forEach(i => {
+    if (galleryImages[i]) preloadImage(galleryImages[i].key);
+  });
+}
+
+function closeGallery() {
+  galleryOpen = false;
+  galleryIndex = -1;
+  galleryImages = [];
+  document.body.classList.remove('gallery-open');
+  const overlay = $('#galleryOverlay');
+  overlay?.remove();
+}
+
+function preloadImage(key: string) {
+  if (imgLinks.has(key)) return;
+  fetch(`${apiBase}/api/chatimg?key=${encodeURIComponent(key)}`, { headers: { authorization: `Bearer ${token}` } })
+    .then(r => r.json()).then(data => data.url && imgLinks.set(key, { url: data.url, at: Date.now() }));
+}
+
+function renderGallery() {
+  const img = galleryImages[galleryIndex];
+  if (!img) return;
+  let link = imgLinks.get(img.key);
+  const overlay = document.createElement('div');
+  overlay.id = 'galleryOverlay';
+  overlay.innerHTML = `
+    <div class="gallery-content">
+      <div class="gallery-header">
+        <span>${galleryIndex + 1} / ${galleryImages.length}</span>
+        <span>${img.by} • ${ago(img.at)}</span>
+        <div><button class="gallery-zoom" title="Zoom">🔍</button><button class="gallery-download" title="Download">⬇</button><button class="gallery-close" title="Close">✕</button></div>
+      </div>
+      <img class="gallery-img" src="${link?.url || ''}" alt="Picture from ${img.by}" data-key="${img.key}">
+      <div class="gallery-nav"><button class="gallery-prev" aria-label="Previous">←</button><button class="gallery-next" aria-label="Next">→</button></div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+  const galleryImg = overlay.querySelector('.gallery-img') as HTMLImageElement;
+  if (!link) {
+    fetch(`${apiBase}/api/chatimg?key=${encodeURIComponent(img.key)}`, { headers: { authorization: `Bearer ${token}` } })
+      .then(r => r.json()).then(data => { if (data.url) { link = { url: data.url, at: Date.now() }; imgLinks.set(img.key, link); galleryImg.src = data.url; } });
+  }
+  overlay.querySelector('.gallery-prev')!.addEventListener('click', () => { galleryIndex = (galleryIndex - 1 + galleryImages.length) % galleryImages.length; renderGallery(); });
+  overlay.querySelector('.gallery-next')!.addEventListener('click', () => { galleryIndex = (galleryIndex + 1) % galleryImages.length; renderGallery(); });
+  overlay.querySelector('.gallery-close')!.addEventListener('click', closeGallery);
+  overlay.querySelector('.gallery-download')!.addEventListener('click', () => downloadAttachment(img.key));
+  overlay.querySelector('.gallery-zoom')!.addEventListener('click', () => galleryImg.classList.toggle('zoomed'));
+  // Keyboard
+  const onKey = (e: KeyboardEvent) => {
+    if (!galleryOpen) return document.removeEventListener('keydown', onKey);
+    if (e.key === 'Escape') closeGallery();
+    else if (e.key === 'ArrowLeft') galleryIndex = (galleryIndex - 1 + galleryImages.length) % galleryImages.length;
+    else if (e.key === 'ArrowRight') galleryIndex = (galleryIndex + 1) % galleryImages.length;
+    else return;
+    renderGallery();
+  };
+  document.addEventListener('keydown', onKey);
+}
+
+// Read receipts
+function markRead(thread: string, msgId: number) {
+  if (!readReceiptsEnabled) return;
+  if (readTimes.has(msgId)) return;
+  readTimes.set(msgId, { by: myId, at: Date.now() });
+  send({ t: 'read', thread, id: msgId });
+}
+
+function renderReceipt(msg: Chat): string {
+  if (msg.from !== myId) return '';
+  const reads = [...readTimes.entries()].filter(([id]) => id === msg.id);
+  if (!reads.length) return '<span class="receipt sent" title="Sent">✓</span>';
+  if (reads.some(r => r[1].by !== msg.from)) return '<span class="receipt read" title="Read">✓✓</span>';
+  return '<span class="receipt delivered" title="Delivered">✓✓</span>';
+}
+
+// Mute thread menu
+function muteThreadMenu(thread: string) {
+  const menu = document.createElement('div');
+  menu.className = 'context-menu';
+  menu.style.left = '50%';
+  menu.style.top = '50%';
+  menu.style.transform = 'translate(-50%, -50%)';
+  menu.innerHTML = `
+    <button data-until="3600000">1 hour</button>
+    <button data-until="28800000">8 hours</button>
+    <button data-until="0">Forever</button>
+  `;
+  document.body.appendChild(menu);
+  const remove = () => menu.remove();
+  menu.querySelectorAll<HTMLButtonElement>('[data-until]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const until = Number(btn.dataset.until);
+      muteThread(thread, until === 0 ? 0 : Date.now() + until);
+      remove();
+    });
+  });
+  document.addEventListener('click', remove, { once: true });
+  document.addEventListener('keydown', remove, { once: true });
+}
+
+// Theme picker menu
+function themePickerMenu(thread: string, current?: string) {
+  const menu = document.createElement('div');
+  menu.className = 'context-menu';
+  menu.style.left = '50%';
+  menu.style.top = '50%';
+  menu.style.transform = 'translate(-50%, -50%)';
+  const colors = CHAT_PALETTE.map(c => `<button data-color="${c}" style="background:${c};" title="${c === current ? 'Current' : ''}"></button>`).join('');
+  menu.innerHTML = `
+    <div class="theme-picker">
+      ${colors}
+      <input type="color" id="customColor" value="${current || '#f48a8a'}" title="Custom color">
+      <button data-clear>Clear theme</button>
+    </div>
+  `;
+  document.body.appendChild(menu);
+  const remove = () => menu.remove();
+  menu.querySelectorAll<HTMLButtonElement>('[data-color]').forEach(btn => {
+    btn.addEventListener('click', () => { setThreadTheme(thread, btn.dataset.color!); remove(); });
+  });
+  menu.querySelector('#customColor')!.addEventListener('change', (e) => { setThreadTheme(thread, (e.target as HTMLInputElement).value); remove(); });
+  menu.querySelector('[data-clear]')!.addEventListener('click', () => { threadThemes.delete(thread); send({ t: 'theme', thread, color: '' }); applyThreadTheme(thread); remove(); });
+  document.addEventListener('click', remove, { once: true });
+  document.addEventListener('keydown', remove, { once: true });
+}
+
+// ===== END NEW CHAT FEATURES =====
 
 // The chat card: a list of conversations (the house, and one per housemate), WhatsApp style, or one open thread.
 let chatOpen = false, houseUnread = 0;
@@ -2874,19 +3346,31 @@ function syncChatList() {
   $('#chatList').hidden = chatOpen;
   $('#chatLog').hidden = !chatOpen;
   $('#chatForm').hidden = !chatOpen;
-  if (chatOpen) return;
+  if (chatOpen) {
+    // Apply theme when opening thread
+    const thread = threadKey(dmPeer);
+    applyThreadTheme(thread);
+    // Start typing indicator tracking for this thread
+    typingThread = { thread, users: new Map() };
+    sendTyping(thread, false); // signal we're viewing
+    return;
+  }
   const lastAt = (l: Chat[]) => l[l.length - 1]?.at ?? 0;
-  const rows: { id: string; name: string; pic: string; list: Chat[]; n: number; dm: boolean; on?: boolean; pal?: boolean }[] = [{ id: '', name: 'House chat', pic: uiIconURL('house'), list: chat, n: houseUnread, dm: false },
-    ...Object.entries(me.groups ?? {}).map(([gid, g]) => ({ id: `g:${gid}`, name: g.name, pic: uiIconURL('chat'), list: g.msgs, n: dmUnread[`g:${gid}`] ?? 0, dm: false })),
-    ...[...others, ...pals].map((m) => ({ id: m.id, name: m.name, pic: faceURL(m.look), list: me.dm?.[m.id] ?? [], n: dmUnread[m.id] ?? 0, dm: true, on: m.online, pal: pals.includes(m as Friend) }))]
+  const rows: { id: string; name: string; pic: string; list: Chat[]; n: number; dm: boolean; on?: boolean; pal?: boolean; muted?: boolean; theme?: string }[] = [{ id: '', name: 'House chat', pic: uiIconURL('house'), list: chat, n: houseUnread, dm: false, muted: isMuted(threadKey(null)), theme: getThreadTheme(threadKey(null)) },
+    ...Object.entries(me.groups ?? {}).map(([gid, g]) => ({ id: `g:${gid}`, name: g.name, pic: uiIconURL('chat'), list: g.msgs, n: dmUnread[`g:${gid}`] ?? 0, dm: false, muted: isMuted(threadKey(`g:${gid}`)), theme: getThreadTheme(threadKey(`g:${gid}`)) })),
+    ...[...others, ...pals].map((m) => ({ id: m.id, name: m.name, pic: faceURL(m.look), list: me.dm?.[m.id] ?? [], n: dmUnread[m.id] ?? 0, dm: true, on: m.online, pal: pals.includes(m as Friend), muted: isMuted(threadKey(m.id)), theme: getThreadTheme(threadKey(m.id)) }))]
     .sort((x, y) => lastAt(y.list) - lastAt(x.list)); // newest first; nobody-said-anything-yet at the bottom
   const rowsHTML = rows.map((r) => {
     const c = r.list[r.list.length - 1];
     const who = !c ? '' : c.from === myId ? 'You: ' : r.dm || !c.by ? '' : `${esc(c.by)}: `; // group notes ("made the group") have no speaker
     const preview = c ? `${who}${c.img ? esc(attachLabel(c.img)) : esc(c.text)}` : r.dm ? (r.pal ? 'Say hi 👋' : 'Say hi 👋') : 'Talk to the whole house';
-    return `<li><button class="chat-row${r.n ? ' unread' : ''}" data-peer="${r.id}"><span class="chat-face-wrap${'on' in r && r.on ? ' on' : ''}"><img class="chat-face${r.dm ? '' : ' house'}" src="${r.pic}" alt=""></span>
-      <span class="chat-mid"><b>${esc(r.name)}</b>${r.dm ? `<span class="chat-online${r.on ? ' on' : ''}">${r.on ? 'Online' : 'Offline'}</span>` : ''}<small>${preview}</small></span>
-      <span class="chat-end">${c ? `<small>${ago(c.at)}</small>` : ''}${r.n ? `<i>${r.n > 99 ? '99+' : r.n}</i>` : ''}</span></button></li>`;
+    const mutedIcon = r.muted ? '🔕' : '';
+    const themeStyle = r.theme ? `style="--thread-accent:${r.theme};"` : '';
+    const presence = r.dm && r.id ? getPresence(r.id) : null;
+    const presenceHTML = presence ? `<span class="chat-status" title="${presenceIcon(presence.status, presence.custom)}">${presenceIcon(presence.status, presence.custom).split(' ')[0]}</span>` : '';
+    return `<li><button class="chat-row${r.n ? ' unread' : ''}${r.muted ? ' muted' : ''}" data-peer="${r.id}" ${themeStyle}><span class="chat-face-wrap${'on' in r && r.on ? ' on' : ''}"><img class="chat-face${r.dm ? '' : ' house'}" src="${r.pic}" alt=""></span>
+      <span class="chat-mid"><b>${esc(r.name)}</b>${presenceHTML}${r.dm ? `<span class="chat-online${r.on ? ' on' : ''}">${r.on ? 'Online' : 'Offline'}</span>` : ''}<small>${preview}</small></span>
+      <span class="chat-end">${c ? `<small>${ago(c.at)}</small>` : ''}${r.n ? `<i>${r.n > 99 ? '99+' : r.n}</i>` : ''}${mutedIcon}</span></button></li>`;
   }).join('');
   // Friend requests on top: theirs to answer, mine waiting.
   const fr = me.friends ?? [];
@@ -2923,22 +3407,55 @@ function renderSide() {
   const log = $('#chatLog');
   const msgs = threadMsgs(dmPeer), group = groupOf(dmPeer);
   const peerName = group?.name ?? person(dmPeer)?.name ?? 'them';
-  const cSig = `${dmPeer}|${peerName}|${msgs.length}|${msgs[0]?.id ?? 0}|${msgs[msgs.length - 1]?.id ?? 0}`;
+  const thread = threadKey(dmPeer);
+  // Include theme and search state in signature
+  const cSig = `${dmPeer}|${peerName}|${msgs.length}|${msgs[0]?.id ?? 0}|${msgs[msgs.length - 1]?.id ?? 0}|${getThreadTheme(thread) ?? ''}|${searchQuery}`;
   if (cSig !== chatSig) {
     chatSig = cSig;
     const atBottom = log.scrollHeight - log.scrollTop - log.clientHeight < 40, fromBottom = log.scrollHeight - log.scrollTop;
-    const more = msgs.length >= 50 && !historyDone.has(threadKey(dmPeer)) ? '<p class="more">Scroll up for older messages</p>' : '';
+    const more = msgs.length >= 50 && !historyDone.has(thread) ? '<p class="more">Scroll up for older messages</p>' : '';
     const byId = new Map<number, Chat>(msgs.map((c) => [c.id, c]));
     const quoteOf = (c: Chat) => { const q = c.replyTo ? byId.get(c.replyTo) : null; return q ? `<span class="quote" data-reply-to="${q.id}"><b>${esc(q.by)}</b> <span class="qt">${esc(q.text) || 'Picture'}</span></span>` : ''; };
     log.innerHTML = msgs.length
-      ? more + msgs.map((c) => !c.from ? `<p class="note">${esc(c.text)}</p>` : `<p class="${c.from === myId ? 'mine' : ''}" data-quote="${c.id}"><b>${esc(c.by)}</b>${quoteOf(c)}${linkify(c.text)}${c.img ? `<span class="chat-att">${docName(c.img) ? `<button type="button" class="chat-doc" data-key="${esc(c.img)}">📎 <span>${esc(docName(c.img)!)}</span></button>` : `<img class="chat-img" data-key="${esc(c.img)}" alt="Picture from ${esc(c.by)}">`}`
-        + `<button type="button" class="chat-dl" data-dl="${esc(c.img)}" title="Download" aria-label="Download ${esc(docName(c.img) ?? 'picture')}">⬇</button></span>` : ''}<button type="button" class="chat-reply" title="Reply" aria-label="Reply to ${esc(c.by)}">↩</button></p>`).join('')
+      ? more + msgs.map((c) => !c.from ? `<p class="note">${esc(c.text)}</p>` : `<p class="${c.from === myId ? 'mine' : ''}" data-quote="${c.id}"><b>${esc(c.by)}</b>${quoteOf(c)}${highlightSearch(linkify(c.text))}${c.img ? `<span class="chat-att">${docName(c.img) ? `<button type="button" class="chat-doc" data-key="${esc(c.img)}">📎 <span>${esc(docName(c.img)!)}</span></button>` : `<img class="chat-img" data-key="${esc(c.img)}" alt="Picture from ${esc(c.by)}" data-index="${msgs.findIndex(m => m.img === c.img)}">`}`
+        + `<button type="button" class="chat-dl" data-dl="${esc(c.img)}" title="Download" aria-label="Download ${esc(docName(c.img) ?? 'picture')}">⬇</button></span>` : ''}${renderReceipt(c)}<button type="button" class="chat-reply" title="Reply" aria-label="Reply to ${esc(c.by)}">↩</button></p>`).join('')
       : dmPeer
         ? `<p class="empty">${group ? `Just the people in ${esc(peerName)}.` : `Just you and ${esc(peerName)} — nobody else can see this.`}</p>`
         : '<p class="empty">Say hi to your housemates 👋</p>';
     if (atBottom) scrollChat();
     else log.scrollTop = log.scrollHeight - fromBottom; // older messages added above: stay on what I was reading
     loadChatImages(log, atBottom);
+    // Read receipts: mark messages as read when they're in view
+    if (readReceiptsEnabled && dmPeer) {
+      const thread = threadKey(dmPeer);
+      const observer = new IntersectionObserver((entries) => {
+        for (const entry of entries) {
+          if (entry.isIntersecting) {
+            const el = entry.target as HTMLElement;
+            const msgId = Number(el.dataset.quote);
+            if (msgId && !readTimes.has(msgId)) markRead(thread, msgId);
+          }
+        }
+      }, { root: log, threshold: 0.5 });
+      log.querySelectorAll('[data-quote]').forEach(el => observer.observe(el));
+      // Cleanup observer on next render
+      (log as any)._readObserver?.disconnect?.();
+      (log as any)._readObserver = observer;
+    }
+  }
+  // Ensure search bar visibility matches state
+  const searchBar = $('#chatSearch');
+  if (searchBar) searchBar.hidden = !searchQuery;
+  // Typing indicator
+  const typingDiv = $('#typingIndicator');
+  const typingHTML = typingIndicatorHTML(thread);
+  if (typingDiv) typingDiv.innerHTML = typingHTML;
+  else if (typingHTML) {
+    const div = document.createElement('div');
+    div.id = 'typingIndicator';
+    div.className = 'typing-indicator';
+    div.innerHTML = typingHTML;
+    log.parentElement?.insertBefore(div, log.nextSibling);
   }
   const box = $<HTMLTextAreaElement>('#chatInput'), ph = dmPeer ? `Message ${peerName}…` : 'Say something…';
   if (box.placeholder !== ph) box.placeholder = ph;
@@ -2986,8 +3503,13 @@ $('#chatLog').addEventListener('click', (e) => {
   if (dl) return downloadAttachment(dl.dataset.dl!);
   const doc = (e.target as HTMLElement).closest<HTMLButtonElement>('.chat-doc');
   if (doc) return openDoc(doc.dataset.key!);
+  // Image gallery
   const img = (e.target as HTMLElement).closest<HTMLImageElement>('img.chat-img');
-  if (img?.src) open(img.src, '_blank', 'noopener');
+  if (img?.src) {
+    const idx = Number(img.dataset.index ?? -1);
+    if (idx >= 0) { openGallery(idx); return; }
+    open(img.src, '_blank', 'noopener');
+  }
   // One click on the reply button quotes the message and pulls its text into the composer.
   const replyBtn = (e.target as HTMLElement).closest<HTMLButtonElement>('.chat-reply');
   if (replyBtn) {
@@ -3169,11 +3691,16 @@ $('#chatForm').addEventListener('submit', (e) => {
   e.preventDefault();
   const input = $<HTMLTextAreaElement>('#chatInput');
   const watch = /^\/watch\b\s*(.*)$/i.exec(input.value.trim());
-  if (watch) { // easter egg: /watch <link> starts a watch party for the house, /watch stop ends it
+  if (watch) { // /watch <link> starts a watch party (house chat: whole house; DM: just us two), /watch stop ends it
     const url = watch[1];
     if (!url) toast('Type <b>/watch</b> and a YouTube, Vimeo, Twitch, Dailymotion or .mp4 link.');
     else if (url.toLowerCase() !== 'stop' && !parseVideo(url)) toast("Can't play that link. Try YouTube, Vimeo, Twitch, Dailymotion or a direct .mp4/.webm link.", 'error');
-    else { send({ t: 'watch', url }); input.value = ''; }
+    else {
+      const g = groupOf(dmPeer) ? dmPeer!.slice(2) : undefined;
+      const to = dmPeer && !dmPeer.startsWith('g:') ? dmPeer : undefined;
+      send({ t: 'watch', url, ...(to ? { to } : {}), ...(g ? { g } : {}) });
+      input.value = '';
+    }
     return;
   }
   if (staged) return sendStaged(input);
@@ -3219,7 +3746,7 @@ function showMentions(query: string, start: number) {
   const members = houseMembers(); // helper to get current house members
   const matches = members.filter((m) => m.id !== myId && m.name.toLowerCase().includes(query.toLowerCase()));
   if (!matches.length) { mentionPicker.hidden = true; return; }
-  mentionPicker.innerHTML = matches.map((m, i) => `<button type="button" data-mention="${m.id}" data-index="${i}">@${esc(m.name)}</button>`).join('');
+  mentionPicker.innerHTML = matches.map((m, i) => `<button type="button" data-mention="${esc(m.name)}" data-index="${i}">@${esc(m.name)}</button>`).join('');
   mentionPicker.hidden = false;
   mentionIndex = -1;
   updateMentionHighlight();
@@ -3228,14 +3755,14 @@ function hideMentions() { mentionPicker.hidden = true; mentionQuery = ''; mentio
 function updateMentionHighlight() {
   mentionPicker.querySelectorAll('button').forEach((b, i) => b.classList.toggle('sel', i === mentionIndex));
 }
-function selectMention(id: string) {
+function selectMention(name: string) {
   const input = $<HTMLTextAreaElement>('#chatInput');
   const text = input.value;
   const before = text.slice(0, mentionStart);
   const after = text.slice(input.selectionStart);
-  input.value = before + '@' + id + ' ' + after;
+  input.value = before + '@' + name + ' ' + after;
   // Move cursor after the mention
-  setTimeout(() => { input.selectionStart = input.selectionEnd = before.length + id.length + 2; input.dispatchEvent(new Event('input')); }, 0);
+  setTimeout(() => { input.selectionStart = input.selectionEnd = before.length + name.length + 2; input.dispatchEvent(new Event('input')); }, 0);
   hideMentions();
 }
 $<HTMLTextAreaElement>('#chatInput').addEventListener('input', (e) => {
@@ -3257,6 +3784,12 @@ $<HTMLTextAreaElement>('#chatInput').addEventListener('input', (e) => {
   // Auto-grow
   input.style.height = 'auto';
   input.style.height = `${input.scrollHeight + 6}px`;
+  // Typing indicator debounce
+  if (chatOpen && dmPeer) {
+    clearTimeout(typingTimers.get('chat') as number);
+    sendTyping(threadKey(dmPeer), true);
+    typingTimers.set('chat', setTimeout(() => sendTyping(threadKey(dmPeer), false), 2000));
+  }
 });
 $<HTMLTextAreaElement>('#chatInput').addEventListener('keydown', (e) => {
   if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); (e.currentTarget as HTMLTextAreaElement).form!.requestSubmit(); }
@@ -3293,6 +3826,36 @@ $('#chatList').addEventListener('click', (e) => {
   $('#chatInput').focus();
 });
 $('#chatBack').addEventListener('click', () => { chatOpen = false; renderSide(); });
+// Context menu for chat rows: mute, theme
+$('#chatList').addEventListener('contextmenu', (e) => {
+  const row = (e.target as HTMLElement).closest<HTMLButtonElement>('.chat-row');
+  if (!row || !row.dataset.peer) return;
+  e.preventDefault();
+  const peer = row.dataset.peer;
+  const thread = peer ? (peer.startsWith('g:') ? `g:${peer.slice(2)}` : peer) : `h:${houseCode}`;
+  const isMutedNow = isMuted(thread);
+  const currentTheme = getThreadTheme(thread);
+  const menu = document.createElement('div');
+  menu.className = 'context-menu';
+  menu.style.left = `${e.clientX}px`;
+  menu.style.top = `${e.clientY}px`;
+  menu.innerHTML = `
+    <button data-mute>${isMutedNow ? 'Unmute' : 'Mute…'}</button>
+    <button data-theme>Change color${currentTheme ? ' ✦' : ''}</button>
+    <hr>
+    <button data-copy>Copy thread link</button>
+  `;
+  document.body.appendChild(menu);
+  const remove = () => menu.remove();
+  menu.querySelector('[data-mute]')!.addEventListener('click', () => {
+    if (isMutedNow) { mutedThreads.delete(thread); send({ t: 'mute', thread, until: -1 }); }
+    else { muteThreadMenu(thread); }
+    remove();
+  });
+  menu.querySelector('[data-theme]')!.addEventListener('click', () => { themePickerMenu(thread, currentTheme); remove(); });
+  document.addEventListener('click', remove, { once: true });
+  document.addEventListener('keydown', remove, { once: true });
+});
 $('#chatLeave').addEventListener('click', () => {
   const g = groupOf(dmPeer), f = !g && friendsOnly().find((x) => x.id === dmPeer);
   if (!g && !f && dmPeer) return send({ t: 'friend_request', id: dmPeer }); // a housemate: ask them

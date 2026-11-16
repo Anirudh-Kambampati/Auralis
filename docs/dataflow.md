@@ -32,6 +32,7 @@ client                         server                                    house m
 | `place`, `move` | The item is in your storage; `canPlace` (inside your room, no overlap). |
 | `flip`, `restyle`, `room` | The furniture exists; colours and patterns come from the allowed lists. |
 | `todo_*`, `chat` | Text cleaned and length-capped; chat flood guard (one message per 0.6 s). |
+| `watch {url, to?, g?}` | URL must pass `parseVideo`. House chat (no `to`/`g`) starts/ends the house watch party for everyone in that house. In a DM (`to`, must be a housemate or friend) starts/ends a private watch party for just those two users, even in different houses. In a group chat (`g`) starts/ends a watch party for all group members, even in different houses. `watchCtl` syncs play/pause/seek for the matching party. |
 | `join`, `leave` | The house code exists. Moving out takes your room with you into a new house. |
 | `leaderboard` | Answered to the asker only, computed from saved sessions. |
 | `friend_search {q}` | At least 2 characters. Answered to the asker only with `friend_matches`: up to 8 usernames starting with `q`, never your own. |
@@ -40,10 +41,11 @@ client                         server                                    house m
 
 ## State sent to clients
 
-`{ t: 'state', house: { code, members[], todos[], chat[] }, me: { id, coins, inventory, sessions, subjects } }`
+`{ t: 'state', house: { code, members[], todos[], chat[], watch }, me: { id, coins, inventory, sessions, subjects, watch } }`
 
 - `members[]` holds each housemate's public data: name, look, room, focus, pets, online, position. It never includes tokens or hashes.
 - `me` is private and only goes to its owner. That includes `crafted`, `ready` and `tipsSeen`: what you made by hand, which waits are yours, and which Guide nudges you have had. A wait never rides in `publicPlayer`, because it belongs to a person rather than to a piece.
+- `house.watch` is the active house-wide watch party (or `null`). `me.watch` is the active private watch party for that player (DM or group, or `null`), so users can watch together even when they are in different houses. The client prefers `me.watch` when both are present. Private/group watch state is not saved; a restarted server ends watch parties.
 
 ## The Guide's tour
 

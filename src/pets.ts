@@ -135,6 +135,16 @@ for (const [k, { rows }] of Object.entries(SPRITES)) {
   console.assert(k in PETS, `pet ${k} must be in PETS`);
 }
 
+const PET_SCALE: Record<string, number> = {
+  capybara: 1.0,
+  cat: 0.75, fox: 0.75, puppy: 0.75,
+  bunny: 0.6, penguin: 0.6, owl: 0.6,
+  raccoon: 0.55, koala: 0.55, axolotl: 0.55,
+  piglet: 0.5, sheep: 0.5, turtle: 0.5,
+  hamster: 0.35, duckling: 0.35, frog: 0.35, hedgehog: 0.35,
+  unicorn: 0.7, dragon: 0.8, platypus: 0.5, elephant: 0.9, trex: 0.7, cow: 0.65,
+};
+
 const coatOf = (kind: string, coat = 0) => {
   const coats = (PETS as Record<string, { coats: string[] }>)[kind]?.coats ?? ['#f2c48a'];
   return coats[coat] ?? coats[0];
@@ -256,6 +266,9 @@ const hash = (a: number, b: number) => {
   return s - Math.floor(s);
 };
 export const seedOf = (id: string, slot: number) => [...id].reduce((n, ch) => (n * 31 + ch.charCodeAt(0)) % 100000, slot * 997);
+// What a nearby singer brings out in a pet: watch, or bounce along. Derived from the pet's own seed and the clock,
+// so every viewer picks the same one, and nothing about it needs syncing.
+export const singPetAct = (seed: number, now: number) => (hash(seed + 0.9, Math.floor(now / 12000)) < 0.5 ? 'watch' : 'dance');
 
 // Every 5 s a pet picks another floor tile in its room, trots there, then idles.
 // Sometimes it heads for a toy instead (cat tower, bed, ball...) and plays with it while it idles.
@@ -296,7 +309,8 @@ export function petPos(seed: number, now: number, areas: Area[], home = 0, near:
 // x, y = top-left of the tile the pet is on, in art pixels. act: 'perch' sits on top, 'sleep' dozes.
 export function drawPet(c: CanvasRenderingContext2D, kind: string, x: number, y: number, moving: boolean, left: boolean, now: number, act?: string, coat = 0, acc?: string) {
   const sleeping = act === 'sleep';
-  const hop = sleeping ? 1 : moving ? -Math.abs(Math.round(Math.sin(now / 90) * 2)) : Math.floor(now / 800) % 2 ? 0 : -1;
+  const hop = sleeping ? 1 : act === 'watch' ? 0 : act === 'dance' ? -Math.abs(Math.round(Math.sin(now / 150) * 2))
+    : moving ? -Math.abs(Math.round(Math.sin(now / 90) * 2)) : Math.floor(now / 800) % 2 ? 0 : -1;
   if (act === 'perch') y -= 16;
   else if (act === 'lap') y -= 8;
   else {
@@ -329,18 +343,27 @@ export function drawPet(c: CanvasRenderingContext2D, kind: string, x: number, y:
     else spray = toot / 0.25; // 0..1 through the toot
   }
   const pet = petCanvas(kind, coat, frame), [ax, ay] = SPRITES[kind]?.acc ?? [0, 0];
-  const px = x + (16 - pet.width) / 2, py = y + 15 - pet.height + hop; // feet on the tile's bottom edge
+  const scale = PET_SCALE[kind] ?? 1.0;
+  const sw = pet.width * scale, sh = pet.height * scale;
+  const px = x + (16 - sw) / 2, py = y + 15 - sh + hop; // feet on the tile's bottom edge
   c.save();
-  if (left) { c.translate(px * 2 + pet.width, 0); c.scale(-1, 1); }
-  c.drawImage(pet, px, py);
+  if (left) { c.translate(px * 2 + sw, 0); c.scale(-1, 1); }
+  c.drawImage(pet, px, py, sw, sh);
+  if (act === 'dance') { // two tiny notes on the beat, so the bounce reads as dancing
+    const up = Math.floor(now / 150) % 2 ? 0 : 1;
+    c.fillStyle = '#f2c14e';
+    c.fillRect(px + 12 * scale, py - 3 - up, 1, 3); c.fillRect(px + 10 * scale, py - 1 - up, 3, 1); c.fillRect(px + 13 * scale, py + 1 - up, 1, 1);
+    c.fillStyle = '#f0708e';
+    c.fillRect(px + 3 * scale, py - 5 + up, 1, 3); c.fillRect(px + 1 * scale, py - 3 + up, 3, 1);
+  }
   if (spray > 0.2) { // droplets arcing up and out of the trunk tip
     c.fillStyle = '#9fd4f4';
     for (let k = 0; k < 3; k++) {
       const p = (spray - 0.2) / 0.8 - k * 0.15;
       if (p <= 0 || p >= 1) continue;
-      c.fillRect(Math.round(px + 15 + p * 3 + k * 0.5), Math.round(py + 3 - Math.sin(p * Math.PI) * 4 + p * 2), 1, 1);
+      c.fillRect(Math.round(px + 15 * scale + p * 3 + k * 0.5), Math.round(py + 3 - Math.sin(p * Math.PI) * 4 + p * 2), 1, 1);
     }
   }
-  if (acc) drawAcc(c, acc, px + ax, py + ay);
+  if (acc) drawAcc(c, acc, px + ax * scale, py + ay * scale);
   c.restore();
 }

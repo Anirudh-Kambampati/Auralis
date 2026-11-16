@@ -61,6 +61,7 @@ export interface MeState {
   friends: Friend[];
   notify: Record<string, boolean>;
   pushKey?: string;
+  watch?: WatchState | null; // private watch party (e.g. with one friend), if any
 }
 
 // Member & player types
@@ -127,6 +128,7 @@ export interface Pet {
   away?: boolean;
   follow?: boolean;
   bond?: number;
+  visitorBonds?: Record<string, number>; // hidden bonds with visitors who pet this pet
 }
 
 export interface Focus {
@@ -196,11 +198,26 @@ export interface Announcement {
 }
 
 // Watch party types
+export interface WatchSrc {
+  kind: string;
+  id?: string;
+  url?: string;
+  start: number;
+}
+
 export interface WatchState {
-  src: string;
-  at: number;
+  src: WatchSrc | string;
   by: string;
-  byId: string;
+  byName?: string;
+  playing: boolean;
+  pos: number;
+  at: number;
+  now?: number;
+  scope?: 'house' | 'dm' | 'group';
+  with?: string; // other participant's id for a DM watch
+  withName?: string;
+  g?: string; // group id for a group watch
+  groupName?: string;
 }
 
 // Session types
@@ -325,7 +342,8 @@ export interface ClientMessages {
   // Guide
   tip_seen: { t: 'tip_seen'; id: string };
   // Watch
-  watch: { t: 'watch'; url: string };
+  watch: { t: 'watch'; url: string; to?: string; g?: string };
+  watchCtl: { t: 'watchCtl'; playing: boolean; pos: number; scope?: 'house' | 'dm' | 'group'; to?: string; g?: string };
   // Join/leave
   join: { t: 'join'; code: string };
   leave: { t: 'leave' };
@@ -410,7 +428,7 @@ export interface ServerMessages {
   notify: { t: 'notify'; kind: string; from?: string; text: string };
   // Watch
   watch: WatchState;
-  watch_ended: { t: 'watch_ended' };
+  watch_ended: { t: 'watch_ended'; scope?: 'house' | 'dm' };
   // House
   house_update: { t: 'house_update'; house: Partial<HouseState> };
   // Coins

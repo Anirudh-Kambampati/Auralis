@@ -1,0 +1,1067 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Auralis — karaoke art designs</title>
+<style>
+  :root {
+    --bg: #efe6da; --paper: #fffaf3; --soft: #ece2d5; --ink: #2b2530;
+    --blue: #5b7fd6; --gold: #f2c14e; --coral: #e06a5a;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 28px 22px 64px; background: var(--bg); color: var(--ink);
+    font-family: "Trebuchet MS", "Segoe UI", system-ui, sans-serif;
+    background-image: radial-gradient(#d9cbb9 1px, transparent 1px);
+    background-size: 18px 18px;
+  }
+  .wrap { max-width: 1180px; margin: 0 auto; }
+  header { display: flex; flex-wrap: wrap; align-items: end; gap: 14px; margin-bottom: 6px; }
+  h1 { font-size: 30px; margin: 0; letter-spacing: -0.4px; }
+  .chip {
+    display: inline-block; padding: 3px 9px; border: 2px solid var(--ink); border-radius: 999px;
+    background: var(--paper); font-size: 12px; font-weight: 700; letter-spacing: .3px;
+  }
+  .chip.draft { background: #ffe3dc; border-color: var(--coral); color: #8c3527; }
+  .lede { max-width: 74ch; line-height: 1.55; margin: 10px 0 26px; font-size: 15px; }
+  .lede b { background: linear-gradient(transparent 62%, #ffe6a0 62%); }
+  section { margin-top: 34px; }
+  h2 { font-size: 19px; margin: 0 0 4px; display: flex; align-items: center; gap: 10px; }
+  h2 .n {
+    width: 26px; height: 26px; display: grid; place-items: center; border: 2px solid var(--ink);
+    border-radius: 8px; background: var(--gold); font-size: 14px; box-shadow: 0 3px 0 var(--ink);
+  }
+  .sub { margin: 0 0 14px 36px; font-size: 13.5px; opacity: .72; max-width: 78ch; line-height: 1.5; }
+  .row { display: flex; flex-wrap: wrap; gap: 16px; }
+  .card {
+    background: var(--paper); border: 2px solid var(--ink); border-radius: 14px;
+    box-shadow: 5px 5px 0 var(--ink); padding: 12px;
+  }
+  .art-card { display: flex; flex-direction: column; align-items: center; gap: 8px; width: max-content; }
+  .art { display: block; image-rendering: pixelated; border-radius: 8px; background: #f3e9dc; }
+  .art.floor { background: #d9a06a; }
+  .art.wall { background: #ece2d5; }
+  .label { font-weight: 700; font-size: 14px; }
+  .note { font-size: 12px; opacity: .68; max-width: 190px; text-align: center; line-height: 1.4; }
+  .note.left { text-align: left; }
+  .tag {
+    font-size: 10.5px; font-weight: 800; letter-spacing: .5px; text-transform: uppercase;
+    padding: 2px 7px; border-radius: 6px; border: 1.5px solid var(--ink); background: var(--soft);
+  }
+  .tag.new { background: #dff2e4; }
+  .tag.keep { background: #e6ecfb; }
+  .tag.prop { background: #ffe6a0; }
+  .palette { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
+  .sw { width: 62px; font-size: 10px; text-align: center; }
+  .sw i { display: block; height: 26px; border: 2px solid var(--ink); border-radius: 7px; margin-bottom: 3px; }
+  .spec { width: 100%; border-collapse: collapse; font-size: 13.5px; background: var(--paper);
+    border: 2px solid var(--ink); border-radius: 12px; overflow: hidden; }
+  .spec th, .spec td { text-align: left; padding: 9px 12px; border-bottom: 1.5px solid #e3d7c8; vertical-align: top; }
+  .spec th { background: var(--soft); font-size: 12px; text-transform: uppercase; letter-spacing: .4px; }
+  .spec tr:last-child td { border-bottom: 0; }
+  code { background: #f2eadf; border: 1px solid #e0d3c2; border-radius: 5px; padding: 1px 5px; font-size: 12.5px; }
+  .controls { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
+  .toggle {
+    display: inline-flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 700;
+    border: 2px solid var(--ink); background: var(--paper); border-radius: 9px; padding: 6px 11px;
+    box-shadow: 0 3px 0 var(--ink); cursor: pointer; user-select: none;
+  }
+  .toggle input { accent-color: var(--blue); width: 15px; height: 15px; }
+  ul.plain { margin: 8px 0 0; padding-left: 20px; line-height: 1.6; font-size: 13.5px; }
+  ul.plain li { margin-bottom: 4px; }
+  .two { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 760px) { .two { grid-template-columns: 1fr; } }
+  .legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px; }
+  .legend span { display: inline-flex; gap: 6px; align-items: center; }
+  .dot { width: 10px; height: 10px; border-radius: 50%; border: 1.5px solid var(--ink); display: inline-block; }
+  footer { margin-top: 36px; font-size: 12.5px; opacity: .6; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Karaoke, with a voice</h1>
+    <span class="chip draft">Design draft — nothing implemented yet</span>
+    <span class="chip">art pixels, 16×16 tiles</span>
+  </header>
+  <p class="lede">
+    Three new karaoke styles, a mic stand that means <b>sing</b>, a singing pose with a mic hand and a
+    bobbing open-mouth face, floating <b>♪ ♫</b>, a spotlight breath that stays under the calm palette, pets that
+    stop to watch or bounce along, and a quiet upgrade when a microphone is set down beside the singer.
+    Everything below is drawn at 7–10× so the pixels are readable; the strip at the end shows the real in-game size.
+  </p>
+
+  <section>
+    <h2><span class="n">1</span> Karaoke styles</h2>
+    <p class="sub">
+      The machine keeps its 1×1 footprint (16 wide, 30 tall, 12 above the tile). The original stays style 0;
+      the three new looks are <code>looks: ['Retro booth', 'Neon pop', 'Cute pastel']</code>, stored as <code>s = 1..3</code>
+      and drawn as <code>ALT.karaoke[s - 1]</code>, the same path as the other styled furniture. Owner colour still
+      recolours each style — here shown in its own default, and in the owner's colour underneath.
+    </p>
+    <div class="row">
+      <div class="card art-card">
+        <canvas class="art" data-art="karaoke" data-style="original"></canvas>
+        <div class="label">Original <span class="tag keep">keep</span></div>
+        <div class="note">Pink cabinet, antenna, blinking EQ lights. Only its <code>use</code> changes.</div>
+      </div>
+      <div class="card art-card">
+        <canvas class="art" data-art="karaoke" data-style="retro"></canvas>
+        <div class="label">Retro booth <span class="tag new">new</span></div>
+        <div class="note">Cream deck with a black vinyl and chrome tonearm over a wood console, slatted speaker, owner-colour band on the label and front, chrome plinth.</div>
+      </div>
+      <div class="card art-card">
+        <canvas class="art" data-art="karaoke" data-style="neon"></canvas>
+        <div class="label">Neon pop <span class="tag new">new</span></div>
+        <div class="note">Charcoal body, a low neon rim, a heart sign and a four-bar EQ in mint/blue/pink that breathes slowly.</div>
+      </div>
+      <div class="card art-card">
+        <canvas class="art" data-art="karaoke" data-style="cute"></canvas>
+        <div class="label">Cute pastel <span class="tag new">new</span></div>
+        <div class="note">Soft dome, cat ears, cream face plate with closed happy eyes and a singing mouth, blush on the shell.</div>
+      </div>
+    </div>
+    <div class="row" style="margin-top:14px">
+      <div class="card art-card" style="flex-direction:row;gap:14px">
+        <div>
+          <canvas class="art" data-art="karaoke" data-style="retro" data-col="#9db4ee"></canvas>
+          <div class="note">Owner's periwinkle</div>
+        </div>
+        <div>
+          <canvas class="art" data-art="karaoke" data-style="neon" data-col="#8fd0a8"></canvas>
+          <div class="note">Owner's mint</div>
+        </div>
+        <div>
+          <canvas class="art" data-art="karaoke" data-style="cute" data-col="#ffd27a"></canvas>
+          <div class="note">Owner's butter</div>
+        </div>
+        <div style="max-width:230px">
+          <div class="label">Recolour check</div>
+          <div class="note left">
+            Each style takes one base colour and shades from it, like the wingback and the paper lantern.
+            The neon style spends it on the glow, so the body stays charcoal on purpose.
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2><span class="n">2</span> Mic stand, and what “sing” means</h2>
+    <p class="sub">
+      <code>ITEMS.microphone.use</code> and <code>ITEMS.karaoke.use</code> both become <code>'sing'</code>.
+      <code>USES</code> is derived from item <code>use</code> values, so no list is hand-maintained — but the client's
+      <code>MUSIC_USES</code> set (the “music is shared with the house” tour) must gain <code>'sing'</code>, and the shop
+      tooltip phrase becomes <em>Sing</em>. The stand's silhouette is unchanged; while a character is singing it gains a
+      soft mint badge and a faint ring at the base, nothing louder.
+    </p>
+    <div class="row">
+      <div class="card art-card">
+        <canvas class="art" data-art="mic" data-singing="0"></canvas>
+        <div class="label">Mic stand, idle <span class="tag keep">keep art</span></div>
+        <div class="note">Same 16×30 sprite as today.</div>
+      </div>
+      <div class="card art-card">
+        <canvas class="art" data-art="mic" data-singing="1"></canvas>
+        <div class="label">Mic stand, active <span class="tag new">new</span></div>
+                  <div class="note">Pulsing mint note badge and a 1-pixel base ring, 2.4 s cycle, alpha 0.45 max.</div>
+      </div>
+      <div class="card art-card">
+        <canvas class="art" data-art="karaoke" data-style="original" data-singing="1"></canvas>
+        <div class="label">Karaoke, active <span class="tag new">new</span></div>
+        <div class="note">Same treatment on the machine, so either item reads as the thing being sung into.</div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2><span class="n">3</span> Singing pose</h2>
+    <p class="sub">
+      A new pose beside <code>drawActing</code>, not a fork of the avatar: the same 16×21 character, with the right arm
+      bent so the mic sits just under the chin. Three loop frames — <em>hold</em>, <em>inhale</em> (whole sprite down 1 px,
+      mouth closed) and <em>belt</em> (mouth 3 px wide, head up 1 px) — at 380 ms per step. Face uses the existing overlay
+      slot, so hair, outfit and accessories keep working.
+    </p>
+    <div class="row">
+      <div class="card art-card">
+        <canvas class="art" data-art="pose" data-frame="0"></canvas>
+        <div class="label">Hold</div>
+        <div class="note">Mic hand at rest under the chin, mouth small-open.</div>
+      </div>
+      <div class="card art-card">
+        <canvas class="art" data-art="pose" data-frame="1"></canvas>
+        <div class="label">Inhale</div>
+        <div class="note">1 px dip, mouth closed, shoulders down.</div>
+      </div>
+      <div class="card art-card">
+        <canvas class="art" data-art="pose" data-frame="2"></canvas>
+        <div class="label">Belt</div>
+        <div class="note">Head up 1 px, mouth 3 px wide, blush a shade warmer.</div>
+      </div>
+      <div class="card art-card">
+        <canvas class="art" data-art="pose" data-frame="duet"></canvas>
+        <div class="label">Duet <span class="tag prop">mic nearby</span></div>
+        <div class="note">Both hands on the mic at the chest, a 1 px sway instead of the bob. Client-only check.</div>
+      </div>
+    </div>
+    <div class="row" style="margin-top:14px">
+      <div class="card art-card" style="flex-direction:row; gap: 16px">
+        <div><canvas class="art" data-art="face" data-mouth="closed"></canvas><div class="note">Closed</div></div>
+        <div><canvas class="art" data-art="face" data-mouth="open"></canvas><div class="note">Small “o”</div></div>
+        <div><canvas class="art" data-art="face" data-mouth="wide"></canvas><div class="note">Wide “ah”</div></div>
+        <div style="max-width:240px">
+          <div class="label">Face variants</div>
+          <div class="note left">
+            Three mouths, drawn at 10× here. No new hairstyle or outfit: only the mouth row changes,
+            which is why the pose reads with every look the player already has.
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2><span class="n">4</span> In the room</h2>
+    <p class="sub">
+      A stage beam comes down from the ceiling into a bright pool on the tile, dust drifts through it, and the singer
+      loops under a halo. Flip the two toggles to see the
+      microphone-adjacent duet and a pet that decided to dance. The follow-up pet behaviour is deterministic: the same
+      clock slot, room and pet id always give the same watch/bounce choice, so every viewer sees it the same way.
+    </p>
+    <div class="controls">
+      <label class="toggle"><input type="checkbox" id="duet" /> Mic on an adjacent tile → duet / stage</label>
+      <label class="toggle"><input type="checkbox" id="dance" /> Pet: watch ↔ dance</label>
+      <span class="legend">
+        <span><i class="dot" style="background:#c98f28"></i> ♪ note</span>
+        <span><i class="dot" style="background:#d45a7a"></i> ♫ note</span>
+        <span><i class="dot" style="background:#fff0d2"></i> stage beam</span>
+      </span>
+    </div>
+    <div class="card" style="width:max-content;max-width:100%">
+      <canvas class="art" data-art="scene" id="scene"></canvas>
+    </div>
+  </section>
+
+  <section>
+    <h2><span class="n">5</span> Pets</h2>
+    <p class="sub">
+      Two idle behaviours slot into the existing pet action choice. <b>Watch</b>: turn toward the singer, sit still, ears
+      up, one paw lifted — no pathing change. <b>Dance</b>: a 1 px bounce on the beat with the tail up and paws
+      alternating. Both are borrowed from the pet's current wander seed, so there is no new network field.
+      If the mic is adjacent to the singer, pets prefer watch over dance, and the singer gets the duet pose.
+    </p>
+    <div class="row">
+      <div class="card art-card"><canvas class="art" data-art="pet" data-kind="cat" data-act="watch"></canvas><div class="label">Cat — watch</div></div>
+      <div class="card art-card"><canvas class="art" data-art="pet" data-kind="cat" data-act="dance"></canvas><div class="label">Cat — dance</div></div>
+      <div class="card art-card"><canvas class="art" data-art="pet" data-kind="puppy" data-act="watch"></canvas><div class="label">Puppy — watch</div></div>
+      <div class="card art-card"><canvas class="art" data-art="pet" data-kind="puppy" data-act="dance"></canvas><div class="label">Puppy — dance</div></div>
+    </div>
+  </section>
+
+  <section>
+    <h2><span class="n">6</span> At real size, and the spec</h2>
+    <p class="sub">The whole idea has to survive at 2× in a room. This is the actual pixel size.</p>
+    <div class="row" style="align-items:center">
+      <div class="card art-card"><canvas class="art floor" data-art="small" data-style="original"></canvas><div class="note">Original karaoke at 2×</div></div>
+      <div class="card art-card"><canvas class="art floor" data-art="small" data-style="retro" data-adapter="spindle"></canvas><div class="note">Record player at 2× — plain spindle</div></div>
+      <div class="card art-card"><canvas class="art floor" data-art="small" data-style="retro" data-adapter="45"></canvas><div class="note">Record player at 2× — 45 adapter</div></div>
+      <div class="card art-card"><canvas class="art floor" data-art="small" data-style="neon"></canvas><div class="note">Neon pop at 2×</div></div>
+      <div class="card art-card"><canvas class="art floor" data-art="small" data-style="cute"></canvas><div class="note">Cute pastel at 2×</div></div>
+      <div class="card art-card"><canvas class="art floor" data-art="small-sing"></canvas><div class="note">Singer, notes and tint at 2×</div></div>
+    </div>
+    <div class="row" style="margin-top:14px;align-items:center">
+      <div class="card art-card"><canvas class="art" data-art="deck" data-adapter="spindle"></canvas><div class="label">Plain spindle</div><div class="note">One cream pixel on the label.</div></div>
+      <div class="card art-card"><canvas class="art" data-art="deck" data-adapter="45"></canvas><div class="label">45 adapter <span class="tag new">proposed</span></div><div class="note">Cream spider with four prongs and a centre hole; covers most of the single's label, as a real 45 adapter does.</div></div>
+      <div class="card" style="max-width:280px"><div class="label">Game-size read</div><div class="note left">At 2× the plain spindle is a single pixel that vanishes against the pink label. The adapter is 5×5 with a dark centre, so it survives downsizing and says “45” rather than “dot”.</div></div>
+    </div>
+
+    <table class="spec" style="margin-top:16px">
+      <tr><th>Proposal</th><th>Where it would live</th><th>Detail</th></tr>
+      <tr>
+        <td><b>Sing use</b></td>
+        <td><code>shared/game.js</code>, <code>src/main.ts</code></td>
+        <td><code>microphone.use = 'sing'</code>, <code>karaoke.use = 'sing'</code>; <code>USES</code> derives it automatically. Add <code>'sing'</code> to <code>MUSIC_USES</code>; guide/tooltip text says “Sing”.</td>
+      </tr>
+      <tr>
+        <td><b>Styles 1–3</b></td>
+        <td><code>shared/game.js</code>, <code>src/draw.ts</code></td>
+        <td><code>looks: ['Retro booth', 'Neon pop', 'Cute pastel']</code>; server stores <code>s</code>; <code>ALT.karaoke[0..2]</code>, same owner-colour rule.</td>
+      </tr>
+      <tr>
+        <td><b>Singing pose</b></td>
+        <td><code>src/draw.ts</code>, <code>src/main.ts</code></td>
+        <td>New <code>drawSinging(look, x, y, t, duet)</code>. Server keeps relaying the action name from <code>USES</code> on <code>pos</code>; no new message.</td>
+      </tr>
+      <tr>
+        <td><b>Notes ♪ ♫</b></td>
+        <td><code>src/draw.ts</code></td>
+        <td>One note every ~620 ms, 6–7 alive, rise 20 px over 2.6 s, alpha 0.95 → 0. Glyphs are 1 px ♪ / ♫ in the deep end of the palette (gold, rose, green, blue) so they hold up on wood floors; pastel tones vanish at 2×.</td>
+      </tr>
+      <tr>
+        <td><b>Spotlight</b></td>
+        <td><code>src/draw.ts</code></td>
+        <td>A ceiling fixture with a lit lens, a dithered cone with a brighter core and 1 px edges, halo behind the head, four nested pool ellipses at 0.10–0.26 alpha, six drifting motes, 2.4 s breath. Wider cone and pool on a duet; still no bloom or screen flash.</td>
+      </tr>
+      <tr>
+        <td><b>Duet / stage</b></td>
+        <td><code>src/draw.ts</code> (render only)</td>
+        <td>If any <code>microphone</code> sits within 1 tile of the singer: duet pose, a second spotlight, two note streams, a 40×3 px warm stage strip. Nothing is sent to the server or stored.</td>
+      </tr>
+      <tr>
+        <td><b>Pet watch / dance</b></td>
+        <td><code>src/pets.ts</code>, <code>src/main.ts</code></td>
+        <td>When a character sings within 4 tiles: prefer watch (or dance if bond ≥ 2). Chosen from <code>seedOf(pet)</code> + clock slot so it is identical on every client; no state.</td>
+      </tr>
+    </table>
+
+    <div class="two" style="margin-top:16px">
+      <div class="card">
+        <div class="label">Open questions before code</div>
+        <ul class="plain">
+          <li>Should <b>both</b> items become <code>sing</code>, or the mic stand stay <code>music</code>? Recommendation: both — one action, one tooltip, and <code>USES</code> still derives itself.</li>
+          <li>Is “duet” allowed to pair with a <b>pet</b> instead of a second character, or is it strictly a pose/stage upgrade for one singer? Drawn as the latter.</li>
+          <li>Should the pet preference depend on <code>bond</code>, or just distance? Drawn as distance-first with bond as a tie-break.</li>
+          <li>Style names final? “Neon pop” sits slightly louder than the palette; if it reads too bright we can drop the glow alpha and arrow to 0.06.</li>
+        </ul>
+      </div>
+      <div class="card">
+        <div class="label">Palette used</div>
+        <div class="palette">
+          <div class="sw"><i style="background:#3a2633"></i>ink</div>
+          <div class="sw"><i style="background:#f4a6b8"></i>pink</div>
+          <div class="sw"><i style="background:#8fd0a8"></i>mint</div>
+          <div class="sw"><i style="background:#ffd27a"></i>butter</div>
+          <div class="sw"><i style="background:#9db4ee"></i>peri</div>
+          <div class="sw"><i style="background:#b89af0"></i>lilac</div>
+          <div class="sw"><i style="background:#fffaf3"></i>cream</div>
+          <div class="sw"><i style="background:#b07a4e"></i>wood</div>
+          <div class="sw"><i style="background:#a8a0b8"></i>metal</div>
+          <div class="sw"><i style="background:#d9a06a"></i>floor</div>
+        </div>
+        <p class="note left" style="max-width:none;margin-top:10px">
+          Nothing new enters the palette. The neon style reuses the existing accent pinks, mints and blues as
+          low-alpha light, which is why it can be loud in name and quiet on screen.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <footer>Auralis · design draft for karaoke behaviour · art drawn in this page only; no game files changed.</footer>
+</div>
+
+<script>
+(() => {
+  'use strict';
+
+  // ---------- palette (from docs/design.md and src/draw.ts) ----------
+  const INK = '#3a2633', DARK = '#2b2530', CREAM = '#fffaf3';
+  const PINK = '#f4a6b8', PINK_D = '#d9768c', PINK_L = '#f8c3cf';
+  const MINT = '#8fd0a8', MINT_D = '#5fb070';
+  const BUTTER = '#ffd27a', GOLD = '#f2c14e';
+  const PERI = '#9db4ee', BLUE = '#7fb2e8';
+  const LILAC = '#b89af0';
+  const WOOD = '#b07a4e', WOOD_D = '#8a5a3c', WOOD_L = '#d9a06a';
+  const METAL = '#a8a0b8', METAL_D = '#5a5070';
+  const FLOOR = '#d9a06a', FLOOR_D = '#c8a078';
+  const NEON_PINK = '#ff9ec4', NEON_MINT = '#9ef0c4', NEON_BLUE = '#9ecbff';
+  const SKIN = '#ffe0c8', HAIR = '#5a3a4a', HAIR_L = '#7a5266';
+  const SHIRT = '#b89af0', SHIRT_D = '#9d7fe0', PANTS = '#5a5080';
+
+  // ---------- tiny pixel pen ----------
+  function pen(g, s, ox = 0, oy = 0) {
+    const R = (x, y, w, h, c) => {
+      if (w <= 0 || h <= 0) return;
+      g.fillStyle = c;
+      g.fillRect(Math.round((ox + x) * s), Math.round((oy + y) * s), Math.round(w * s), Math.round(h * s));
+    };
+    const disc = (cx, cy, rad, c) => {
+      for (let y = Math.floor(cy - rad); y < Math.ceil(cy + rad); y++) {
+        const dy = y + 0.5 - cy;
+        const hw = Math.sqrt(Math.max(0, rad * rad - dy * dy));
+        const x0 = Math.round(cx - hw), x1 = Math.round(cx + hw);
+        if (x1 > x0) R(x0, y, x1 - x0, 1, c);
+      }
+    };
+    const odisc = (cx, cy, rad, c, oc = INK) => { disc(cx, cy, rad + 1, oc); disc(cx, cy, rad, c); };
+    const box = (x, y, w, h, c, oc = INK) => { R(x, y, w, h, oc); R(x + 1, y + 1, w - 2, h - 2, c); };
+    const dots = (list, c) => { for (const [x, y] of list) R(x, y, 1, 1, c); };
+    return { R, disc, odisc, box, dots, g, s, ox, oy };
+  }
+
+  function sprite(p, rows, pal, x, y, sc = 1) {
+    rows.forEach((row, j) => {
+      for (let i = 0; i < row.length; i++) {
+        const ch = row[i];
+        if (ch === '.' || !pal[ch]) continue;
+        p.R(x + i * sc, y + j * sc, sc, sc, pal[ch]);
+      }
+    });
+  }
+
+  const NOTE_A = ['..xx.', '..x.x', '..x..', '..x..', 'xxx..', 'xxx..'];
+  const NOTE_B = ['.xx.xx', '.x..x.', '.x..x.', '.x..x.', 'xxx.xx', 'xxx.xx'];
+  function note(p, x, y, kind, col, alpha = 1) {
+    p.g.save();
+    p.g.globalAlpha = alpha;
+    const rows = kind === 'B' ? NOTE_B : NOTE_A;
+    rows.forEach((row, j) => {
+      for (let i = 0; i < row.length; i++) if (row[i] === 'x')
+        p.R(x + i, y + j, 1, 1, col);
+    });
+    p.g.restore();
+  }
+
+  // ---------- karaoke machine ----------
+  function karaoke(g, s, t, style, ownerCol, singing, adapter = '45') {
+    const p = pen(g, s);
+    const { R, box, disc, odisc } = p;
+    const col = ownerCol || PINK;
+    const beat = Math.floor(t / 520) % 4;
+    const pulse = (Math.sin(t / 380) + 1) / 2;
+    if (singing) {
+      // a breath of light at the base, and one mint note above the machine
+      g.save();
+      g.globalAlpha = 0.10 + pulse * 0.08;
+      disc(8, 28, 7, BUTTER);
+      g.restore();
+      g.save();
+      g.globalAlpha = 0.45 + pulse * 0.35;
+      note(p, 12, 5, 'A', MINT, 1);
+      g.restore();
+      g.save();
+      g.globalAlpha = 0.18 + pulse * 0.12;
+      R(2, 22, 12, 1, MINT);
+      g.restore();
+    }
+
+    if (style === 'original') {
+      R(12, 0, 1, 9, METAL);
+      odisc(12, 1, 2, METAL_D);
+      box(1, 8, 14, 18, col);
+      R(2, 9, 12, 1, PINK_L);
+      R(2, 18, 12, 1, PINK_D);
+      box(3, 10, 10, 3, DARK);
+      R(4, 11, 3, 1, beat === 0 ? MINT : '#6a8a78');
+      R(9, 11, 3, 1, beat === 2 ? BUTTER : '#a08a58');
+      odisc(8, 20, 3, DARK);
+      disc(8, 20, 2, METAL_D);
+      disc(8, 20, 1, DARK);
+      R(3, 25, 10, 1, PINK_D);
+      R(0, 26, 16, 2, INK);
+      R(2, 27, 3, 2, METAL_D);
+      R(11, 27, 3, 2, METAL_D);
+      return;
+    }
+
+    if (style === 'retro') {
+      // A vintage console record player: cream deck with a vinyl and a chrome
+      // tonearm, wood cabinet with one slatted speaker, chrome plinth and feet.
+      const chromeL = '#e2dce8', chromeD = '#8a8090';
+      // chrome feet and plinth
+      R(2, 28, 3, 2, METAL); R(11, 28, 3, 2, METAL);
+      R(3, 29, 1, 1, chromeD); R(12, 29, 1, 1, chromeD);
+      R(1, 26, 14, 2, METAL);
+      R(2, 26, 12, 1, chromeL);
+      R(1, 28, 14, 1, chromeD);
+      // wood cabinet
+      box(1, 13, 14, 13, WOOD);
+      R(2, 14, 12, 1, WOOD_L);
+      R(2, 25, 12, 1, WOOD_D);
+      // owner-colour band
+      R(2, 16, 12, 2, col);
+      R(2, 16, 12, 1, lighten(col, 0.22));
+      R(2, 17, 12, 1, darken(col, 0.14));
+      R(1, 15, 14, 1, METAL); R(2, 15, 12, 1, chromeL);
+      // slatted speaker, chrome framed
+      box(3, 19, 10, 6, WOOD_D);
+      R(4, 20, 8, 4, '#a8714a');
+      for (const sx of [4, 6, 8, 10, 12]) R(sx, 20, 1, 4, '#c8a078');
+      R(3, 19, 10, 1, chromeL);
+      R(3, 24, 10, 1, METAL);
+      // cream deck, widening as it comes forward
+      R(4, 6, 8, 1, INK);
+      R(3, 7, 10, 1, INK);
+      R(2, 8, 12, 1, INK);
+      R(1, 9, 14, 1, INK);
+      R(5, 7, 6, 1, CREAM);
+      R(4, 8, 8, 1, CREAM);
+      R(3, 9, 10, 1, CREAM);
+      R(2, 10, 12, 1, CREAM);
+      R(1, 11, 14, 3, CREAM);
+      R(2, 10, 12, 1, '#ffffff');
+      R(1, 11, 14, 1, '#f6efe2');
+      R(1, 13, 14, 1, '#e8dccb');
+      // the record: vinyl with two groove rings and the owner's colour on the label
+      disc(6, 10, 4, INK);
+      disc(6, 10, 3.4, '#241f2a');
+      disc(6, 10, 2.6, '#2b2530');
+      disc(6, 10, 2.2, '#3a3448');
+      disc(6, 10, 1.2, lighten(col, 0.18));
+      if (adapter === '45') {
+        // a 45 rpm spider: cream body, four prongs, dark centre hole
+        R(5, 9, 3, 3, CREAM);
+        R(5, 11, 3, 1, '#e8dccb');
+        R(6, 8, 1, 1, CREAM);
+        R(6, 11, 1, 1, '#e8dccb');
+        R(4, 10, 1, 1, CREAM);
+        R(7, 10, 1, 1, CREAM);
+        R(6, 10, 1, 1, '#2b2530');
+      } else {
+        R(6, 9, 1, 1, CREAM);
+      }
+      // a single shine on the vinyl (top left), so it reads glossy, not as a hole
+      R(4, 8, 2, 1, '#5a5070');
+      R(4, 9, 1, 1, '#4a4458');
+      // chrome tonearm: pivot post, arm, then the head resting on the disc
+      R(12, 7, 1, 1, chromeD);
+      R(12, 8, 1, 2, chromeL);
+      R(11, 9, 1, 1, METAL);
+      R(10, 10, 1, 1, METAL);
+      R(9, 11, 1, 1, chromeL);
+      R(8, 11, 1, 1, METAL_D);
+      // a single power light at the deck's front corner
+      R(13, 12, 1, 1, beat === 0 ? MINT : MINT_D);
+      return;
+    }
+
+    if (style === 'neon') {
+      // halo behind the body
+      g.globalAlpha = 0.10;
+      disc(8, 18, 9, col);
+      g.globalAlpha = 1;
+      box(1, 8, 14, 19, DARK);
+      // neon rim
+      R(2, 9, 12, 1, NEON_PINK);
+      R(2, 9, 1, 17, NEON_PINK);
+      R(13, 9, 1, 17, NEON_PINK);
+      R(6, 9, 4, 1, '#ffd3e4');
+      // heart sign
+      const heart = ['.xx.xx', 'xxxxxx', 'xxxxxx', '.xxxx.', '..xx..'];
+      heart.forEach((row, j) => {
+        for (let i = 0; i < row.length; i++) if (row[i] === 'x') R(5 + i, 11 + j, 1, 1, j === 0 ? '#ffd3e4' : NEON_PINK);
+      });
+      // eq bars, breathing gently
+      const heights = [2, 3, 2, 2].map((h, i) => h + ((beat + i) % 3 === 0 ? 1 : 0));
+      ['#ffd3e4', NEON_MINT, NEON_BLUE, NEON_MINT].forEach((c, i) => {
+        R(4 + i * 2, 19 - heights[i], 1, heights[i], c);
+      });
+      // speaker
+      odisc(8, 25, 3, DARK);
+      R(8, 21, 1, 2, NEON_BLUE);
+      R(6, 25, 4, 1, NEON_BLUE);
+      R(7, 23, 2, 1, METAL_D);
+      // base
+      R(2, 26, 12, 1, METAL_D);
+      R(3, 27, 10, 1, DARK);
+      R(2, 28, 3, 2, INK); R(11, 28, 3, 2, INK);
+      return;
+    }
+
+    // cute pastel: a soft dome with cat ears, a singing face plate and a tiny speaker.
+    // The owner's colour is the shell; the plate stays cream so the face always reads.
+    const cute = ownerCol || MINT;
+    const cuteL = lighten(cute, 0.26), cuteD = darken(cute, 0.16);
+    // feet
+    R(3, 28, 3, 2, CREAM); R(10, 28, 3, 2, CREAM);
+    R(4, 29, 1, 1, '#e8dccb'); R(11, 29, 1, 1, '#e8dccb');
+    // dome shell (a soft rim, not an ink box, so the machine reads plush)
+    R(5, 6, 6, 1, cuteD);
+    R(4, 7, 8, 1, cuteD);
+    R(3, 8, 10, 1, cuteD);
+    R(2, 9, 12, 18, cuteD);
+    R(3, 10, 10, 16, cute);
+    R(3, 10, 10, 1, cuteL);
+    R(3, 11, 1, 14, cuteL);
+    R(2, 26, 12, 1, cuteD);
+    // ears, stepped and rounded outward
+    R(4, 3, 2, 1, INK);
+    R(3, 4, 2, 1, cuteD); R(5, 4, 1, 1, cuteL);
+    R(3, 5, 3, 1, cute);
+    R(3, 6, 3, 1, cuteD);
+    R(10, 3, 2, 1, INK);
+    R(10, 4, 2, 1, cuteD); R(10, 4, 1, 1, cuteL);
+    R(10, 5, 3, 1, cute);
+    R(10, 6, 3, 1, cuteD);
+    // face plate: closed happy eyes and an open singing mouth
+    R(4, 9, 8, 9, CREAM);
+    R(4, 9, 8, 1, '#ffffff');
+    R(4, 17, 8, 1, '#ece1d2');
+    R(5, 12, 2, 1, INK); R(5, 13, 1, 1, INK);
+    R(9, 12, 2, 1, INK); R(10, 13, 1, 1, INK);
+    R(4, 15, 1, 1, PINK); R(11, 15, 1, 1, PINK);
+    R(7, 14, 2, 2, '#7a3a42');
+    R(7, 15, 2, 1, '#e88a95');
+    // speaker recess with four dots
+    R(3, 18, 10, 6, cuteD);
+    R(4, 19, 8, 4, cute);
+    R(5, 21, 1, 1, cuteD); R(7, 21, 1, 1, cuteD); R(9, 21, 1, 1, cuteD); R(11, 21, 1, 1, cuteD);
+    // blush on the shell
+    R(2, 14, 1, 1, PINK); R(13, 14, 1, 1, PINK);
+  }
+
+  // ---------- microphone stand ----------
+  function micStand(g, s, t, singing, ox = 0, oy = 0) {
+    const p = pen(g, s, ox, oy);
+    const { R, disc, odisc } = p;
+    const pulse = (Math.sin(t / 380) + 1) / 2;
+    if (singing) {
+      g.save();
+      g.globalAlpha = 0.10 + pulse * 0.08;
+      disc(8, 28, 7, BUTTER);
+      g.restore();
+    }
+    R(1, 28, 14, 1, INK);
+    R(2, 27, 12, 1, METAL);
+    R(4, 26, 8, 1, METAL);
+    R(7, 10, 2, 16, METAL_D);
+    R(7, 10, 1, 16, METAL);
+    R(6, 9, 4, 2, METAL_D);
+    odisc(8, 6, 2, DARK);
+    R(7, 5, 2, 1, METAL);
+    R(7, 7, 2, 1, METAL_D);
+    if (singing) {
+      g.save();
+      g.globalAlpha = 0.45 + pulse * 0.4;
+      note(p, 12, 1, 'A', MINT, 1);
+      g.restore();
+      g.save();
+      g.globalAlpha = 0.18 + pulse * 0.12;
+      R(2, 22, 12, 1, MINT);
+      g.restore();
+    }
+  }
+
+  // ---------- character ----------
+  // 16 wide, 21 tall, feet on row 20 — the same box as AVATAR_H in src/draw.ts.
+  function chibi(g, s, x, y, o) {
+    const p = pen(g, s, x, y);
+    const { R, box } = p;
+    const B = o.dy || 0;
+    const shirt = o.shirt || SHIRT;
+
+    // legs stay planted while the upper body breathes
+    R(5, 16, 3, 4, PANTS);
+    R(9, 16, 3, 4, PANTS);
+    R(5, 16, 1, 4, '#6a60a0');
+    R(4, 19, 4, 2, INK);
+    R(9, 19, 4, 2, INK);
+
+    // torso
+    box(4, 9 + B, 8, 8, shirt);
+    R(5, 10 + B, 6, 1, '#cbb2f5');
+    R(5, 15 + B, 6, 1, SHIRT_D);
+    // left arm
+    R(3, 10 + B, 2, 4, SHIRT_D);
+    R(3, 14 + B, 2, 2, SKIN);
+    // neck + head
+    R(7, 8 + B, 2, 1, SKIN);
+    R(3, 1 + B, 10, 7, HAIR);
+    R(4, 3 + B, 8, 5, SKIN);
+    R(3, 0 + B, 10, 2, HAIR);
+    R(3, 2 + B, 2, 3, HAIR);
+    R(11, 2 + B, 2, 2, HAIR);
+    R(4, 2 + B, 3, 1, HAIR);
+    R(9, 2 + B, 2, 1, HAIR);
+    R(6, 1 + B, 2, 1, HAIR_L);
+    R(7, 1 + B, 1, 1, '#9a7086');
+    // eyes
+    R(5, 4 + B, 1, 2, INK);
+    R(10, 4 + B, 1, 2, INK);
+    R(5, 4 + B, 1, 1, '#ffffff');
+    R(10, 4 + B, 1, 1, '#ffffff');
+    // blush
+    R(4, 6 + B, 1, 1, o.warm ? '#f7a0b0' : PINK);
+    R(11, 6 + B, 1, 1, o.warm ? '#f7a0b0' : PINK);
+
+    // mouth
+    const mouth = o.mouth || 'open';
+    if (mouth === 'closed') R(8, 7 + B, 1, 1, '#c8606a');
+    else if (mouth === 'wide') { R(7, 7 + B, 3, 2, '#7a3a42'); R(8, 8 + B, 1, 1, '#e88a95'); }
+    else { R(8, 7 + B, 2, 1, '#7a3a42'); R(8, 8 + B, 1, 1, '#e88a95'); }
+
+    // right arm + mic
+    if (o.duet) {
+      R(10, 10 + B, 2, 2, SHIRT_D);
+      R(9, 12 + B, 2, 1, SKIN);
+      R(6, 12 + B, 2, 1, SKIN);
+      R(7, 8 + B, 2, 3, DARK);
+      R(7, 7 + B, 2, 1, METAL);
+      R(7, 9 + B, 2, 1, METAL_D);
+    } else {
+      R(11, 10 + B, 2, 3, SHIRT_D);
+      R(10, 10 + B, 2, 1, SKIN);
+      R(9, 5 + B, 2, 1, METAL);
+      R(9, 6 + B, 2, 2, DARK);
+      R(9, 8 + B, 2, 1, METAL_D);
+      R(9, 7 + B, 1, 1, SKIN);
+    }
+  }
+
+  // ---------- pets ----------
+  const CAT = {
+    watch: [
+      '.........o....o.',
+      '........oao..oao',
+      '.oo.....oaaaaaao',
+      '.oao....oaawwwwo',
+      '.oao....owewwewo',
+      '.oao....owpwnwpo',
+      '..oaoooooowwwwo.',
+      '..oaaaawwwwwwo..',
+      '..owaaawwwwwwo..',
+      '..owwwwwwwwwwo..',
+      '..ow.ow..ow.ow..',
+      '..oo.oo..oo.oo..',
+    ],
+    dance: [
+      '.........o....o.',
+      '........oao..oao',
+      '.oo.....oaaaaaao',
+      '.oao....oawwwwao',
+      '.oao....owewwewo',
+      '.oao....owpwnwpo',
+      '..oaoooooowwwwo.',
+      '..oaaaawwwwwwo..',
+      '..owaaawwwwwwo..',
+      '..owwwwwwwwwwo..',
+      '...ow.ow.ow.ow..',
+      '...oo.oo.oo.oo..',
+    ],
+  };
+  const PUPPY = {
+    watch: [
+      '................',
+      '.........oooo...',
+      '........oaaaao..',
+      '.......obaaaaao.',
+      '.o.....obaeaaeo.',
+      'oao....obawwwwno',
+      '.oa.oooobawwwwo.',
+      '..oaaaaaaawwwo..',
+      '..oaaaaaawwwwo..',
+      '..owwaaaawwwwo..',
+      '..ow.ow..ow.ow..',
+      '..oo.oo..oo.oo..',
+    ],
+    dance: [
+      '................',
+      '........oooo....',
+      '.......oaaaao...',
+      '.o....obaaaaao..',
+      'oao...obaeaaeo..',
+      '.oa.ooobawwwwno.',
+      '..oaaaaaaawwwo..',
+      '..oaaaaaawwwwo..',
+      '..owwaaaawwwwo..',
+      '..owwwwwwwwwwo..',
+      '...ow.ow.ow.o...',
+      '...oo.oo.oo.o...',
+    ],
+  };
+  const COAT_CAT = '#d9a06a', COAT_CAT_D = '#b07a4e';
+  const COAT_PUP = '#f2b48a', COAT_PUP_D = '#c8805a';
+  function pet(g, s, t, kind, act, ox, oy) {
+    const p = pen(g, s, ox, oy);
+    p.g = g; p.s = s; p.ox = ox; p.oy = oy;
+    const base = kind === 'cat' ? CAT : PUPPY;
+    const rows = base[act] || base.watch;
+    const coat = kind === 'cat' ? COAT_CAT : COAT_PUP;
+    const coatD = kind === 'cat' ? COAT_CAT_D : COAT_PUP_D;
+    const pal = { o: coatD, a: coat, b: coatD, w: '#fff4e6', e: '#3a2633', p: '#f7a0b0', n: '#e86a8a' };
+    const hop = act === 'dance' ? (Math.floor(t / 300) % 2) : 0;
+    sprite(p, rows, pal, 0, -hop, 1);
+    if (act === 'dance') {
+      // two tiny beat marks, so the bounce reads even when the pet is small
+      g.save();
+      g.globalAlpha = (Math.floor(t / 300) % 2) ? 0.0 : 0.45;
+      p.R(1, -hop - 3, 1, 1, BUTTER);
+      p.R(14, -hop - 4, 1, 1, PINK);
+      g.restore();
+    }
+  }
+
+  // ---------- scene ----------
+  const NOTE_INK = ['#f2c14e', '#f0708e', '#6cc98a', '#7fa6ff'];
+
+  const rgb = (hex) => { const n = parseInt(hex.slice(1), 16); return [n >> 16, (n >> 8) & 255, n & 255]; };
+  const lighten = (hex, k) => {
+    const [r, g, b] = rgb(hex);
+    const m = (v) => Math.round(v + (255 - v) * k).toString(16).padStart(2, '0');
+    return `#${m(r)}${m(g)}${m(b)}`;
+  };
+  const darken = (hex, k) => {
+    const [r, g, b] = rgb(hex);
+    const m = (v) => Math.round(v * (1 - k)).toString(16).padStart(2, '0');
+    return `#${m(r)}${m(g)}${m(b)}`;
+  };
+
+  function scene(g, s, t, opts) {
+    const p = pen(g, s);
+    const W = 76, H = 42, FLOOR_Y = 12, FEET = 34;
+    // wallpaper
+    p.R(0, 0, W, FLOOR_Y, '#ece2d5');
+    for (let y = 2; y < FLOOR_Y - 1; y += 4)
+      for (let x = 2 + ((y / 4) % 2) * 4; x < W; x += 9) p.R(x, y, 1, 1, '#e0d5c6');
+    p.R(0, FLOOR_Y - 1, W, 1, '#dccfbe');
+    // floor
+    p.R(0, FLOOR_Y, W, H - FLOOR_Y, FLOOR);
+    for (let y = FLOOR_Y + 7; y < H; y += 7) p.R(0, y, W, 1, FLOOR_D);
+    for (let y = FLOOR_Y; y < H; y += 7)
+      for (let x = ((y / 7) % 2) * 12; x < W; x += 24) p.R(x, y, 1, Math.min(7, H - y), FLOOR_D);
+
+
+    const cx = 25;
+    const singerX = cx - 8;
+    const duet = !!opts.duet;
+
+    // stage light: a dithered cone from the ceiling, a halo behind the singer and a
+    // bright pool where it lands. The cone is wider on a duet.
+    const pulse = 0.5 + 0.5 * Math.sin(t / 380);
+    const bright = 0.85 + pulse * 0.4;
+    const rx = duet ? 19 : 15;
+    // the room dims a step so the beam has something to cut through
+    g.save();
+    g.globalAlpha = 0.10;
+    p.R(0, 0, W, H, '#2b2530');
+    g.restore();
+    // a can light hanging at the ceiling, aimed at the singer
+    p.R(cx - 4, 0, 9, 1, INK);
+    p.R(cx - 3, 1, 7, 2, DARK);
+    p.R(cx - 2, 3, 5, 1, METAL_D);
+    p.R(cx - 2, 4, 5, 1, '#fffbe8');
+    g.save();
+    g.globalAlpha = 0.55 * bright;
+    p.disc(cx, 4, 2, '#fffbe8');
+    g.restore();
+    // outer cone, then a tighter brighter core
+    g.save();
+    for (let y = 5; y <= FEET - 1; y++) {
+      const k = (y - 5) / (FEET - 6);
+      const w = (duet ? 3 : 2) + k * (duet ? 19 : 15);
+      const x0 = Math.round(cx - w / 2);
+      for (let i = 0; i < Math.ceil(w); i++) {
+        g.globalAlpha = (((x0 + i + y) & 1) === 0 ? 0.10 : 0.045) * bright;
+        p.R(x0 + i, y, 1, 1, '#fff4d6');
+      }
+      g.globalAlpha = 0.26 * bright;
+      p.R(x0, y, 1, 1, '#fffdf0');
+      p.R(x0 + Math.ceil(w) - 1, y, 1, 1, '#fffdf0');
+    }
+    for (let y = 6; y <= FEET - 2; y++) {
+      const k = (y - 6) / (FEET - 8);
+      const w = 1 + k * (duet ? 11 : 8);
+      const x0 = Math.round(cx - w / 2);
+      g.globalAlpha = 0.14 * bright;
+      p.R(x0, y, Math.max(1, Math.round(w)), 1, '#fffdf0');
+    }
+    g.restore();
+    // halo behind the head so the silhouette lifts off the wall
+    g.save();
+    g.globalAlpha = 0.15 * bright;
+    p.disc(cx, FEET - 14, 9, '#fff4d6');
+    g.restore();
+    // the pool: four nested ellipses, brightest at the core
+    for (const [k, a] of [[1.2, 0.12], [1, 0.16], [0.7, 0.22], [0.4, 0.30]]) {
+      g.save();
+      g.globalAlpha = a * bright;
+      for (let y = -4; y <= 4; y++) {
+        const half = Math.sqrt(Math.max(0, 1 - (y / 4.4) ** 2)) * rx * k;
+        p.R(cx - half, FEET - 1 + y, half * 2, 1, y === 0 ? '#fff8dd' : '#ffe9b8');
+      }
+      g.restore();
+    }
+    // dust motes drifting through the beam
+    for (let i = 0; i < 6; i++) {
+      const q = (t / 2600 + i / 6) % 1;
+      const mx = cx + Math.sin(q * 6.1 + i * 2) * (4 + q * 8);
+      const my = 3 + q * (FEET - 12);
+      g.save();
+      g.globalAlpha = 0.25 + 0.55 * Math.sin(q * Math.PI) * bright;
+      p.R(Math.round(mx), Math.round(my), 1, 1, '#fff6d8');
+      g.restore();
+    }
+    if (duet) {
+      g.save();
+      g.globalAlpha = 0.30 + pulse * 0.12;
+      p.R(cx - 18, FEET - 2, 36, 2, BUTTER);
+      p.R(cx - 16, FEET - 2, 32, 1, '#ffe6a8');
+      g.restore();
+    }
+
+    // pet to the left, watching or dancing
+    const dance = !!opts.dance;
+    pet(g, s, t, 'cat', dance ? 'dance' : 'watch', 3, FEET - 12);
+    if (dance) {
+      const q = (t / 300) % 2 < 1 ? 1 : 0;
+      g.save(); g.globalAlpha = 0.8;
+      note(p, 16, 17 - q * 3, 'A', NOTE_INK[1], 1);
+      note(p, 2, 14 + q * 2, 'B', NOTE_INK[0], 0.9);
+      g.restore();
+    } else {
+      // a tiny listening mark: one note resting above the pet
+      g.save(); g.globalAlpha = 0.45 + pulse * 0.12;
+      note(p, 16, 16, 'A', NOTE_INK[2], 1);
+      g.restore();
+    }
+
+    // singer
+    const step = Math.floor(t / 380) % 3;
+    const mouth = step === 1 ? 'closed' : step === 2 ? 'wide' : 'open';
+    chibi(g, s, singerX, FEET - 21, {
+      mouth: duet ? 'wide' : mouth,
+      dy: duet ? (Math.floor(t / 520) % 2) : (step === 1 ? 1 : 0),
+      duet,
+      warm: step === 2,
+    });
+
+    // mic stand / machine on the tile in front
+    if (opts.item === 'karaoke') karaoke(g, s, t, opts.style || 'original');
+    else micStand(g, s, t, true, 36, FEET - 30);
+
+    // notes: one stream, or two when duetting
+    const streams = duet ? 2 : 1;
+    for (let k = 0; k < streams; k++) {
+      for (let i = 0; i < 6; i++) {
+        const ph = (t / 2600 + i / 6 + k * 0.5) % 1;
+        const nx = 33 + k * 6 + Math.sin(ph * 5.2 + i) * 4;
+        const ny = 29 - ph * 22;
+        const a = Math.sin(ph * Math.PI) * 0.95;
+        note(p, nx, ny, i % 2 ? 'B' : 'A', NOTE_INK[(i + k) % 4], a);
+      }
+    }
+  }
+
+  // ---------- mount + animate ----------
+  const jobs = [];
+  function mount(el, w, h, scale, draw) {
+    el.width = Math.round(w * scale);
+    el.height = Math.round(h * scale);
+    el.style.width = el.width + 'px';
+    el.style.height = el.height + 'px';
+    el.style.imageRendering = 'pixelated';
+    const g = el.getContext('2d');
+    g.imageSmoothingEnabled = false;
+    jobs.push((t) => {
+      g.clearRect(0, 0, el.width, el.height);
+      draw(g, scale, t, el);
+    });
+  }
+
+  document.querySelectorAll('[data-art]').forEach((el) => {
+    const kind = el.dataset.art;
+    const style = el.dataset.style;
+    const col = el.dataset.col;
+    const singing = el.dataset.singing === '1';
+    const frame = el.dataset.frame;
+    const mouth = el.dataset.mouth;
+    const petKind = el.dataset.kind;
+    const act = el.dataset.act;
+
+    if (kind === 'karaoke') {
+      mount(el, 16, 30, col ? 5 : 7, (g, s, t) => karaoke(g, s, t, style, col, singing, el.dataset.adapter || '45'));
+      el.classList.add('floor');
+    } else if (kind === 'mic') {
+      mount(el, 16, 30, 7, (g, s, t, node) => micStand(g, s, t, singing));
+      el.classList.add('floor');
+    } else if (kind === 'pose') {
+      mount(el, 16, 22, 11, (g, s, t) => {
+        if (frame === 'duet') {
+          chibi(g, s, 0, 1, { duet: true, mouth: 'wide', dy: Math.floor(t / 520) % 2 });
+        } else {
+          const f = Number(frame);
+          chibi(g, s, 0, 1, {
+            dy: f === 1 ? 1 : 0,
+            mouth: f === 0 ? 'open' : f === 1 ? 'closed' : 'wide',
+            warm: f === 2,
+          });
+        }
+      });
+      el.classList.add('wall');
+    } else if (kind === 'face') {
+      mount(el, 16, 14, 8, (g, s) => {
+        const p = pen(g, s);
+        const { R, box } = p;
+        R(3, 2, 10, 8, HAIR);
+        R(4, 4, 8, 7, SKIN);
+        R(3, 1, 10, 2, HAIR);
+        R(3, 3, 2, 4, HAIR);
+        R(11, 3, 2, 3, HAIR);
+        R(4, 3, 3, 1, HAIR);
+        R(9, 3, 2, 1, HAIR);
+        R(5, 6, 1, 2, INK); R(10, 6, 1, 2, INK);
+        R(5, 6, 1, 1, '#ffffff'); R(10, 6, 1, 1, '#ffffff');
+        R(4, 8, 1, 1, PINK); R(11, 8, 1, 1, PINK);
+        if (mouth === 'closed') R(8, 9, 1, 1, '#c8606a');
+        else if (mouth === 'wide') { R(7, 9, 3, 2, '#7a3a42'); R(8, 10, 1, 1, '#e88a95'); }
+        else { R(8, 9, 2, 2, '#7a3a42'); R(8, 10, 1, 1, '#e88a95'); }
+      });
+      el.classList.add('wall');
+    } else if (kind === 'pet') {
+      mount(el, 16, 14, 8, (g, s, t) => {
+        // a floor shadow, so the hop reads
+        const hop = act === 'dance' ? (Math.floor(t / 300) % 2) : 0;
+        const p = pen(g, s);
+        p.R(2, 12, 12, 1, 'rgba(58,38,51,0.12)');
+        pet(g, s, t, petKind, act, 0, 2);
+      });
+      el.classList.add('wall');
+    } else if (kind === 'scene') {
+      mount(el, 76, 42, 8, (g, s, t) => {
+        scene(g, s, t, {
+          duet: document.getElementById('duet').checked,
+          dance: document.getElementById('dance').checked,
+          item: 'mic',
+        });
+      });
+    } else if (kind === 'small') {
+      mount(el, 16, 30, 2, (g, s, t) => karaoke(g, s, t, style, null, false, el.dataset.adapter || '45'));
+    } else if (kind === 'deck') {
+      // just the deck and the record, big enough to judge the spindle
+      mount(el, 16, 11, 12, (g, s, t) => {
+        g.save();
+        g.translate(0, -4 * s);
+        karaoke(g, s, t, 'retro', null, false, el.dataset.adapter || '45');
+        g.restore();
+      });
+      el.classList.add('floor');
+    } else if (kind === 'small-sing') {
+      mount(el, 34, 26, 2, (g, s, t) => {
+        const p = pen(g, s);
+        p.R(0, 24, 34, 1, 'rgba(58,38,51,0.15)');
+        // beam and pool at real size
+        g.save();
+        for (let y = 2; y < 24; y++) {
+          const w = 3 + (y / 24) * 13;
+          g.globalAlpha = (((y & 1) === 0) ? 0.16 : 0.08);
+          p.R(Math.round(11 + 6 - w / 2), y, Math.round(w), 1, '#ffeec8');
+        }
+        g.globalAlpha = 0.26;
+        for (let y = -2; y <= 2; y++) p.R(9, 23 + y, 13 - Math.abs(y) * 2, 1, '#ffe9b8');
+        g.restore();
+        chibi(g, s, 9, 4 - ((Math.floor(t / 380) % 3) === 1 ? 1 : 0), {
+          mouth: (Math.floor(t / 380) % 3) === 1 ? 'closed' : 'open',
+        });
+        for (let i = 0; i < 4; i++) {
+          const ph = (t / 2600 + i / 4) % 1;
+          note(p, 21 + Math.sin(ph * 5 + i) * 3, 20 - ph * 14, i % 2 ? 'B' : 'A',
+            NOTE_INK[i], Math.sin(ph * Math.PI) * 0.95);
+        }
+      });
+      el.classList.add('floor');
+    }
+  });
+
+  let last = 0;
+  function frame(now) {
+    if (now - last > 80) {
+      last = now;
+      for (const j of jobs) j(now);
+    }
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>

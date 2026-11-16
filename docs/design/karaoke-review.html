@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Auralis — karaoke review</title>
+<style>
+  body { margin: 0; padding: 14px 18px 20px; background: #efe6da; color: #2b2530; font-family: "Trebuchet MS", system-ui, sans-serif; }
+  h1 { font-size: 18px; margin: 0 0 2px; }
+  p.lede { margin: 0 0 12px; font-size: 12px; color: #6b6478; }
+  .row { display: flex; flex-wrap: wrap; gap: 14px; align-items: flex-end; }
+  figure { margin: 0; background: #fffaf3; border: 2px solid #2b2530; border-radius: 10px; padding: 8px; }
+  canvas { display: block; image-rendering: pixelated; }
+  figcaption { font-size: 12px; margin-top: 6px; max-width: 340px; line-height: 1.35; }
+  figcaption b { color: #2b2530; }
+  figcaption span { color: #6b6478; }
+</style>
+</head>
+<body>
+<h1>Karaoke, as the room draws it</h1>
+<p class="lede">Real output from <code>src/draw.ts</code> and <code>src/pets.ts</code>, on the game floor at 4× zoom (16 px tiles, sprite 16×30).</p>
+
+<div class="row" id="styles"></div>
+<div class="row" id="poses" style="margin-top:14px"></div>
+
+<script type="module">
+  import { drawFloor, drawFurniture, drawUsing, drawSingSpotlight, T } from '/src/draw.ts';
+  import { drawPet } from '/src/pets.ts';
+  import { FLOORS } from '/shared/game.js';
+
+  const look = { skin: '#ffe0c8', hair: '#5a3a4a', shirt: '#b89af0', style: 'bob', face: 'happy', outfit: 'sweater', size: 'regular' };
+  const floor = FLOORS[0] ?? '#e0b382';
+
+  function scene(cols, rows, paint, scale = 4) {
+    const canvas = document.createElement('canvas');
+    canvas.width = cols * T * scale;
+    canvas.height = rows * T * scale;
+    const g = canvas.getContext('2d');
+    g.imageSmoothingEnabled = false;
+    g.scale(scale, scale);
+    for (let y = 0; y < rows; y++) for (let x = 0; x < cols; x++) drawFloor(g, x * T, y * T, floor, x, y, 'planks');
+    paint(g);
+    return canvas;
+  }
+
+  function panel(parent, canvas, title, note) {
+    const fig = document.createElement('figure');
+    fig.append(canvas);
+    const cap = document.createElement('figcaption');
+    cap.innerHTML = `<b>${title}</b> <span>${note}</span>`;
+    fig.append(cap);
+    parent.append(fig);
+    return fig;
+  }
+
+  const styles = [
+    { s: 0, name: 'Classic', note: 'the original machine; only its use changed to sing' },
+    { s: 1, name: 'Retro booth', note: 'record-player console: cream deck, plain-spindle vinyl, chrome tonearm, slatted speaker, owner-colour band' },
+    { s: 2, name: 'Neon pop', note: 'charcoal booth, owner-colour rim and glow, heart sign, breathing EQ' },
+    { s: 3, name: 'Cute pastel', note: 'mint dome, cat ears, cream singing face plate, blush' },
+  ];
+  styles.forEach((st) => {
+    panel(document.querySelector('#styles'), scene(5, 4, (g) => {
+      drawFurniture(g, 'karaoke', 2 * T, 2 * T, 900, undefined, false, 1, st.s, 0, 0, 1);
+    }), st.name, `— ${st.note}`);
+  });
+
+  panel(document.querySelector('#poses'), scene(9, 6, (g) => {
+    const x = 4 * T, y = 3 * T;
+    drawSingSpotlight(g, x, y, 1400, false);
+    drawFurniture(g, 'microphone', x, y - T, 900, undefined, false, 1, 0, 0, 0, 1);
+    drawUsing(g, look, 'sing', x, y, 1400, false);
+    drawPet(g, 'cat', Math.round(5.25 * T), Math.round(3.45 * T), false, false, 1500, 'dance', 0);
+  }), 'Solo', '— mic stand in front, spotlight behind, cat dancing alongside');
+
+  panel(document.querySelector('#poses'), scene(10, 6, (g) => {
+    const x = 4 * T, y = 3 * T;
+    drawSingSpotlight(g, x, y, 1400, true);
+    drawFurniture(g, 'microphone', x, y - T, 900, undefined, false, 1, 0, 0, 0, 1);
+    drawFurniture(g, 'microphone', x - T, y, 900, undefined, false, 1, 0, 0, 0, 1);
+    drawUsing(g, look, 'sing', x, y, 1400, true);
+    drawPet(g, 'puppy', Math.round(5.35 * T), Math.round(3.45 * T), false, false, 1500, 'watch', 0);
+  }), 'Duet', '— second mic stand beside the singer, puppy watching');
+</script>
+</body>
+</html>

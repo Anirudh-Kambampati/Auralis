@@ -250,6 +250,8 @@ const FACE_OVERLAY: Record<string, Overlay> = {
   // lips pushed out: a light upper lip over the mouth line, with the normal eyes
   pout: { 12: '.oh' + 'ssssbbssss' + 'ho.', 13: '..oSsssmmsssSo..' },
   starry: { 10: '.ohsyessssyesho.', 12: '.ohsbsmmmmsbsho.' }, // a star over each catchlight
+  // Not offered in the editor: the singing pose swaps to this open mouth.
+  sing: { 12: '.oh' + 'ssbmmmmbss' + 'ho.', 13: '..oS' + 'ssmmmmss' + 'So..' },
 };
 const OUTFIT_OVERLAY: Record<string, Overlay> = {
   tee: {},
@@ -1663,7 +1665,7 @@ const DRAW: Record<string, Draw> = {
       r(c, x + 45, y + 4 + k * 2, 2, 1, '#fff4e6');
     }
   },
-  roundRug(c, x, y, _t, col = '#b89af0') {
+  roundRug(c, x, y, _t, col = '#e98a9a') {
     disc(c, x + 16, y + 16, 14, OUT);
     disc(c, x + 16, y + 16, 13, col);
     disc(c, x + 16, y + 16, 10, shade(col, 0.12));
@@ -1950,7 +1952,6 @@ const DRAW: Record<string, Draw> = {
   microwave(c, x, y, t) {
     box(c, x + 1, y + 4, 14, 10, '#e8e3dc');
     r(c, x + 3, y + 6, 8, 6, '#3a3448');
-    if (Math.floor(t / 1800) % 3 === 0) r(c, x + 4, y + 7, 6, 4, '#ffd27a');
     r(c, x + 12, y + 6, 1, 1, '#8fd0a8');
     r(c, x + 12, y + 8, 1, 3, '#a8a0b8');
   },
@@ -2238,8 +2239,13 @@ const DRAW: Record<string, Draw> = {
     for (const [px, py] of [[3, 7], [23, 6], [43, 7], [3, 29], [23, 30], [43, 29]]) r(c, x + px, Y + py, 2, 2, OUT);
     disc(c, x + 12, Y + 19, 1, '#fffaf3');
     const balls = ['#ffd27a', '#f48a8a', '#7fb2e8', '#b89af0', '#f28a3a', '#2b2530'];
-    balls.forEach((b, k) => { const row = k < 1 ? 0 : k < 3 ? 1 : 2; const i = k < 1 ? 0 : k < 3 ? k - 1 : k - 3; r(c, x + 30 + row * 3, Y + 18 - row * 2 + i * 3, 2, 2, b); });
+    balls.forEach((b, k) => { const row = k < 1 ? 0 : k < 3 ? 1 : 2; const i = k < 1 ? 0 : k < 3 ? k - 1 : k - 3; disc(c, x + 30 + row * 3 + 1, Y + 18 - row * 2 + i * 3 + 1, 1, b); disc(c, x + 30 + row * 3 + 1, Y + 18 - row * 2 + i * 3, 1, '#fff8'); });
     r(c, x + 8, Y + 22, 20, 1, '#f0d2a8');
+    // Cue stick leaning on left rail
+    r(c, x + 2, Y + 2, 2, 26, '#b07a4e');
+    r(c, x + 2, Y + 1, 1, 1, '#fff4e6');
+    r(c, x + 3, Y + 1, 1, 1, '#fff4e6');
+    r(c, x + 2, Y + 28, 2, 1, '#5a3620');
   },
   foosball(c, x, y, t) {
     const Y = y - 8;
@@ -2311,7 +2317,11 @@ const DRAW: Record<string, Draw> = {
     sphere(c, x + 8, y + 9, 5, '#f28a3a');
     r(c, x + 5, y + 5, 1, 9, '#d9702a');
     r(c, x + 10, y + 5, 1, 9, '#d9702a');
-    r(c, x + 7, y + 1, 2, 3, '#4f9a6a');
+    // Tapered stem with vine curl
+    r(c, x + 7, y + 1, 2, 2, '#4f9a6a');
+    r(c, x + 7, y + 3, 1, 2, '#4f9a6a');
+    r(c, x + 8, y + 2, 2, 1, '#6cbf7a');
+    r(c, x + 9, y + 1, 1, 1, '#6cbf7a');
     const glow = Math.floor(t / 300) % 3 ? '#ffd34d' : '#fff3b0';
     r(c, x + 5, y + 7, 2, 2, glow);
     r(c, x + 9, y + 7, 2, 2, glow);
@@ -2627,8 +2637,77 @@ function particle(c: Ctx, fx: Fx, x: number, y: number, col: string) {
   else { r(c, x - 1, y, 3, 1, col); r(c, x, y - 1, 1, 3, col); r(c, x, y, 1, 1, '#ffffff'); }
 }
 
+// ---------- singing ----------
+// The stage light behind a singer: a soft cone from above, a bright pool on their tile, and a halo around the head.
+// Drawn as its own sprite in front of the room but behind the singer, so the mic stand and notes stay crisp.
+export function drawSingSpotlight(c: Ctx, x: number, y: number, t: number, duet = false) {
+  const bright = 0.85 + 0.15 * Math.sin(t / 380);
+  c.save();
+  for (let i = 0; i < 34; i++) {
+    const yy = y - 34 + i;
+    const w = 2 + (i / 34) * (duet ? 18 : 15);
+    const x0 = x + 8 - w / 2;
+    c.fillStyle = '#fff0d2';
+    c.globalAlpha = (i % 2 ? 0.08 : 0.13) * bright;
+    c.fillRect(Math.round(x0), yy, Math.round(w), 1);
+    c.globalAlpha = 0.26 * bright;
+    c.fillRect(Math.round(x0), yy, 1, 1);
+    c.fillRect(Math.round(x0 + w) - 1, yy, 1, 1);
+  }
+  c.fillStyle = '#ffe9b8';
+  for (let j = -3; j <= 3; j++) {
+    const half = Math.sqrt(Math.max(0, 1 - (j / 3.6) ** 2)) * (duet ? 12 : 10);
+    c.globalAlpha = 0.2 * bright;
+    c.fillRect(Math.round(x + 8 - half), y + T - 1 + j, Math.round(half * 2), 1);
+  }
+  c.globalAlpha = 0.17 * bright;
+  disc(c, x + 8, y + 4, 9, '#fff4d6');
+  c.restore();
+}
+
+// ♪ and ♫ in 1-pixel strokes, for the notes drifting off a singer.
+function singNote(c: Ctx, x: number, y: number, pair: boolean, col: string) {
+  r(c, x, y + 3, 2, 2, col); // note head
+  r(c, x + 1, y, 1, 4, col); // stem
+  r(c, x + 2, y, 1, 1, col); // flag
+  if (pair) { r(c, x + 5, y - 1, 1, 4, col); r(c, x + 5, y + 3, 2, 2, col); r(c, x + 3, y - 1, 3, 1, col); }
+}
+
+// A character singing: mic in hand, a small breath-bob, the open-mouth face and notes drifting up.
+// duet puts both hands on the mic at the chest and sways instead of bobbing. Purely visual; nothing is synced.
+export function drawSinging(c: Ctx, look: Look, x: number, y: number, t: number, duet = false) {
+  const step = Math.floor(t / 380) % 3;
+  const bob = duet ? Math.floor(t / 520) % 2 : step === 1 ? 1 : 0;
+  const dx = duet ? (Math.floor(t / 520) % 2 ? 1 : -1) : 0;
+  drawAvatar(c, { ...look, face: step === 1 ? 'calm' : 'sing' }, x + dx, y + bob, 0, false);
+  const k = avatarScale(look);
+  scaledAt(c, k, x + 8 + dx, y + T + 1, () => {
+    if (duet) {
+      r(c, x + 6, y + 10, 2, 4, '#3a3448');
+      r(c, x + 6, y + 9, 2, 1, '#fff4e6');
+      r(c, x + 5, y + 13, 1, 1, look.skin); r(c, x + 8, y + 13, 1, 1, look.skin);
+      r(c, x + 5, y + 11, 1, 2, shade(look.shirt, -0.14)); r(c, x + 8, y + 11, 1, 2, shade(look.shirt, -0.14));
+    } else {
+      r(c, x + 9, y + 10, 2, 3, '#3a3448');
+      r(c, x + 9, y + 9, 2, 1, '#fff4e6');
+      r(c, x + 9, y + 12, 2, 1, look.skin);
+      r(c, x + 10, y + 13, 2, 1, shade(look.shirt, -0.12));
+    }
+    const cols = ['#f2c14e', '#f0708e', '#6cc98a'];
+    for (let i = 0; i < 3; i++) {
+      const p = (t / 2600 + i / 3) % 1;
+      const nx = Math.round(x + (duet ? 12 : 13) + Math.sin(p * 5 + i) * 2);
+      const ny = Math.round(y + 1 - p * 13);
+      c.globalAlpha = 0.3 + Math.sin(p * Math.PI) * 0.65;
+      singNote(c, nx, ny, i % 2 === 1, cols[i]);
+      c.globalAlpha = 1;
+    }
+  });
+}
+
 // x, y = top-left of the tile the character stands on; the thing they use is on the tile above.
-export function drawUsing(c: Ctx, look: Look, use: string, x: number, y: number, t: number) {
+export function drawUsing(c: Ctx, look: Look, use: string, x: number, y: number, t: number, duet = false) {
+  if (use === 'sing') { drawSinging(c, look, x, y, t, duet); return; }
   const u = USE_LOOK[use] ?? USE_LOOK.admire;
   const beat = Math.floor(t / 280) % 2;
   const dx = u.bob ? (beat ? 1 : -1) : 0;
@@ -2672,8 +2751,111 @@ const look = (base: string, paint: StylePaint): Draw => (c, x, y, t, col) => {
 };
 
 const WOOD = '#b07a4e', DARKWOOD = '#8a5a3c', LEG = '#5a3620', BRASS = '#e8b43c', BRASS_L = '#fff3b0';
+const WOOD_L = '#d9a06a', WOOD_D = DARKWOOD;
+const METAL = '#a8a0b8', METAL_D = '#5a5070';
+const CREAM = '#fffaf3';
 const SHEET = '#fff8f0', WHITE = '#ffffff', BLUSH = '#f4b6c8';
 const BOOKS = ['#f48a8a', '#7fb2e8', '#8fd0a8', '#ffd27a', '#b89af0', '#f4b6c8'];
+
+// Karaoke styles paint a 16x30 sprite from the tile's floor line, like the shape recipes do (12 above the tile).
+const karaokeStyle = (base: string, paint: (c: Ctx, col: string, t: number) => void): Draw => (c, x, y, t, col) => {
+  c.save();
+  c.translate(x, y - 12);
+  paint(c, col ?? base, t);
+  c.restore();
+};
+
+ALT.karaoke = [
+  // Retro booth: a record player console. Cream deck, black vinyl with the owner's colour on the label,
+  // a chrome tonearm, a slatted speaker and one owner-colour band.
+  karaokeStyle('#f4a6b8', (c, col, t) => {
+    const CHROME = '#e2dce8', CHROME_D = '#8a8090';
+    r(c, 2, 28, 3, 2, METAL); r(c, 11, 28, 3, 2, METAL);
+    r(c, 3, 29, 1, 1, CHROME_D); r(c, 12, 29, 1, 1, CHROME_D);
+    r(c, 1, 26, 14, 2, METAL); r(c, 2, 26, 12, 1, CHROME);
+    r(c, 1, 28, 14, 1, CHROME_D);
+    box(c, 1, 13, 14, 13, WOOD);
+    r(c, 2, 14, 12, 1, WOOD_L);
+    r(c, 2, 25, 12, 1, WOOD_D);
+    r(c, 2, 16, 12, 2, col);
+    r(c, 2, 16, 12, 1, shade(col, 0.18));
+    r(c, 2, 17, 12, 1, shade(col, -0.12));
+    r(c, 1, 15, 14, 1, METAL); r(c, 2, 15, 12, 1, CHROME);
+    box(c, 3, 19, 10, 6, WOOD_D);
+    r(c, 4, 20, 8, 4, '#a8714a');
+    for (const sx of [4, 6, 8, 10, 12]) r(c, sx, 20, 1, 4, '#c8a078');
+    box(c, 1, 5, 14, 9, CREAM); // the deck sits on the cabinet like a lid
+    r(c, 2, 6, 12, 1, '#fffaf3');
+    r(c, 2, 12, 12, 1, '#e8dccb');
+    disc(c, 7, 9, 4, OUT);
+    disc(c, 7, 9, 3, '#2b2530');
+    r(c, 6, 8, 3, 3, shade(col, -0.05)); // label
+    r(c, 7, 9, 1, 1, CREAM); // plain spindle, no 45 adapter
+    r(c, 12, 7, 2, 1, METAL); r(c, 12, 7, 1, 1, CHROME);
+    r(c, 11, 8, 1, 1, CHROME); r(c, 10, 8, 1, 1, METAL); r(c, 9, 9, 1, 1, METAL_D);
+    if (Math.floor(t / 520) % 2 === 0) r(c, 13, 12, 1, 1, '#8fd0a8');
+  }),
+  // Neon pop: charcoal body, a low neon rim in the owner's colour, a heart sign and a breathing EQ.
+  karaokeStyle('#f4a6b8', (c, col, t) => {
+    const PINK_N = '#ff9ec4', MINT_N = '#9ef0c4', BLUE_N = '#9ecbff';
+    c.globalAlpha = 0.09;
+    disc(c, 8, 18, 10, col);
+    c.globalAlpha = 0.16;
+    disc(c, 8, 18, 8, col);
+    c.globalAlpha = 1;
+    box(c, 1, 8, 14, 19, '#2b2530');
+    r(c, 2, 9, 12, 1, shade(col, 0.2));
+    r(c, 2, 9, 1, 17, shade(col, 0.08));
+    r(c, 13, 9, 1, 17, shade(col, -0.08));
+    const heartRows = ['.xx.xx', 'xxxxxx', 'xxxxxx', '.xxxx.', '..xx..'];
+    heartRows.forEach((row, j) => {
+      for (let i = 0; i < row.length; i++) if (row[i] === 'x') r(c, 5 + i, 11 + j, 1, 1, j === 0 ? '#ffd3e4' : PINK_N);
+    });
+    const heights = [2, 3, 2, 2].map((n, i) => n + ((Math.floor(t / 520) + i) % 3 === 0 ? 1 : 0));
+    ['#ffd3e4', MINT_N, BLUE_N, MINT_N].forEach((cc, i) => r(c, 4 + i * 2, 19 - heights[i], 1, heights[i], cc));
+    disc(c, 8, 25, 4, OUT);
+    disc(c, 8, 25, 3, '#3a3448');
+    r(c, 8, 21, 1, 2, BLUE_N);
+    r(c, 6, 25, 4, 1, BLUE_N);
+    r(c, 7, 23, 2, 1, METAL_D);
+    r(c, 2, 26, 12, 1, shade(col, 0.2)); // lit base bar, so the neon colour carries to the floor
+    r(c, 3, 27, 10, 1, '#2b2530');
+    r(c, 2, 28, 3, 2, OUT); r(c, 11, 28, 3, 2, OUT);
+  }),
+  // Cute pastel: a soft dome with cat ears, a singing face plate and a small speaker.
+  karaokeStyle('#8fd0a8', (c, col) => {
+    const light = shade(col, 0.22), dark = shade(col, -0.16);
+    r(c, 3, 28, 3, 2, CREAM); r(c, 10, 28, 3, 2, CREAM);
+    r(c, 4, 29, 1, 1, '#e8dccb'); r(c, 11, 29, 1, 1, '#e8dccb');
+    r(c, 5, 6, 6, 1, dark);
+    r(c, 4, 7, 8, 1, dark);
+    r(c, 3, 8, 10, 1, dark);
+    r(c, 2, 9, 12, 18, dark);
+    r(c, 3, 10, 10, 16, col);
+    r(c, 3, 10, 10, 1, light);
+    r(c, 3, 11, 1, 14, light);
+    r(c, 2, 26, 12, 1, dark);
+    r(c, 4, 3, 2, 1, OUT);
+    r(c, 3, 4, 2, 1, dark); r(c, 5, 4, 1, 1, light);
+    r(c, 3, 5, 3, 1, col);
+    r(c, 3, 6, 3, 1, dark);
+    r(c, 10, 3, 2, 1, OUT);
+    r(c, 10, 4, 2, 1, dark); r(c, 10, 4, 1, 1, light);
+    r(c, 10, 5, 3, 1, col);
+    r(c, 10, 6, 3, 1, dark);
+    r(c, 4, 9, 8, 9, CREAM);
+    r(c, 4, 9, 8, 1, '#ffffff');
+    r(c, 4, 17, 8, 1, '#ece1d2');
+    r(c, 5, 12, 2, 1, OUT); r(c, 5, 13, 1, 1, OUT);
+    r(c, 9, 12, 2, 1, OUT); r(c, 10, 13, 1, 1, OUT);
+    r(c, 4, 15, 1, 1, '#f4a6b8'); r(c, 11, 15, 1, 1, '#f4a6b8');
+    r(c, 7, 14, 2, 2, '#7a3a42'); r(c, 7, 15, 2, 1, '#e88a95');
+    r(c, 3, 18, 10, 6, dark);
+    r(c, 4, 19, 8, 4, col);
+    for (const sx of [5, 7, 9, 11]) r(c, sx, 21, 1, 1, dark);
+    r(c, 2, 14, 1, 1, '#f4a6b8'); r(c, 13, 14, 1, 1, '#f4a6b8');
+  }),
+];
 
 // A diagonal, made of half-pixel steps so a hairpin leg or a splayed chair leg needs no path.
 const stroke = (c: Ctx, x0: number, y0: number, x1: number, y1: number, col: string) => {

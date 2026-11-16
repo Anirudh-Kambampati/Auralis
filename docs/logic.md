@@ -39,6 +39,8 @@ Quick picks = subjects you saved with ★, plus any subject used at least twice,
 
 Each pet's position is a pure function of `(owner id, pet slot, current time, walkable floor tiles of that room)`. Every 5 seconds it picks a new tile from a seeded hash, trots there with easing, then idles. All viewers compute the same path without any syncing.
 
+A pet within 4 tiles of someone who is singing stops beside them and reacts: it watches, or bounces along with little notes over its head (`singPetAct` in `src/pets.ts`, a hash of the pet's seed and the clock, so every viewer picks the same one every 12 s). Nothing about it is sent to the server.
+
 ## Camera
 
 - The zoom is the largest whole number at which the current room (with walls) fits the space the HUD, dock, side bar and panels leave free. Whole numbers keep the pixels crisp.
@@ -60,12 +62,14 @@ Each viewer's local clock sets the sky (`skyNow`): day 8:00–17:00, dusk 6–8 
 
 ## Using decor
 
-- Every solid item except desks has a `use` (water, read, cook, strum, game, wash, admire…, 23 in all). Desks are used by sitting in the chair behind them. Idle characters sometimes walk to the tile in front of one, face it and play the matching animation for 4–8 s. The action rides along on the `pos` message, and the server only relays names from `USES`.
+- Every solid item except desks has a `use` (water, read, cook, strum, game, wash, admire…, 24 in all). Desks are used by sitting in the chair behind them. Idle characters sometimes walk to the tile in front of one, face it and play the matching animation for 4–8 s. The action rides along on the `pos` message, and the server only relays names from `USES`.
+- `sing` (mic stand, karaoke machine) is the one action that is purely visual: no sound, no shared “music” tour line. The character holds a mic, breathes a small bob, swaps to an open-mouth face and floats ♪/♫ up, with a faint spotlight cone and pool behind them (`drawSinging` and `drawSingSpotlight` in `src/draw.ts`).
+- **Duet:** a second microphone placed within one tile of the singer (not counting the piece directly in front of them) upgrades the pose for everyone: both hands on the mic, a sway, a wider beam and notes from the middle. It is a placement check while drawing, so it needs no new field, message or save slot.
 - Beds have `act: 'sleep'`: a character on one is tucked in with z's.
 
 ## Furniture styles
 
-Pieces with `looks` are styled in Decorate → Style: sofa, armchair, bed, lamp, plant, rug, bookshelf, wardrobe, dresser and coffee table. The list is the styles by name, so its length is how many there are — 3 for most, 6 for the bed, 5 for the rug, bookshelf and wardrobe. The choice is stored as `s` on the placed item, checked by the server against that list, and drawn by `ALT[item][s - 1]` in `draw.ts`. Style 0 is the original. Recolouring a piece recolours whichever style it is wearing.
+Pieces with `looks` are styled in Decorate → Style: sofa, armchair, bed, lamp, plant, rug, bookshelf, wardrobe, dresser, coffee table and karaoke machine. The list is the styles by name, so its length is how many there are — 3 for most, 6 for the bed, 5 for the rug, bookshelf and wardrobe, 4 for karaoke. The choice is stored as `s` on the placed item, checked by the server against that list, and drawn by `ALT[item][s - 1]` in `draw.ts`. Style 0 is the original. Recolouring a piece recolours whichever style it is wearing.
 
 ## Pet looks
 

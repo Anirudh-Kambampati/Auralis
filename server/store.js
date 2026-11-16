@@ -60,6 +60,10 @@ export function openStore(file, legacyJsonFile) {
     -- One row per pair of players (a < b): 'pending' (asked_by sent the request) or 'accepted'.
     create table if not exists friends (a text not null, b text not null, status text not null, asked_by text not null, at integer not null, primary key (a, b));
     create table if not exists reset_tokens (player_id text not null, token text primary key, expires integer not null);
+    -- Muted threads per user
+    create table if not exists muted_threads (player_id text not null, thread text not null, until integer not null, primary key (player_id, thread));
+    -- Chat themes per user
+    create table if not exists chat_themes (player_id text not null, thread text not null, color text not null, primary key (player_id, thread));
   `);
   // Email arrived after the first accounts, so add it to older databases too.
   if (!sql.prepare("select 1 from pragma_table_info('accounts') where name = 'email'").get()) sql.exec('alter table accounts add column email text');
@@ -72,6 +76,16 @@ export function openStore(file, legacyJsonFile) {
   const db = { players: {}, houses: {} };
   for (const r of sql.prepare('select id, data from players').all()) db.players[r.id] = JSON.parse(r.data);
   for (const r of sql.prepare('select code, data from houses').all()) db.houses[r.code] = JSON.parse(r.data);
+  // Load muted threads
+  for (const r of sql.prepare('select player_id, thread, until from muted_threads').all()) {
+    const p = db.players[r.player_id];
+    if (p) { p.mutedThreads = p.mutedThreads ?? {}; p.mutedThreads[r.thread] = r.until; }
+  }
+  // Load chat themes
+  for (const r of sql.prepare('select player_id, thread, color from chat_themes').all()) {
+    const p = db.players[r.player_id];
+    if (p) { p.chatThemes = p.chatThemes ?? {}; p.chatThemes[r.thread] = r.color; }
+  }
   // The coins value last written per player, so a value that differs was edited in the database by hand.
   const written = {};
   const readCoins = sql.prepare('select player_id, coins from accounts where coins is not null');
@@ -178,7 +192,7 @@ export function openStore(file, legacyJsonFile) {
         const hashed = hashPassword(password);
         return sql.prepare('update accounts set pass = ? where player_id = ?').run(hashed, playerId).changes > 0;
       },
-      // Create a password reset token (valid for 1 hour)
+// Create a password reset token (valid for 1 hour)
       createResetToken: (playerId, token, expires) => {
         return sql.prepare('insert or replace into reset_tokens (player_id, token, expires) values (?, ?, ?)').run(playerId, token, expires).changes > 0;
       },
@@ -195,6 +209,25 @@ export function openStore(file, legacyJsonFile) {
         return sql.prepare('update accounts set pass = ? where player_id = ?').run(hashed, playerId).changes > 0;
       },
       revokeToken: (token) => sql.prepare('delete from auth where token = ?').run(sha(String(token))),
-    close: () => sql.close(),
+      // Mute thread per user
+      setMuteThread: (playerId, thread, until) => {
+        const col = until === -1 ? 'delete' : 'update';
+        if (until === -1) {
+          return sql.prepare('delete from muted_threads where player_id = ? and thread = ?').run(playerId, thread).changes > 0;
+        }
+        return sql.prepare('insert into muted_threads (player_id, thread, until) values (?, ?, ?) on conflict(player_id, thread) do update set until = excluded.until')
+          .run(playerId, thread, until).changes > 0;
+      },
+      getMutedThreads: (playerId) => sql.prepare('select thread, until from muted_threads where player_id = ?').all(playerId).map(r => ({ thread: r.thread, until: Number(r.until) })),
+      // Chat theme per user
+      setChatTheme: (playerId, thread, color) => {
+        if (!color) {
+          return sql.prepare('delete from chat_themes where player_id = ? and thread = ?').run(playerId, thread).changes > 0;
+        }
+        return sql.prepare('insert into chat_themes (player_id, thread, color) values (?, ?, ?) on conflict(player_id, thread) do update set color = excluded.color')
+          .run(playerId, thread, color).changes > 0;
+      },
+      getChatThemes: (playerId) => sql.prepare('select thread, color from chat_themes where player_id = ?').all(playerId).map(r => ({ thread: r.thread, color: r.color })),
+      close: () => sql.close(),
   };
 }

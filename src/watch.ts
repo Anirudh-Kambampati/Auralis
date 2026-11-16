@@ -1,13 +1,14 @@
-// Watch party: /watch <link> in chat opens the same video for everyone in the house, kept in sync.
+// Watch party: /watch <link> opens the same video for a house or for two people in a DM, kept in sync.
 // The server holds { playing, pos, at }; anyone's play, pause or seek becomes the new truth and everyone follows.
 type Src = { kind: string; id?: string; url?: string; start: number };
-export type Watch = { src: Src; by: string; byName: string; playing: boolean; pos: number; at: number; now: number } | null;
+export type Watch = { src: Src; by: string; byName?: string; playing: boolean; pos: number; at: number; now: number; scope?: 'house' | 'dm' | 'group'; with?: string; withName?: string; g?: string; groupName?: string } | null;
 type Player = { state(): Promise<[number, boolean]>; play(): void; pause(): void; seek(s: number): void; destroy(): void };
 type Send = (m: object) => void;
 
 let key = '', lastAt = 0, closed = false;
 let base = { playing: false, pos: 0, t0: 0 }; // the shared position, measured on our own clock
 let panel: HTMLElement | null = null, player: Player | null = null, timer = 0, stuck = 0, lastSeek = 0;
+let scope: 'house' | 'dm' | 'group' = 'house', withId: string | undefined, groupId: string | undefined;
 // Commands we gave our own player, waiting for the event they cause (times in ms), so that event isn't shared as news.
 type Kind = 'play' | 'pause' | 'seek';
 let pending: Record<Kind, number[]> = { play: [], pause: [], seek: [] };
@@ -22,9 +23,12 @@ const expected = () => base.pos + (base.playing ? (Date.now() - base.t0) / 1000 
 
 export function syncWatch(w: Watch, myId: string, sendFn: Send) {
   send = sendFn;
-  if (!w) { teardown(); key = ''; return; }
+  if (!w) { teardown(); key = ''; scope = 'house'; withId = undefined; groupId = undefined; return; }
   base = { playing: w.playing, pos: w.pos + (w.playing ? (w.now - w.at) / 1000 : 0), t0: Date.now() };
-  const k = JSON.stringify(w.src);
+  const k = `${w.scope ?? 'house'}|${w.with ?? ''}|${w.g ?? ''}|${JSON.stringify(w.src)}`;
+  scope = w.scope ?? 'house';
+  withId = w.with;
+  groupId = w.g;
   if (k !== key) {
     teardown();
     key = k;
@@ -51,10 +55,14 @@ function open(w: NonNullable<Watch>, starter: boolean) {
   panel = document.createElement('div');
   panel.className = 'theater';
   const live = ['youtube', 'vimeo', 'file'].includes(w.src.kind);
-  panel.innerHTML = `<div class="theater-bar"><b>🎬 Watch party</b><span></span><button class="off" aria-label="Hide the watch party">✕</button></div>
-    <div class="theater-screen"><div></div><button class="theater-join">▶ Join the watch party</button></div>
-    <p class="theater-hint">Everyone in the house sees this. ${live ? '' : "Pause and seek aren't shared for this site. "}Type <b>/watch stop</b> in chat to end it.</p>`;
-  panel.querySelector('span')!.textContent = `started by ${w.byName}`;
+  const privateParty = w.scope === 'dm';
+  const groupParty = w.scope === 'group';
+  const who = groupParty ? `Everyone in ${w.groupName ?? 'this group'} sees this.` : privateParty ? `Only you and ${w.withName ?? 'your friend'} see this.` : 'Everyone in the house sees this.';
+  const stopHint = (privateParty || groupParty) ? 'Type <b>/watch stop</b> in this chat to end it.' : 'Type <b>/watch stop</b> in chat to end it.';
+  panel.innerHTML = `<div class="theater-bar"><b>Watch party</b><span></span><button class="off" aria-label="Hide the watch party">x</button></div>
+    <div class="theater-screen"><div></div><button class="theater-join">Join the watch party</button></div>
+    <p class="theater-hint">${who} ${live ? '' : "Pause and seek aren't shared for this site. "}${stopHint}</p>`;
+  panel.querySelector('span')!.textContent = `started by ${w.byName ?? 'someone'}`;
   panel.querySelector('.theater-bar button')!.addEventListener('click', () => { closed = true; teardown(); });
   const join = panel.querySelector<HTMLButtonElement>('.theater-join')!;
   // Browsers only allow sound after a click, so everyone but the starter (who just pressed Enter) clicks to join.
@@ -78,7 +86,7 @@ function needClick() {
   if (!panel || panel.querySelector('.theater-join')) return;
   const b = document.createElement('button');
   b.className = 'theater-join';
-  b.textContent = '▶ Click to play';
+  b.textContent = 'Click to play';
   b.addEventListener('click', () => { b.remove(); stuck = 0; expect('play'); player?.play(); });
   panel.querySelector('.theater-screen')!.append(b);
 }
@@ -106,7 +114,7 @@ function user(kind: Kind | 'yt', playing: boolean, pos: number) {
   const jumped = Math.abs(pos - expected()) > 2.5;
   if (playing === base.playing && (kind === 'play' || kind === 'pause' || !jumped)) return; // nothing new, e.g. done buffering
   base = { playing, pos, t0: now };
-  send({ t: 'watchCtl', playing, pos });
+  send({ t: 'watchCtl', playing, pos, ...(scope === 'dm' && withId ? { scope: 'dm', to: withId } : {}), ...(scope === 'group' && groupId ? { scope: 'group', g: groupId } : {}) });
 }
 
 const scripts = new Map<string, Promise<void>>();
