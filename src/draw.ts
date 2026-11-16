@@ -1218,7 +1218,7 @@ export function drawPainting(c: Ctx, x: number, y: number) {
 // ---------- furniture ----------
 // Pixels each sprite reaches above its footprint (things stand "up" in the 3/4 view).
 export const OVERHANG: Record<string, number> = {
-  desk: 6, chair: 6, plant: 8, lamp: 12, rug: 0, bookshelf: 16, bed: 26, sofa: 8, aquarium: 14,
+  desk: 6, chair: 6, plant: 8, lamp: 12, rug: 0,   bookshelf: 22, bed: 26, sofa: 8, aquarium: 14,
   books: 2, cactus: 8, sunflower: 12, globe: 8, beanbag: 0, roundRug: 0, coffeeTable: 2, armchair: 11, plush: 2,
   mirror: 14, recordPlayer: 4, guitar: 12, cello: 14, sharkPlush: 6, easel: 14, bonsai: 4, wardrobe: 23, piano: 12,
   workTable: 6, pcDesk: 14, gamingDesk: 12, officeChair: 7, gamingChair: 11, miniFridge: 6,
@@ -3017,26 +3017,26 @@ ALT.bookshelf.push(
     for (const fx of [3, 27]) r(c, fx, 14, 3, 2, LEG);
   }),
   look('#b07a4e', (c, col, _t) => {
-    const archY = (x: number) => -2 - Math.sin((x / 31) * Math.PI) * 7;
+    const archY = (x: number) => -7 - Math.sin((x / 31) * Math.PI) * 9;
     for (let x = 0; x <= 31; x += 0.5) r(c, x, archY(x), 0.5, 16 - archY(x), shade(col, -0.16)); // the arched back
     for (let x = 0; x <= 31; x += 0.5) r(c, x, archY(x), 0.5, 0.5, shade(col, 0.26));            // its lit top edge
     for (let x = 2.5; x <= 28.5; x += 0.5) r(c, x, archY(x) + 2.5, 0.5, 0.5, shade(col, 0.02));  // a moulded inner line
     for (let i = 0, bx = 4; bx < 15; i++) {                            // books on the upper shelf
       const w = 1.5 + (i % 2), h = 4 + (i % 3);
-      r(c, bx, 4 - h, w, h, BOOKS[i % BOOKS.length]);
+      r(c, bx, 3 - h, w, h, BOOKS[i % BOOKS.length]);
       bx += w + 0.5;
     }
-    disc(c, 22, -1, 3, '#6cbf7a');                                     // a trailing plant beside them
-    box(c, 20, 1, 4.5, 3, '#d97a55');
-    for (const [dx, dy] of [[26, 3], [27, 6], [27.5, 9]]) disc(c, dx, dy, 1.2, '#6cbf7a');
-    r(c, 25, -1.5, 5, 1.2, BOOKS[3]);                                  // one book lying flat
+    disc(c, 22, -2, 3, '#6cbf7a');                                     // a trailing plant beside them
+    box(c, 20, 0, 4.5, 3, '#d97a55');
+    for (const [dx, dy] of [[26, 2], [27, 5], [27.5, 8]]) disc(c, dx, dy, 1.2, '#6cbf7a');
+    r(c, 25, -2.5, 5, 1.2, BOOKS[3]);                                  // one book lying flat
     for (let i = 0, bx = 4; bx < 22; i++) {                            // books on the lower shelf
       const w = 1.5 + (i % 2), h = 4 + (i % 3);
       r(c, bx, 10 - h, w, h, BOOKS[(i + 2) % BOOKS.length]);
       bx += w + 0.5;
     }
     r(c, 23, 6, 6, 1.2, BOOKS[0]);
-    for (const sy of [4, 10]) {                                        // the shelves, standing proud
+    for (const sy of [3, 10]) {                                        // the shelves, standing proud
       box(c, 0.5, sy, 31, 2, col);
       r(c, 1.5, sy + 0.3, 29, 0.5, shade(col, 0.2));
     }

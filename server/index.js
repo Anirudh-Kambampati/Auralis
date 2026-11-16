@@ -322,6 +322,7 @@ function publicPlayer(p) {
     totalMinutes: p.totalMinutes, online: sockets.has(p.id), pos: positions.get(p.id) ?? null, fedAt: p.fedAt ?? 0,
     exams: p.exams ?? [],
     caffeineSince: p.caffeineSince, caffeineUntil: p.caffeineUntil, tipsyUntil: p.tipsyUntil,
+    presence: p.presence ?? null,
   };
 }
 
@@ -335,6 +336,7 @@ function friendList(p) {
     if (!q) continue;
     out.push({ id: q.id, name: q.name, look: q.look, online: sockets.has(q.id), focus: !!q.focus,
       status: f.status === 'accepted' ? 'friend' : f.asked_by === p.id ? 'outgoing' : 'incoming',
+      presence: q.presence ?? null,
       here: !!p.house && q.house === p.house, visit: visitAsks.has(`${p.id}|${q.id}`), asked: visitAsks.has(`${q.id}|${p.id}`) });
   }
   return out;
@@ -371,7 +373,7 @@ function broadcastHouse(code) {
     const dmw = houseDmWatch(p);
     const gw = houseGroupWatch(p);
     const privateWatch = gw ? groupWatchPayload(gw[0], gw[1]) : dmw ? dmWatchPayload(dmw[0], dmw[1], id) : null;
-    send(sockets.get(id), { t: 'state', house: { ...house, todos: house.todos.filter((t) => canSee(t, h, id)) }, me: { id: p.id, home: p.home, ...houseLists(p), coins: p.coins, discount: !!p.discount, notes: p.notes ?? [], inbox: p.inbox ?? [], inboxSeen: p.inboxSeen ?? 0, tipsSeen: p.tipsSeen ?? [], events: p.events ?? [], inventory: p.inventory, crafted: p.crafted ?? [], ready: p.ready ?? {}, petAccs: p.petAccs ?? [], ...(sentSessions.get(id) !== (p.sessions ?? []).length && { sessions: p.sessions ?? [] }), subjects: p.subjects ?? [], hiddenSubjects: p.hiddenSubjects ?? [], todos: p.todos ?? [], dm: p.dm ?? {}, groups: p.groups ?? {}, friends: friendList(p), notify: p.notify ?? {}, pushKey: pushOn ? PUSH_KEY : undefined, watch: privateWatch } });
+    send(sockets.get(id), { t: 'state', house: { ...house, todos: house.todos.filter((t) => canSee(t, h, id)) }, me: { id: p.id, home: p.home, ...houseLists(p), coins: p.coins, discount: !!p.discount, notes: p.notes ?? [], inbox: p.inbox ?? [], inboxSeen: p.inboxSeen ?? 0, tipsSeen: p.tipsSeen ?? [], events: p.events ?? [], inventory: p.inventory, crafted: p.crafted ?? [], ready: p.ready ?? {}, petAccs: p.petAccs ?? [], ...(sentSessions.get(id) !== (p.sessions ?? []).length && { sessions: p.sessions ?? [] }), subjects: p.subjects ?? [], hiddenSubjects: p.hiddenSubjects ?? [], todos: p.todos ?? [], dm: p.dm ?? {}, groups: p.groups ?? {}, friends: friendList(p), notify: p.notify ?? {}, mutedThreads: p.mutedThreads ?? {}, chatThemes: p.chatThemes ?? {}, pushKey: pushOn ? PUSH_KEY : undefined, watch: privateWatch } });
     if (sockets.has(id)) sentSessions.set(id, (p.sessions ?? []).length);
   }
 }
@@ -1416,15 +1418,21 @@ case 'chat': {
       break;
     }
     case 'presence': { // user presence/status
-      const status = { id: p.id, status: m.status, custom: m.custom, until: m.until };
-      // Broadcast to all houses the user is in and their friends
+      const status = { status: m.status, custom: m.custom || '', until: Number(m.until) || 0, at: Date.now() };
+      p.presence = status;
+      const msg = { t: 'presence', id: p.id, ...status };
       const houses = new Set();
       if (p.house) houses.add(p.house);
       for (const [key, f] of friends) if (f.status === 'friend' && (key.startsWith(p.id + '|') || key.endsWith('|' + p.id))) {
         const otherId = key.startsWith(p.id + '|') ? key.split('|')[1] : key.split('|')[0];
-        if (db.players[otherId]?.house) houses.add(db.players[otherId].house);
+        const other = db.players[otherId];
+        if (other?.house) houses.add(other.house);
+        send(sockets.get(otherId), msg);
       }
-      for (const code of houses) broadcastHouse(code, { t: 'presence', ...status });
+      for (const code of houses) {
+        const h = db.houses[code];
+        if (h) for (const id of h.members) send(sockets.get(id), msg);
+      }
       break;
     }
     case 'mute': { // mute/unmute thread

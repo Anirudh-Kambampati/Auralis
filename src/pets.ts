@@ -141,7 +141,7 @@ const PET_SCALE: Record<string, number> = {
   bunny: 0.6, penguin: 0.6, owl: 0.6,
   raccoon: 0.55, koala: 0.55, axolotl: 0.55,
   piglet: 0.5, sheep: 0.5, turtle: 0.5,
-  hamster: 0.35, duckling: 0.35, frog: 0.35, hedgehog: 0.35,
+  hamster: 0.55, duckling: 0.35, frog: 0.55, hedgehog: 0.55,
   unicorn: 0.7, dragon: 0.8, platypus: 0.5, elephant: 0.9, trex: 0.7, cow: 0.65,
 };
 

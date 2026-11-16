@@ -60,11 +60,20 @@ export interface MeState {
   groups: Record<string, Group>;
   friends: Friend[];
   notify: Record<string, boolean>;
+  mutedThreads?: Record<string, number>;
+  chatThemes?: Record<string, string>;
   pushKey?: string;
   watch?: WatchState | null; // private watch party (e.g. with one friend), if any
 }
 
 // Member & player types
+export interface PresenceState {
+  status: string;
+  custom?: string;
+  until?: number;
+  at?: number;
+}
+
 export interface Member {
   id: string;
   name: string;
@@ -80,6 +89,7 @@ export interface Member {
   caffeineSince?: number;
   caffeineUntil?: number;
   tipsyUntil?: number;
+  presence?: PresenceState | null;
 }
 
 export interface Look {
@@ -256,6 +266,7 @@ export interface Friend {
   here?: boolean;
   visit?: boolean;
   asked?: boolean;
+  presence?: PresenceState | null;
 }
 
 // Visited house

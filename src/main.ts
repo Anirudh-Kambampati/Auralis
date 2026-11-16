@@ -25,16 +25,18 @@ type Member = {
   totalMinutes: number; online: boolean; pos: { x: number; y: number } | null; pets: { kind: string; name?: string; coat?: number; acc?: string; away?: boolean; follow?: boolean; bond?: number; visitorBonds?: Record<string, number> }[]; fedAt?: number;
   exams?: { subject: string; date: string }[]; // YYYY-MM-DD, soonest first
   caffeineSince?: number; caffeineUntil?: number; tipsyUntil?: number; // the caffeine window rides on the member, so housemates see the flame
+  presence?: Presence;
 };
 // all: everyone has to tick it. to: who it's for (older ones have neither). at: reminder time. mine: one of my older private to-dos.
 type Todo = { id: number; text: string; done: boolean; by: string; byId?: string; all?: boolean; to?: string[]; ticks?: string[]; at?: number; mine?: boolean; repeat?: 'daily' | 'weekly' | 'monthly'; repeatUntil?: number; parentId?: number; priority?: 'low' | 'medium' | 'high' };
+type Presence = { status: string; custom?: string; until?: number; at?: number } | null;
 type Chat = { id: number; from: string; by: string; text: string; at: number; img?: string; replyTo?: number }; // img: key of a picture
 type CalEvent = { id: number; date: string; time?: string; text: string; by?: string }; // date YYYY-MM-DD, time HH:MM
 type Announcement = { id: number; text: string; by: string; byId: string; at: number };
 type Focus = { minutes: number; endsAt: number; tag?: string; pausedAt?: number | null };
 type Session = { at: number; minutes: number; tag: string; early?: boolean };
 type Inbox = { kind: string; from?: string; by?: string; text: string; at: number; n?: number };
-type Friend = { id: string; name: string; look: Look; online: boolean; focus: boolean; status: 'friend' | 'incoming' | 'outgoing'; here?: boolean; visit?: boolean; asked?: boolean };
+type Friend = { id: string; name: string; look: Look; online: boolean; focus: boolean; status: 'friend' | 'incoming' | 'outgoing'; here?: boolean; visit?: boolean; asked?: boolean; presence?: Presence };
 type Me = { id: string; home?: string; visited?: { code: string; ownerName: string | null; online: number }[]; banned?: { id: string; name: string }[]; coins: number; discount?: boolean; notes?: { from: string; text: string; at: number }[]; inbox?: Inbox[]; inboxSeen?: number; tipsSeen?: string[]; events?: CalEvent[]; pushKey?: string; notify?: Record<string, boolean>; groups?: Record<string, { name: string; members: string[]; msgs: Chat[] }>; friends?: Friend[]; inventory: Record<string, number>; crafted?: { item: string; col: string }[]; sessions: Session[]; subjects: string[]; hiddenSubjects: string[]; todos: Todo[]; dm: Record<string, Chat[]>; petAccs?: string[]; watch?: Watch | null };
 type Board = { scope: string; period: string; rows: { name: string; me: boolean; minutes: number; members?: number }[] };
 type Avatar = { x: number; y: number; tx: number; ty: number; up: boolean; dist: number; use?: string };
@@ -210,6 +212,10 @@ function onMessage(m: any) {
     houseEvents = m.house.events ?? [];
     houseAnnouncements = m.house.announcements ?? [];
     me = { ...m.me, sessions: m.me.sessions ?? me.sessions }; // study history only comes when it changed
+    mutedThreads.clear();
+    for (const [thread, until] of Object.entries(m.me.mutedThreads ?? {})) mutedThreads.set(thread, until as number);
+    threadThemes.clear();
+    for (const [thread, color] of Object.entries(m.me.chatThemes ?? {})) threadThemes.set(thread, color as string);
     subscribePush();
     renderNotifyPrefs();
     // Entering a (new or current) house: show unseen object types in it once per item (remembered per user).
@@ -226,8 +232,13 @@ function onMessage(m: any) {
       }
     }
     for (const o of members) { // pets greet owners who just came online, and do a happy spin when a session ends
+      if (o.presence) userPresence.set(o.id, { status: o.presence.status, custom: o.presence.custom || '', until: o.presence.until || 0, at: o.presence.at || Date.now() });
+      else userPresence.delete(o.id);
       if (focusSeen?.has(o.id) && !o.focus) petDone.set(o.id, Date.now());
       if (o.online && !onlineSeen.has(o.id)) petGreet.set(o.id, Date.now());
+    }
+    for (const f of me.friends ?? []) {
+      if (f.presence) userPresence.set(f.id, { status: f.presence.status, custom: f.presence.custom || '', until: f.presence.until || 0, at: f.presence.at || Date.now() });
     }
     onlineSeen = new Set(members.filter((o) => o.online).map((o) => o.id));
     focusSeen = new Set(members.filter((o) => o.focus).map((o) => o.id));
@@ -425,8 +436,8 @@ function onMessage(m: any) {
       renderSide();
     }
   } else if (m.t === 'presence') { // user presence/status
-    if (m.id !== myId) userPresence.set(m.id, { status: m.status, custom: m.custom, until: m.until, at: Date.now() });
-    syncChatList();
+    userPresence.set(m.id, { status: m.status, custom: m.custom || '', until: m.until || 0, at: m.at || Date.now() });
+    renderSide();
   } else if (m.t === 'mute') { // mute thread
     if (m.until === -1) mutedThreads.delete(m.thread);
     else if (m.until === 0) mutedThreads.set(m.thread, 0);
@@ -682,7 +693,7 @@ function roomSpawn(i: number) {
 // Pets hop over furniture too, so a crowded room never shuts them in.
 function petRoute(a: { x: number; y: number }, b: { x: number; y: number }) {
   const k = `${a.x},${a.y}>${b.x},${b.y}`;
-  if (!petRoutes.has(k)) petRoutes.set(k, bfs({ x: Math.round(a.x), y: Math.round(a.y) }, (x, y) => x === b.x && y === b.y, (x, y) => { const c = grid.at(x, y); return walkable(c) || c === BLOCKED; }));
+  if (!petRoutes.has(k)) petRoutes.set(k, bfs({ x: Math.round(a.x), y: Math.round(a.y) }, (x, y) => x === b.x && y === b.y, (x, y) => walkable(grid.at(x, y))));
   return petRoutes.get(k)!;
 }
 
@@ -2325,10 +2336,9 @@ function panelBody(mine: Member) {
          <div class="center"><button class="danger" data-act="cancel">Give up</button></div>`
       : `${tomatoes()}${streakLine()}${againButton()}${joinable().map((o) => `<div class="invite"><span>📚 <b>${esc(o.name)}</b> is studying <b>${esc(o.focus!.tag ?? 'Study')}</b>, ${fmt(o.focus!.endsAt - Date.now())} left.</span>
            <button data-act="joingroup" data-v="${o.id}">Join them</button></div>`).join('')}
-         <h3>What are you studying?</h3>
-         <div class="row"><input id="tag" maxlength="24" placeholder="Study" value="${esc(lastTag)}" aria-label="Subject">
+         ${toggleSec('What are you studying?', `<div class="row"><input id="tag" maxlength="24" placeholder="Study" value="${esc(lastTag)}" aria-label="Subject">
            <button class="off" data-act="tagsave" title="Save as a quick pick">★ Save</button></div>
-         ${subjectChips()}
+         ${subjectChips()}`, true)}
 <h3>How long?</h3>
           <div class="tiles lengths">${FOCUS_LENGTHS.map((n) => `<button class="tile" data-act="focus" data-v="${n}"><b>${n}</b><small>min</small><span class="reward">+${n} ${coin()}</span></button>`).join('')}</div>
           <div class="row custom-len"><input id="customLen" type="number" min="10" max="180" step="5" inputmode="numeric" placeholder="Custom" aria-label="Custom length in minutes" aria-describedby="customHint">
@@ -2347,27 +2357,24 @@ function panelBody(mine: Member) {
         <button class="off small-chip" data-act="chimes">${chimes ? '🔔 Sounds on' : '🔕 Sounds off'}</button>
         ${installPrompt ? '<button class="off small-chip" data-act="install">📲 Install app</button>' : ''}
         <a class="hint" href="/privacy.html" target="_blank" rel="noopener">Privacy policy</a></div></div></div>
-      ${mine.pets.length ? `<h3>Your pets</h3>${mine.pets.map((p, slot) => {
+      ${mine.pets.length ? toggleSec('Pets', `${mine.pets.map((p, slot) => {
         const coats = PETS[p.kind as PetKey]?.coats ?? [];
         const accs = me.petAccs ?? [];
         return `<div class="pet-row"><span class="pet-chip">${petIcon(p.kind, 'chip-icon', p.coat, p.acc)}<input class="pet-name" data-slot="${slot}" maxlength="16" value="${esc(p.name ?? '')}" placeholder="${PETS[p.kind as PetKey]?.name ?? p.kind}" aria-label="Pet name"></span>
           <button class="${p.away ? 'off' : 'on'} small-chip" data-act="petshow" data-slot="${slot}" data-v="${p.away ? 'in' : 'out'}" aria-pressed="${!p.away}" title="Show this pet in your room">${p.away ? 'Hidden' : 'In room'}</button>
           <small class="hint" title="Grows with every focus minute this pet spends in your room">♥ Bond ${bondLevel(p.bond)}/5</small>
           <button class="danger small-chip" data-act="petrelease" data-slot="${slot}" title="Let this pet go for good">Release</button>
-          <div class="swatches">${coats.map((c, k) => `<button class="swatch${(p.coat ?? 0) === k ? ' on' : ''}" style="background:${c}" data-act="petcoat" data-slot="${slot}" data-v="${k}" aria-label="Coat ${k + 1}"></button>`).join('')}</div>
+          ${coats.length ? `<div class="swatches">${coats.map((c, k) => `<button class="swatch${(p.coat ?? 0) === k ? ' on' : ''}" style="background:${c}" data-act="petcoat" data-slot="${slot}" data-v="${k}" aria-label="Coat ${k + 1}"></button>`).join('')}</div>` : ''}
           ${accs.length ? `<div class="row">${['', ...accs].map((a) => `<button class="${(p.acc ?? '') === a ? 'on' : 'off'}" data-act="petacc" data-slot="${slot}" data-v="${a}">${a ? PET_ACCS[a as keyof typeof PET_ACCS].name : 'None'}</button>`).join('')}</div>` : ''}</div>`;
-      }).join('')}${(me.petAccs ?? []).length ? '' : '<p class="hint">Get bows, hats and more for your pets in Shop → Pet style.</p>'}<p class="hint">Tap your pet in the room to have it follow you. Study with it out to grow your bond: bonded pets do tricks and sometimes find coins.</p>` : ''}
+      }).join('')}${(me.petAccs ?? []).length ? '' : '<p class="hint">Get bows, hats and more for your pets in Shop → Pet style.</p>'}<p class="hint">Tap your pet in the room to have it follow you. Study with it out to grow your bond: bonded pets do tricks and sometimes find coins.</p>`, true) : ''}
       <div class="center"><button class="off" data-act="randomlook">🎲 Randomize look</button></div>
-      <h3>Body type</h3>${lookTiles('body', BODIES, mine.look)}
-      <h3>Height</h3>${lookTiles('size', SIZES, mine.look)}
-      <h3>Skin tone</h3>${swatches('skin', SKINS, mine.look.skin, false, false)}
-      <h3>Hair style</h3>${lookTiles('style', STYLES, mine.look, true)}
-      <h3>Hair colour</h3>${swatches('hair', HAIRS, mine.look.color?.hair ?? mine.look.hair)}
-      <h3>Face</h3>${lookTiles('face', FACES, mine.look, true)}
-      <h3>Accessories</h3>${accTiles(ACCESSORIES, mine.look)}
-      ${(mine.look.accs ?? []).filter((a) => ACC_TINT.includes(a)).map((a) => accColourRow(a, mine.look)).join('')}
-      <h3>Outfit</h3>${lookTiles('outfit', OUTFITS, mine.look)}
-      <h3>Outfit colour</h3>${swatches('shirt', SHIRTS, mine.look.color?.shirt ?? mine.look.shirt)}`;
+      ${toggleSec('Body type', lookTiles('body', BODIES, mine.look))}
+      ${toggleSec('Height', lookTiles('size', SIZES, mine.look))}
+      ${toggleSec('Skin tone', swatches('skin', SKINS, mine.look.skin, false, false))}
+      ${toggleSec('Hair', `<h4>Hair style</h4>${lookTiles('style', STYLES, mine.look, true)}<h4>Hair colour</h4>${swatches('hair', HAIRS, mine.look.color?.hair ?? mine.look.hair)}`, true)}
+      ${toggleSec('Face', lookTiles('face', FACES, mine.look, true))}
+      ${toggleSec('Accessories', `${accTiles(ACCESSORIES, mine.look)}${(mine.look.accs ?? []).filter((a) => ACC_TINT.includes(a)).map((a) => accColourRow(a, mine.look)).join('')}`)}
+      ${toggleSec('Outfit', `<h4>Outfit</h4>${lookTiles('outfit', OUTFITS, mine.look)}<h4>Outfit colour</h4>${swatches('shirt', SHIRTS, mine.look.color?.shirt ?? mine.look.shirt)}`, true)}`;
   }
   // house
   const away = !!me.home && me.home !== houseCode;
@@ -2807,14 +2814,17 @@ function examLabel(m: Member) {
   if (m.id === myId) return next ? `Your next exam: ${next.subject} ${daysTo(next.date)}` : 'Add an exam to count down to';
   return next ? `${m.name}'s next exam: ${next.subject} ${daysTo(next.date)}` : `${m.name} has no exams coming up`;
 }
+const toggleSec = (title: string, body: string, open = false) =>
+  `<details class="me-sec"${open ? ' open' : ''}><summary>${esc(title)}</summary><div class="me-sec-body">${body}</div></details>`;
+
 function examsHTML(mine: Member) {
   const list = mine.exams ?? [];
   const today = new Date(Date.now() - new Date().getTimezoneOffset() * 60_000).toISOString().slice(0, 10);
-  return `<h3>Exam countdown</h3>
-    ${list.length ? `<ul class="members">${list.map((x, i) => `<li><span class="who"><b>${esc(x.subject)}</b> ${daysTo(x.date)}</span>
+  const body = `${list.length ? `<ul class="members">${list.map((x, i) => `<li><span class="who"><b>${esc(x.subject)}</b> ${daysTo(x.date)}</span>
       <button class="off small" data-act="examdel" data-v="${i}" aria-label="Remove ${esc(x.subject)}">✕</button></li>`).join('')}</ul>` : ''}
     <div class="row"><input id="examSubject" maxlength="24" placeholder="Subject" aria-label="Exam subject"><input id="examDate" type="date" min="${today}" aria-label="Exam date"><button data-act="examadd">Add</button></div>
     <p class="hint">A desk calendar (Shop → Decor) shows your next exam to housemates.</p>`;
+  return toggleSec('Exam countdown', body, !!list.length);
 }
 
 // ---------- calendar: the house's shared one, or my own (with my exams in it) ----------
@@ -3035,10 +3045,10 @@ type PresenceStatus = typeof PRESENCE_STATUSES[number];
 function setMyPresence(status: PresenceStatus, custom = '', until = 0) {
   const presence = { status, custom, until, at: Date.now() };
   userPresence.set(myId, presence);
-  send({ t: 'presence', ...presence });
+  send({ t: 'presence', status, custom, until });
   if (myPresenceTimer) clearInterval(myPresenceTimer);
-  if (status === 'focus' || status === 'break') {
-    myPresenceTimer = setInterval(() => send({ t: 'presence', ...presence }), 30000);
+  if (status && status !== 'idle') {
+    myPresenceTimer = window.setInterval(() => send({ t: 'presence', status, custom, until }), 60_000);
   }
 }
 
@@ -3080,7 +3090,12 @@ function typingIndicatorHTML(thread: string): string {
   if (!typingThread || typingThread.thread !== thread) return '';
   const names = [...typingThread.users.values()].filter(u => Date.now() - u.at < 4000).map(u => u.name);
   if (!names.length) return '';
-  return `<div class="typing-indicator">${names.length === 1 ? `${names[0]} is typing…` : `${names.join(', ')} are typing…`}</div>`;
+  return names.length === 1 ? `${names[0]} is typing…` : `${names.join(', ')} are typing…`;
+}
+
+function activeTypingHTML(thread: string): string {
+  const t = typingIndicatorHTML(thread);
+  return t ? `<div class="typing-indicator">${t}</div>` : '';
 }
 
 // Search in thread
@@ -3145,17 +3160,24 @@ function collectThreadImages(): { key: string; at: number; by: string }[] {
   return threadMsgs(dmPeer).filter(m => m.img).map(m => ({ key: m.img!, at: m.at, by: m.by }));
 }
 
+let galleryKeyHandler: ((e: KeyboardEvent) => void) | null = null;
+
 function openGallery(index: number) {
   galleryImages = collectThreadImages();
   if (!galleryImages.length) return;
-  galleryIndex = index;
+  galleryIndex = Math.max(0, Math.min(index, galleryImages.length - 1));
   galleryOpen = true;
   renderGallery();
   document.body.classList.add('gallery-open');
-  // Preload adjacent
-  [galleryIndex - 1, galleryIndex + 1].forEach(i => {
-    if (galleryImages[i]) preloadImage(galleryImages[i].key);
-  });
+  if (!galleryKeyHandler) {
+    galleryKeyHandler = (e: KeyboardEvent) => {
+      if (!galleryOpen) return;
+      if (e.key === 'Escape') { e.preventDefault(); closeGallery(); }
+      else if (e.key === 'ArrowLeft') { e.preventDefault(); showGalleryImage(galleryIndex - 1); }
+      else if (e.key === 'ArrowRight') { e.preventDefault(); showGalleryImage(galleryIndex + 1); }
+    };
+    document.addEventListener('keydown', galleryKeyHandler);
+  }
 }
 
 function closeGallery() {
@@ -3163,59 +3185,79 @@ function closeGallery() {
   galleryIndex = -1;
   galleryImages = [];
   document.body.classList.remove('gallery-open');
-  const overlay = $('#galleryOverlay');
-  overlay?.remove();
+  $('#galleryOverlay')?.remove();
+  if (galleryKeyHandler) { document.removeEventListener('keydown', galleryKeyHandler); galleryKeyHandler = null; }
 }
 
 function preloadImage(key: string) {
   if (imgLinks.has(key)) return;
   fetch(`${apiBase}/api/chatimg?key=${encodeURIComponent(key)}`, { headers: { authorization: `Bearer ${token}` } })
-    .then(r => r.json()).then(data => data.url && imgLinks.set(key, { url: data.url, at: Date.now() }));
+    .then(r => r.ok ? r.json() : null).then(data => data?.url && imgLinks.set(key, { url: data.url, at: Date.now() })).catch(() => {});
+}
+
+function showGalleryImage(index: number) {
+  if (!galleryImages.length) return;
+  galleryIndex = (index + galleryImages.length) % galleryImages.length;
+  renderGallery();
 }
 
 function renderGallery() {
   const img = galleryImages[galleryIndex];
   if (!img) return;
-  let link = imgLinks.get(img.key);
-  const overlay = document.createElement('div');
-  overlay.id = 'galleryOverlay';
-  overlay.innerHTML = `
-    <div class="gallery-content">
-      <div class="gallery-header">
-        <span>${galleryIndex + 1} / ${galleryImages.length}</span>
-        <span>${img.by} • ${ago(img.at)}</span>
-        <div><button class="gallery-zoom" title="Zoom">🔍</button><button class="gallery-download" title="Download">⬇</button><button class="gallery-close" title="Close">✕</button></div>
+  let overlay = document.getElementById('galleryOverlay');
+  if (!overlay) {
+    overlay = document.createElement('div');
+    overlay.id = 'galleryOverlay';
+    overlay.innerHTML = `
+      <div class="gallery-content">
+        <div class="gallery-header">
+          <span class="gallery-count"></span>
+          <span class="gallery-meta"></span>
+          <div><button class="gallery-zoom" title="Zoom">🔍</button><button class="gallery-download" title="Download">⬇</button><button class="gallery-close" title="Close">✕</button></div>
+        </div>
+        <img class="gallery-img" alt="">
+        <div class="gallery-nav"><button class="gallery-prev" aria-label="Previous">←</button><button class="gallery-next" aria-label="Next">→</button></div>
       </div>
-      <img class="gallery-img" src="${link?.url || ''}" alt="Picture from ${img.by}" data-key="${img.key}">
-      <div class="gallery-nav"><button class="gallery-prev" aria-label="Previous">←</button><button class="gallery-next" aria-label="Next">→</button></div>
-    </div>
-  `;
-  document.body.appendChild(overlay);
-  const galleryImg = overlay.querySelector('.gallery-img') as HTMLImageElement;
-  if (!link) {
-    fetch(`${apiBase}/api/chatimg?key=${encodeURIComponent(img.key)}`, { headers: { authorization: `Bearer ${token}` } })
-      .then(r => r.json()).then(data => { if (data.url) { link = { url: data.url, at: Date.now() }; imgLinks.set(img.key, link); galleryImg.src = data.url; } });
+    `;
+    document.body.appendChild(overlay);
+    overlay.querySelector('.gallery-prev')!.addEventListener('click', (e) => { e.stopPropagation(); showGalleryImage(galleryIndex - 1); });
+    overlay.querySelector('.gallery-next')!.addEventListener('click', (e) => { e.stopPropagation(); showGalleryImage(galleryIndex + 1); });
+    overlay.querySelector('.gallery-close')!.addEventListener('click', (e) => { e.stopPropagation(); closeGallery(); });
+    overlay.querySelector('.gallery-download')!.addEventListener('click', (e) => { e.stopPropagation(); const cur = galleryImages[galleryIndex]; if (cur) downloadAttachment(cur.key); });
+    overlay.querySelector('.gallery-zoom')!.addEventListener('click', (e) => { e.stopPropagation(); overlay!.querySelector('.gallery-img')!.classList.toggle('zoomed'); });
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) closeGallery(); });
+    const galleryImg = overlay.querySelector('.gallery-img') as HTMLImageElement;
+    let touchX = 0, touchY = 0;
+    galleryImg.addEventListener('touchstart', (e) => { if (e.touches.length === 1) { touchX = e.touches[0].clientX; touchY = e.touches[0].clientY; } }, { passive: true });
+    galleryImg.addEventListener('touchend', (e) => {
+      const t = e.changedTouches[0]; if (!t) return;
+      const dx = t.clientX - touchX, dy = t.clientY - touchY;
+      if (Math.abs(dx) > 40 && Math.abs(dx) > Math.abs(dy) * 1.2) showGalleryImage(galleryIndex + (dx < 0 ? 1 : -1));
+    }, { passive: true });
   }
-  overlay.querySelector('.gallery-prev')!.addEventListener('click', () => { galleryIndex = (galleryIndex - 1 + galleryImages.length) % galleryImages.length; renderGallery(); });
-  overlay.querySelector('.gallery-next')!.addEventListener('click', () => { galleryIndex = (galleryIndex + 1) % galleryImages.length; renderGallery(); });
-  overlay.querySelector('.gallery-close')!.addEventListener('click', closeGallery);
-  overlay.querySelector('.gallery-download')!.addEventListener('click', () => downloadAttachment(img.key));
-  overlay.querySelector('.gallery-zoom')!.addEventListener('click', () => galleryImg.classList.toggle('zoomed'));
-  // Keyboard
-  const onKey = (e: KeyboardEvent) => {
-    if (!galleryOpen) return document.removeEventListener('keydown', onKey);
-    if (e.key === 'Escape') closeGallery();
-    else if (e.key === 'ArrowLeft') galleryIndex = (galleryIndex - 1 + galleryImages.length) % galleryImages.length;
-    else if (e.key === 'ArrowRight') galleryIndex = (galleryIndex + 1) % galleryImages.length;
-    else return;
-    renderGallery();
-  };
-  document.addEventListener('keydown', onKey);
+  (overlay.querySelector('.gallery-count') as HTMLElement).textContent = `${galleryIndex + 1} / ${galleryImages.length}`;
+  (overlay.querySelector('.gallery-meta') as HTMLElement).textContent = `${img.by} • ${ago(img.at)}`;
+  const galleryImg = overlay.querySelector('.gallery-img') as HTMLImageElement;
+  galleryImg.classList.remove('zoomed');
+  galleryImg.alt = `Picture from ${img.by}`;
+  galleryImg.dataset.key = img.key;
+  const link = imgLinks.get(img.key);
+  if (link?.url) galleryImg.src = link.url;
+  else {
+    galleryImg.removeAttribute('src');
+    fetch(`${apiBase}/api/chatimg?key=${encodeURIComponent(img.key)}`, { headers: { authorization: `Bearer ${token}` } })
+      .then(r => r.ok ? r.json() : null).then(data => {
+        if (data?.url) { imgLinks.set(img.key, { url: data.url, at: Date.now() }); if (galleryImages[galleryIndex]?.key === img.key) galleryImg.src = data.url; }
+      }).catch(() => {});
+  }
+  [galleryIndex - 1, galleryIndex + 1].forEach(i => { if (galleryImages[i]) preloadImage(galleryImages[i].key); });
 }
 
 // Read receipts
 function markRead(thread: string, msgId: number) {
-  if (!readReceiptsEnabled) return;
+  if (!readReceiptsEnabled || !msgId) return;
+  const msg = threadMsgs(dmPeer).find((m) => m.id === msgId);
+  if (!msg || msg.from === myId) return;
   if (readTimes.has(msgId)) return;
   readTimes.set(msgId, { by: myId, at: Date.now() });
   send({ t: 'read', thread, id: msgId });
@@ -3223,10 +3265,69 @@ function markRead(thread: string, msgId: number) {
 
 function renderReceipt(msg: Chat): string {
   if (msg.from !== myId) return '';
-  const reads = [...readTimes.entries()].filter(([id]) => id === msg.id);
-  if (!reads.length) return '<span class="receipt sent" title="Sent">✓</span>';
-  if (reads.some(r => r[1].by !== msg.from)) return '<span class="receipt read" title="Read">✓✓</span>';
-  return '<span class="receipt delivered" title="Delivered">✓✓</span>';
+  const reads = [...readTimes.entries()].filter(([id, r]) => id === msg.id && r.by !== myId);
+  const peer = dmPeer && !groupOf(dmPeer) ? person(dmPeer) : null;
+  const delivered = peer ? !!peer.online : members.some((m) => m.id !== myId && m.online);
+  if (reads.length) return '<span class="receipt read" title="Read">✓✓</span>';
+  if (delivered) return '<span class="receipt delivered" title="Delivered">✓✓</span>';
+  return '<span class="receipt sent" title="Sent">✓</span>';
+}
+
+function setMyStatusPrompt() {
+  const cur = getPresence(myId);
+  const pick = prompt('Set activity status: idle, focus, break, afk, or chat', cur?.status ?? 'idle');
+  if (!pick) return;
+  const status = pick.trim().toLowerCase() as PresenceStatus;
+  if (!['idle', 'focus', 'break', 'afk', 'chat'].includes(status)) return toast('Use: idle, focus, break, afk, or chat', 'error');
+  const custom = prompt('Optional status text (leave blank for default)', cur?.custom ?? '') ?? '';
+  setMyPresence(status, custom.trim());
+  renderSide();
+  toast('Activity status updated.');
+}
+
+function chatMenuAction(act: string) {
+  const thread = threadKey(dmPeer);
+  if (act === 'mute') {
+    if (isMuted(thread)) { mutedThreads.delete(thread); send({ t: 'mute', thread, until: -1 }); syncChatList(); toast('Thread unmuted.'); }
+    else muteThreadMenu(thread);
+  } else if (act === 'theme') {
+    themePickerMenu(thread, getThreadTheme(thread));
+  } else if (act === 'search') {
+    openSearch();
+  } else if (act === 'status') {
+    setMyStatusPrompt();
+  } else if (act === 'leave') {
+    const g = groupOf(dmPeer), f = !g && friendsOnly().find((x) => x.id === dmPeer);
+    if (!g && !f && dmPeer) { send({ t: 'friend_request', id: dmPeer }); return; }
+    if (f) { if (confirm(`Unfriend ${f.name}? ${members.some((m) => m.id === f.id) ? '' : "You won't be able to message each other any more."}`)) { send({ t: 'friend_remove', id: f.id }); chatOpen = false; renderSide(); } return; }
+    if (g && confirm(`Leave "${g.name}"? You won't see its messages any more.`)) { send({ t: 'group_leave', g: dmPeer!.slice(2) }); chatOpen = false; renderSide(); }
+  } else if (act === 'friend') {
+    if (dmPeer) send({ t: 'friend_request', id: dmPeer });
+  }
+}
+
+function renderChatMenu() {
+  const menu = document.getElementById('chatMenu') as HTMLElement | null;
+  const btn = document.getElementById('chatMenuBtn') as HTMLButtonElement | null;
+  if (!menu || !btn) return;
+  if (!chatOpen) { btn.hidden = true; menu.hidden = true; btn.setAttribute('aria-expanded', 'false'); return; }
+  const thread = threadKey(dmPeer);
+  const g = groupOf(dmPeer);
+  const friendThread = !!dmPeer && friendsOnly().some((f) => f.id === dmPeer);
+  const pending = (me.friends ?? []).find((f) => f.id === dmPeer);
+  const canLeave = !!dmPeer && (g || friendThread || (!!pending && !friendThread));
+  const canFriend = !!dmPeer && !g && !friendThread && (!pending || pending.status === 'incoming');
+  const items: string[] = [
+    `<button data-chat-menu="mute">${isMuted(thread) ? 'Unmute thread' : 'Mute thread…'}</button>`,
+    `<button data-chat-menu="theme">Change chat color…</button>`,
+    `<button data-chat-menu="search">Search in chat</button>`,
+    `<button data-chat-menu="status">Set my activity status…</button>`,
+  ];
+  if (canFriend) items.push(`<button data-chat-menu="friend">Add friend</button>`);
+  if (canLeave) items.push('<hr>', `<button data-chat-menu="leave">${g ? 'Leave group' : friendThread ? 'Unfriend' : 'Cancel request'}</button>`);
+  menu.innerHTML = items.join('');
+  btn.hidden = false;
+  if (!menu.hidden) btn.setAttribute('aria-expanded', 'true');
 }
 
 // Mute thread menu
@@ -3275,7 +3376,7 @@ function themePickerMenu(thread: string, current?: string) {
     btn.addEventListener('click', () => { setThreadTheme(thread, btn.dataset.color!); remove(); });
   });
   menu.querySelector('#customColor')!.addEventListener('change', (e) => { setThreadTheme(thread, (e.target as HTMLInputElement).value); remove(); });
-  menu.querySelector('[data-clear]')!.addEventListener('click', () => { threadThemes.delete(thread); send({ t: 'theme', thread, color: '' }); applyThreadTheme(thread); remove(); });
+  menu.querySelector('[data-clear]')!.addEventListener('click', () => { threadThemes.delete(thread); send({ t: 'theme', thread, color: '' }); applyThreadTheme(thread); syncChatList(); remove(); });
   document.addEventListener('click', remove, { once: true });
   document.addEventListener('keydown', remove, { once: true });
 }
@@ -3330,6 +3431,53 @@ const faceURL = (look: Look) => { const k = JSON.stringify(look); if (!faces.has
 const ago = (at: number) => { const s = (Date.now() - at) / 1000; return s < 60 ? 'now' : s < 3600 ? `${Math.floor(s / 60)}m` : s < 86_400 ? `${Math.floor(s / 3600)}h` : `${Math.floor(s / 86_400)}d`; };
 let chatListHTML = '';
 const visitToasted = new Set<string>(); // friends whose visit ask I've been told about
+function renderChatHeader() {
+  const title = $('#chatTitle');
+  const icon = document.getElementById('chatHeadIcon') as HTMLImageElement | null;
+  const faceWrap = document.getElementById('chatHeadFaceWrap');
+  const face = document.getElementById('chatHeadFace') as HTMLImageElement | null;
+  const status = document.getElementById('chatHeadStatus');
+  const typing = document.getElementById('chatTypingHead');
+  if (!chatOpen) {
+    title.textContent = 'Chats';
+    if (icon) { icon.hidden = false; icon.src = icon.dataset.src || uiIconURL('chat'); }
+    faceWrap?.setAttribute('hidden', '');
+    status?.setAttribute('hidden', '');
+    if (status) status.textContent = '';
+    typing?.setAttribute('hidden', '');
+    if (typing) typing.textContent = '';
+    return;
+  }
+  const thread = threadKey(dmPeer);
+  if (!dmPeer) {
+    title.textContent = 'House chat';
+    if (icon) { icon.hidden = false; icon.src = uiIconURL('house'); }
+    faceWrap?.setAttribute('hidden', '');
+    if (status) { status.hidden = false; status.textContent = `${members.filter(m => m.online).length} online`; status.classList.toggle('on', members.some(m => m.online)); }
+  } else {
+    const g = groupOf(dmPeer);
+    if (g) {
+      title.textContent = g.name;
+      if (icon) { icon.hidden = false; icon.src = uiIconURL('chat'); }
+      faceWrap?.setAttribute('hidden', '');
+      if (status) { const online = g.members.filter(id => members.some(m => m.id === id && m.online)).length; status.hidden = false; status.textContent = `${g.members.length} members${online ? ` · ${online} online` : ''}`; status.classList.toggle('on', online > 0); }
+    } else {
+      const p = person(dmPeer);
+      title.textContent = p?.name ?? 'Chat';
+      if (icon) icon.hidden = true;
+      if (face && p) { face.src = faceURL(p.look); face.alt = ''; }
+      faceWrap?.removeAttribute('hidden');
+      faceWrap?.classList.toggle('on', !!p?.online);
+      const pr = getPresence(dmPeer);
+      const bits = [p?.online ? 'Online' : 'Offline'];
+      if (pr) bits.push(presenceIcon(pr.status, pr.custom));
+      if (status) { status.hidden = false; status.textContent = bits.join(' · '); status.classList.toggle('on', !!p?.online); }
+    }
+  }
+  const t = typingIndicatorHTML(thread);
+  if (typing) { typing.hidden = !t; typing.textContent = t; }
+}
+
 function syncChatList() {
   const others = members.filter((m) => m.id !== myId);
   const pals = friendsOnly().filter((f) => !others.some((m) => m.id === f.id)); // friends who aren't housemates
@@ -3337,15 +3485,12 @@ function syncChatList() {
   if (dmPeer && !live(dmPeer)) { dmPeer = null; chatOpen = false; } // they moved out, we unfriended, or I left the group
   // Pending unread counts for threads that are gone would be unreachable otherwise.
   for (const peer of Object.keys(dmUnread)) if (!live(peer)) delete dmUnread[peer];
-  $('#chatTitle').textContent = !chatOpen ? 'Chats' : groupOf(dmPeer)?.name ?? (dmPeer ? person(dmPeer)!.name : 'House chat');
   $('#chatBack').hidden = !chatOpen;
-  const friendThread = !!dmPeer && friendsOnly().some((f) => f.id === dmPeer);
-  const pending = (me.friends ?? []).find((f) => f.id === dmPeer);
-  $('#chatLeave').hidden = !chatOpen || !dmPeer || (!groupOf(dmPeer) && !!pending && !friendThread); // hidden while a request is open
-  $('#chatLeave').textContent = groupOf(dmPeer) ? 'Leave' : friendThread ? 'Unfriend' : '＋ Add friend';
   $('#chatList').hidden = chatOpen;
   $('#chatLog').hidden = !chatOpen;
   $('#chatForm').hidden = !chatOpen;
+  renderChatHeader();
+  renderChatMenu();
   if (chatOpen) {
     // Apply theme when opening thread
     const thread = threadKey(dmPeer);
@@ -3417,8 +3562,12 @@ function renderSide() {
     const byId = new Map<number, Chat>(msgs.map((c) => [c.id, c]));
     const quoteOf = (c: Chat) => { const q = c.replyTo ? byId.get(c.replyTo) : null; return q ? `<span class="quote" data-reply-to="${q.id}"><b>${esc(q.by)}</b> <span class="qt">${esc(q.text) || 'Picture'}</span></span>` : ''; };
     log.innerHTML = msgs.length
-      ? more + msgs.map((c) => !c.from ? `<p class="note">${esc(c.text)}</p>` : `<p class="${c.from === myId ? 'mine' : ''}" data-quote="${c.id}"><b>${esc(c.by)}</b>${quoteOf(c)}${highlightSearch(linkify(c.text))}${c.img ? `<span class="chat-att">${docName(c.img) ? `<button type="button" class="chat-doc" data-key="${esc(c.img)}">📎 <span>${esc(docName(c.img)!)}</span></button>` : `<img class="chat-img" data-key="${esc(c.img)}" alt="Picture from ${esc(c.by)}" data-index="${msgs.findIndex(m => m.img === c.img)}">`}`
-        + `<button type="button" class="chat-dl" data-dl="${esc(c.img)}" title="Download" aria-label="Download ${esc(docName(c.img) ?? 'picture')}">⬇</button></span>` : ''}${renderReceipt(c)}<button type="button" class="chat-reply" title="Reply" aria-label="Reply to ${esc(c.by)}">↩</button></p>`).join('')
+      ? more + msgs.map((c, i) => {
+        if (!c.from) return `<p class="note">${esc(c.text)}</p>`;
+        const imgIdx = c.img ? msgs.slice(0, i).filter((m) => m.img).length : -1;
+        return `<p class="${c.from === myId ? 'mine' : ''}" data-quote="${c.id}"><b>${esc(c.by)}</b>${quoteOf(c)}${highlightSearch(linkify(c.text))}${c.img ? `<span class="chat-att">${docName(c.img) ? `<button type="button" class="chat-doc" data-key="${esc(c.img)}">📎 <span>${esc(docName(c.img)!)}</span></button>` : `<img class="chat-img" data-key="${esc(c.img)}" alt="Picture from ${esc(c.by)}" data-index="${imgIdx}">`}`
+          + `<button type="button" class="chat-dl" data-dl="${esc(c.img)}" title="Download" aria-label="Download ${esc(docName(c.img) ?? 'picture')}">⬇</button></span>` : ''}${renderReceipt(c)}<button type="button" class="chat-reply" title="Reply" aria-label="Reply to ${esc(c.by)}">↩</button></p>`;
+      }).join('')
       : dmPeer
         ? `<p class="empty">${group ? `Just the people in ${esc(peerName)}.` : `Just you and ${esc(peerName)} — nobody else can see this.`}</p>`
         : '<p class="empty">Say hi to your housemates 👋</p>';
@@ -3446,9 +3595,9 @@ function renderSide() {
   // Ensure search bar visibility matches state
   const searchBar = $('#chatSearch');
   if (searchBar) searchBar.hidden = !searchQuery;
-  // Typing indicator
+  // Typing indicator (keep below log only as fallback)
   const typingDiv = $('#typingIndicator');
-  const typingHTML = typingIndicatorHTML(thread);
+  const typingHTML = activeTypingHTML(thread);
   if (typingDiv) typingDiv.innerHTML = typingHTML;
   else if (typingHTML) {
     const div = document.createElement('div');
@@ -3457,6 +3606,8 @@ function renderSide() {
     div.innerHTML = typingHTML;
     log.parentElement?.insertBefore(div, log.nextSibling);
   }
+  renderChatHeader();
+  renderChatMenu();
   const box = $<HTMLTextAreaElement>('#chatInput'), ph = dmPeer ? `Message ${peerName}…` : 'Say something…';
   if (box.placeholder !== ph) box.placeholder = ph;
   // The message I'm replying to: show it above the box, or clear it when the thread changes.
@@ -3826,6 +3977,24 @@ $('#chatList').addEventListener('click', (e) => {
   $('#chatInput').focus();
 });
 $('#chatBack').addEventListener('click', () => { chatOpen = false; renderSide(); });
+$('#chatMenuBtn').addEventListener('click', (e) => {
+  e.stopPropagation();
+  const menu = document.getElementById('chatMenu')!;
+  menu.hidden = !menu.hidden;
+  $('#chatMenuBtn').setAttribute('aria-expanded', String(!menu.hidden));
+  if (!menu.hidden) renderChatMenu();
+});
+$('#chatMenu').addEventListener('click', (e) => {
+  const b = (e.target as HTMLElement).closest<HTMLButtonElement>('[data-chat-menu]');
+  if (!b) return;
+  $('#chatMenu').hidden = true; $('#chatMenuBtn').setAttribute('aria-expanded', 'false');
+  chatMenuAction(b.dataset.chatMenu!);
+});
+document.addEventListener('click', (e) => {
+  const menu = document.getElementById('chatMenu');
+  const btn = document.getElementById('chatMenuBtn');
+  if (menu && !menu.hidden && !(e.target as HTMLElement).closest('.chat-menu-wrap')) { menu.hidden = true; btn?.setAttribute('aria-expanded', 'false'); }
+});
 // Context menu for chat rows: mute, theme
 $('#chatList').addEventListener('contextmenu', (e) => {
   const row = (e.target as HTMLElement).closest<HTMLButtonElement>('.chat-row');
@@ -3842,13 +4011,11 @@ $('#chatList').addEventListener('contextmenu', (e) => {
   menu.innerHTML = `
     <button data-mute>${isMutedNow ? 'Unmute' : 'Mute…'}</button>
     <button data-theme>Change color${currentTheme ? ' ✦' : ''}</button>
-    <hr>
-    <button data-copy>Copy thread link</button>
   `;
   document.body.appendChild(menu);
   const remove = () => menu.remove();
   menu.querySelector('[data-mute]')!.addEventListener('click', () => {
-    if (isMutedNow) { mutedThreads.delete(thread); send({ t: 'mute', thread, until: -1 }); }
+    if (isMutedNow) { mutedThreads.delete(thread); send({ t: 'mute', thread, until: -1 }); syncChatList(); }
     else { muteThreadMenu(thread); }
     remove();
   });
@@ -3856,17 +4023,7 @@ $('#chatList').addEventListener('contextmenu', (e) => {
   document.addEventListener('click', remove, { once: true });
   document.addEventListener('keydown', remove, { once: true });
 });
-$('#chatLeave').addEventListener('click', () => {
-  const g = groupOf(dmPeer), f = !g && friendsOnly().find((x) => x.id === dmPeer);
-  if (!g && !f && dmPeer) return send({ t: 'friend_request', id: dmPeer }); // a housemate: ask them
-  if (f) {
-    if (confirm(`Unfriend ${f.name}? ${members.some((m) => m.id === f.id) ? '' : "You won't be able to message each other any more."}`)) { send({ t: 'friend_remove', id: f.id }); chatOpen = false; }
-    return;
-  }
-  if (!g || !confirm(`Leave "${g.name}"? You won't see its messages any more.`)) return;
-  send({ t: 'group_leave', g: dmPeer!.slice(2) });
-  chatOpen = false;
-});
+// (chatLeave button removed; actions live in chat menu)
 // Add a friend by username.
 const friendModal = $<HTMLDialogElement>('#friendModal');
 $('#friendCancel').addEventListener('click', () => friendModal.close());
