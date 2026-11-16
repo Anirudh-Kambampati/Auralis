@@ -388,7 +388,7 @@ const buddiesOf = (p, now) => db.houses[p.house].members.filter((id) => {
 }).length;
 function newRoom() { return { wallpaper: WALLPAPERS[0], floor: FLOORS[0], furniture: [] }; }
 
-function handle(p, m) {
+async function handle(p, m) {
   const room = roomOf(p, m);
   if (['place', 'move', 'pickup', 'room', 'flip', 'restyle', 'shape', 'expand', 'curtains', 'turn'].includes(m.t) && !room) return;
   // Furniture is addressed by position. Anything but a real integer fetches a built-in
@@ -1236,7 +1236,7 @@ case 'dm': {
     case 'visit_answer': {
       const guest = db.players[m.id];
       if (!visitAsks.delete(`${p.id}|${m.id}`) || !guest) return;
-      if (m.yes && isFriend(p.id, guest.id) && p.house) return handle(guest, { t: 'join', code: p.house }); // same checks as joining by code
+      if (m.yes && isFriend(p.id, guest.id) && p.house) return await handle(guest, { t: 'join', code: p.house }); // same checks as joining by code
       refresh(p.id, guest.id);
       return;
     }
@@ -1785,7 +1785,7 @@ wss.on('connection', (ws) => {
       delete p.missed;
       return;
     }
-    handle(p, m);
+    void handle(p, m).catch((err) => console.error('message handler failed', err));
   };
   ws.on('close', () => {
     try {
