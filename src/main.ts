@@ -91,6 +91,7 @@ let finishedSession = false; // the session that just ended ran to the end (not 
 let missed = 0; // messages that arrived while I was focusing, quietly
 const cheers = new Map<string, { text: string; at: number; hop?: boolean }>(); // 👏 or ✋ floating up over a player (hop: a little jump too)
 const petCheers = new Map<string, { text: string; at: number }>(); // 👏 floating up over a pet cheering its owner
+const petCheerCount = new Map<string, number>(); // 👏 how many times each pet cheered this session
 const petPlay = new Map<string, number>(); // key -> until timestamp (pets play together after high-five)
 const petNameAt = new Map<string, number>(); // key -> until: this pet's name tag is showing (names come and go)
 const petTrickAt = new Map<string, number>(); // key -> until: this pet is in the middle of a trick
@@ -199,7 +200,7 @@ function connect() {
   };
   ws.onmessage = (e) => onMessage(JSON.parse(e.data));
 }
-const send = (m: object) => ws?.readyState === 1 && ws.send(JSON.stringify(m));
+const send = (m: object) => { if (ws?.readyState === 1) { ws.send(JSON.stringify(m)); return true; } toast('Not connected — try again in a moment.', 'error'); return false; };
 
 function onMessage(m: any) {
   if (m.t === 'auth') {
@@ -381,6 +382,7 @@ function onMessage(m: any) {
         else startBreak(5 * 60_000, `☕ Nice work! Take a 5-minute break. (${4 - (today % 4)} more until a long one)`);
       }
       finishedSession = false;
+      petCheerCount.clear(); // new focus session: pets get two cheers again
     }
     renderHud();
     renderSide();
@@ -498,9 +500,11 @@ function receiveChat(list: Chat[]) {
   const first = lastChatId < 0;
   const thread = threadKey(null);
   const muted = isMuted(thread);
+  const known = new Set(chat.map((c) => c.id));
   for (const c of list) {
-    if (c.id <= lastChatId) continue;
-    if (!first) {
+    if (known.has(c.id)) continue;
+    const isNew = first || c.id > lastChatId;
+    if (isNew) {
       bubbles.set(c.from, { text: c.img ? `${attachLabel(c.img)} ${c.text}`.trim() : c.text, until: Date.now() + 6000 });
       if (c.from !== myId) {
         if (!muted) {
@@ -513,8 +517,10 @@ function receiveChat(list: Chat[]) {
         }
       }
     }
+    known.add(c.id);
+    chat.push(c);
   }
-  chat = list;
+  chat.sort((a, b) => a.id - b.id);
   lastChatId = Math.max(lastChatId, 0, ...list.map((c) => c.id));
 }
 
@@ -1547,9 +1553,10 @@ function render(t: number, dt: number) {
     else if (sunning && sunning.until > now) { x.goal = { x: sunning.x, y: sunning.y }; x.act = 'sun'; }
     else if (fe && fa < 4500) x.goal = fa < 2000 || !by ? fe : { x: by.x + side, y: by.y + back };
     else if (here && m.focus && !p.follow) { x.goal = { x: here.x + side, y: here.y + back }; x.act = 'sleep'; }
-    // Pet cheers owner during focus (like a supportive housemate)
-    if (here && m.focus && !p.follow && x.act === 'sleep' && Math.random() < 0.001 * dt * 60) {
+    // Pet cheers owner during focus (like a supportive housemate): twice per session, that's it
+    if (here && m.focus && !p.follow && x.act === 'sleep' && (petCheerCount.get(key) ?? 0) < 2 && Math.random() < 0.001 * dt * 60) {
       petCheers.set(key, { text: '👏', at: now });
+      petCheerCount.set(key, (petCheerCount.get(key) ?? 0) + 1);
     }
     else if (now - (petDone.get(m.id) ?? 0) < 3000 || (now - (patAt.get(key) ?? 0) < 1200 && bondLevel(p.bond) >= 2)) x.run = true;
     else if (here && p.follow && !m.focus && tr && now - tr.movedAt < 600) x.goal = trailPoint(tr.pts, gap);
@@ -1581,7 +1588,7 @@ function render(t: number, dt: number) {
       if (!here && favA && inRoom(favA)) { // owner away: walk over to the favourite guest and stay beside them
         if (Math.hypot(favA.x - cur.x, favA.y - cur.y) > 2.2) x.goal = spotNear(favA, 1);
         else if (Math.random() < 0.03) { x.goal = spotNear(favA, 0.9); x.act = Math.random() < 0.3 ? 'sleep' : undefined; }
-      } else if (guestA && myLvl && inRoom(guestA) && Math.random() < Math.min(0.06, 0.008 * myLvl) * (here ? 1 : 3) * dt * 60) {
+      } else if (guestA && myLvl && inRoom(guestA) && Math.hypot(cur.x - guestA.x, cur.y - guestA.y) > 1.9 && Math.random() < Math.min(0.06, 0.008 * myLvl) * (here ? 1 : 3) * dt * 60) {
         x.goal = spotNear(guestA, 1.5); // a guest it has fussed over often: come over
       } else if (here && Math.random() < 0.0015 * (1 + bondLevel(p.bond)) * dt * 60) x.goal = spotNear(here, 1.6); // the owner, now and then
     }
@@ -3760,15 +3767,15 @@ $('#chatForm').addEventListener('submit', (e) => {
     else {
       const g = groupOf(dmPeer) ? dmPeer!.slice(2) : undefined;
       const to = dmPeer && !dmPeer.startsWith('g:') ? dmPeer : undefined;
-      send({ t: 'watch', url, ...(to ? { to } : {}), ...(g ? { g } : {}) });
-      input.value = '';
+      if (send({ t: 'watch', url, ...(to ? { to } : {}), ...(g ? { g } : {}) })) input.value = '';
     }
     return;
   }
   if (staged) return sendStaged(input);
-  if (input.value.trim()) send(chatMsg({ text: input.value, ...(replyTo ? { replyTo: replyTo.id } : {}) }));
-  input.value = '';
-  replyTo = null;
+  if (input.value.trim() && send(chatMsg({ text: input.value, ...(replyTo ? { replyTo: replyTo.id } : {}) }))) {
+    input.value = '';
+    replyTo = null;
+  }
 });
 // The message goes to the thread that was open when Send was pressed, even if the upload takes a while.
 // If the upload fails, the attachment and caption stay in the box to try again.

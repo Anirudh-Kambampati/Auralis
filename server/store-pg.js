@@ -44,7 +44,15 @@ export async function openPgStore(url, legacyJsonFile) {
   // Saves run one at a time so an older snapshot never lands after a newer one.
   let queue = Promise.resolve();
   const lastJson = new Map(); // only rows that changed since they were last written are sent
+  // Circuit breaker: when the DB is unreachable, stop queuing saves so they can't
+  // pile up in memory and OOM. Retry after a cooldown.
+  let dbUnavailable = false;
+  let unavailableSince = 0;
+  const DB_COOLDOWN_MS = 30_000;
+  function isDbUnavailable() { return dbUnavailable && Date.now() - unavailableSince < DB_COOLDOWN_MS; }
+  function markDbUnavailable(err) { if (err && (err.code === 'ETIMEDOUT' || err.code === 'ENETUNREACH' || err.code === 'ECONNREFUSED')) { dbUnavailable = true; unavailableSince = Date.now(); } }
   function saveAll() {
+    if (isDbUnavailable()) return Promise.resolve();
     const rows = changedRows(db, lastJson);
     const players = rows.filter(([k]) => k[0] === 'p'), houses = rows.filter(([k]) => k[0] === 'h');
     const ids = players.map(([, p]) => p.id), pdata = players.map(([, , j]) => j), coins = players.map(([, p]) => p.coins ?? null);
@@ -63,8 +71,10 @@ export async function openPgStore(url, legacyJsonFile) {
         await c.query(`insert into houses (code, data) select * from unnest($1::text[], $2::jsonb[])
           on conflict (code) do update set data = excluded.data`, [codes, hdata]);
         await c.query('commit');
+        dbUnavailable = false; // DB is reachable again
         for (const r of wrote.rows) written[r.player_id] = r.coins;
       } catch (err) {
+        markDbUnavailable(err);
         await c.query('rollback').catch(() => {});
         for (const [k, , j] of rows) if (lastJson.get(k) === j) lastJson.delete(k); // write these again next time
         console.error('save failed', err);
@@ -78,6 +88,7 @@ export async function openPgStore(url, legacyJsonFile) {
   // Applies coins edited straight in the database while the server runs; returns the players whose coins changed.
   // Queued with the saves so it never reads halfway through one.
   function syncCoins() {
+    if (isDbUnavailable()) return Promise.resolve([]);
     const run = queue.then(async () => {
       const changed = [];
       for (const r of (await pool.query(readCoins)).rows) {
@@ -87,7 +98,7 @@ export async function openPgStore(url, legacyJsonFile) {
         changed.push(p.id);
       }
       return changed;
-    }).catch((err) => { console.error('coin sync failed', err); return []; });
+    }).catch((err) => { markDbUnavailable(err); console.error('coin sync failed', err); return []; });
     queue = run;
     return run;
   }
@@ -100,8 +111,8 @@ export async function openPgStore(url, legacyJsonFile) {
     fs.renameSync(legacyJsonFile, `${legacyJsonFile}.imported`);
   }
 
-  const addMessage = (thread, m) => pool.query('insert into messages (id, thread, from_id, by_name, body, img, reply_to, at) values ($1, $2, $3, $4, $5, $6, $7, $8) on conflict (id) do nothing',
-    [m.id, thread, m.from ?? '', m.by ?? '', m.text ?? '', m.img ?? null, m.replyTo ?? null, m.at ?? 0]).catch((err) => console.error('message save failed', err));
+  const addMessage = (thread, m) => { if (isDbUnavailable()) return Promise.resolve(); return pool.query('insert into messages (id, thread, from_id, by_name, body, img, reply_to, at) values ($1, $2, $3, $4, $5, $6, $7, $8) on conflict (id) do nothing',
+    [m.id, thread, m.from ?? '', m.by ?? '', m.text ?? '', m.img ?? null, m.replyTo ?? null, m.at ?? 0]).catch((err) => { markDbUnavailable(err); console.error('message save failed', err); }); };
   // First run with the messages table: copy in the chat history the rows already hold.
   if (!(await pool.query('select 1 from messages limit 1')).rows.length) {
     const rows = [...savedMessages(db)];
