@@ -567,7 +567,7 @@ li.done .check { background: #6fcf8a; color: #fff; }
 .todo-meta .due.late { color: var(--coral); }
 #chatLog { flex: 1; overflow-y: auto; padding: var(--gap) 12px; display: flex; flex-direction: column; gap: var(--gap); font-size: 15px; -webkit-user-select: text; user-select: text; cursor: var(--text); }
 #chatLog p { margin: 0; padding: 6px 34px 8px 10px; background: #fff; border: 2px solid var(--ink); border-radius: 12px 12px 12px 4px; align-self: flex-start; max-width: 90%; overflow-wrap: anywhere; position: relative; }
-  #chatLog p.mine { align-self: flex-end; background: #e3ebfb; border-radius: 12px 12px 4px 12px; }
+  #chatLog p.mine { align-self: flex-end; border-radius: 12px 12px 4px 12px; }
   /* Quote styling */
   #chatLog .quote { display: inline-block; padding: 2px 8px; margin: 2px 0; background: var(--paper); border: 1px solid var(--soft); border-radius: 8px; font-size: 13px; cursor: pointer; color: var(--muted); transition: background .1s, border-color .1s; }
   #chatLog .quote:hover { background: var(--gold); border-color: var(--ink); color: var(--ink); }
@@ -1090,8 +1090,19 @@ body.signed-out #deck, body.signed-out #game, body.signed-out #zoom { display: n
 .chat-typing-head { font-size: 12px; color: var(--muted); max-width: 90px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: none; }
 .chat-head-actions { display: flex; align-items: center; gap: 6px; flex: none; }
 .chat-thread-actions { display: flex; align-items: center; gap: 4px; }
+.chat-thread-actions[hidden] { display: none; }
 .chat-thread-actions button { padding: 4px 8px; font: inherit; font-size: 12px; font-weight: 600; background: var(--soft); border: 2px solid var(--ink); border-radius: 6px; cursor: var(--point); color: var(--ink); }
 .chat-thread-actions button:hover { background: var(--gold); }
+.chat-thread-actions .mute-wrap { position: relative; display: flex; }
+.chat-thread-actions .chat-mute-btn { display: flex; align-items: center; padding: 3px 5px; }
+.chat-mute-btn img { display: block; width: 16px; height: 16px; }
+/* The bell's dropdown: 2 hours, 8 hours, always (and Unmute while it is muted). */
+.mute-menu { position: absolute; top: calc(100% + 6px); right: 0; z-index: 240; min-width: 148px; display: flex; flex-direction: column; gap: 2px; padding: 6px; background: var(--paper); border: 2px solid var(--ink); border-radius: 12px; box-shadow: 0 4px 14px rgba(43,37,48,0.22); }
+.mute-menu[hidden] { display: none; }
+.mute-menu button { width: 100%; text-align: left; padding: 7px 9px; font: inherit; font-size: 13px; font-weight: 600; background: none; border: none; border-radius: 8px; cursor: var(--point); color: var(--ink); }
+.mute-menu button:hover { background: var(--gold); }
+/* A muted conversation keeps its unread badge; only the name grows a crossed-out bell. */
+.chat-mute { width: 13px; height: 13px; margin-left: 4px; vertical-align: -2px; opacity: 0.8; }
 
 .chat-row.new .chat-face { padding: 8px; background: #ffe3a3; }
 #chatLog p.note { align-self: center; padding: 0; font-size: 12px; color: var(--muted); background: none; border: none; }
@@ -1176,8 +1187,7 @@ body.signed-out #deck, body.signed-out #game, body.signed-out #zoom { display: n
 /* Thread theme accent color */
 #chatLog, #chatInput, #chatForm { --thread-accent: var(--blue); --thread-bg: var(--blue); }
 #chatLog { background: var(--thread-bg); }
-#chatLog p { border-color: var(--ink); background: var(--paper); }
-#chatLog p.mine { background: var(--blue); }
+#chatLog p { border-color: var(--ink); background: #fff; } /* both sides' bubbles are white, so they read against the thread's tinted log */
 #chatLog p.mine b { color: var(--ink); }
 #chatLog .chat-reply { background: var(--thread-accent); }
 

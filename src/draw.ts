@@ -3904,6 +3904,23 @@ const UI_ICONS: Record<string, { rows: string[]; pal: Record<string, string> }> 
     ],
     pal: { o: OUT, y: '#f2c14e', w: '#fff4e6', b: '#c58b5a' },
   },
+  bellOff: { // the same gold bell with a dark stroke through it: this chat's notifications are off
+    rows: [
+      '.....oo.....',
+      '....oyyo..x.',
+      '...oyyyyo.x.',
+      '..oywyyyxo..',
+      '..oywyyxyo..',
+      '..oyyyxyyo..',
+      '..oyyxyyyo..',
+      '.oyyxyyyyyo.',
+      'oyxyyyyyyyyo',
+      'ooxooooooooo',
+      '.x..obbo....',
+      '.....oo.....',
+    ],
+    pal: { o: OUT, y: '#f2c14e', w: '#fff4e6', b: '#c58b5a', x: OUT },
+  },
   pip: { // picture in picture: a lavender window with a little pink one popping out of its corner, a heart inside
     rows: [
       '............',

@@ -11,6 +11,7 @@ import { files, isPng, isJpeg } from './files.js';
 import {
   ITEMS, WALLPAPERS, FLOORS, SKINS, HAIRS, SHIRTS, STYLES, FACES, OUTFITS, BODIES, ACCESSORIES, isFocusLength, canPlace, placeSwaps, focusReward, quitReward, quitMinutes, focusEnd, streakDays, streakBonus,
   WALL_PATTERNS, FLOOR_STYLES, PETS, MAX_PETS, SIZES, bondLevel, NOTIFY, wantsNotify, EXPAND_COST, colorsFor, USES, PET_ACCS, MAX_ROOMS, ROOM_COST,
+  GUEST_BOND_STEP, addGuestBond, guestBond, guestBondLevel, favouriteGuest,
   isPlant, TASK_COINS, TASK_REWARDS_PER_DAY, discounted, GIFT_COINS, GIFTS_PER_DAY, nextRot, canRotate, sellPrice,
   SCAR_ACCS, SCAR_COLOURS, LIGHTS, DRINKS, focusStart, caffeineOverlap, caffeineMinutes,
   CLAW_COST, CLAW_COOLDOWN_MS, clawPrize, readyKey, pieceReadyAt, setPieceReady,
@@ -310,13 +311,23 @@ function trimDmThreads(rec) {
   for (const k of keys.slice(0, keys.length - MAX_DM_THREADS)) delete rec[k];
 }
 
-function publicPlayer(p) {
+// How a pet answers being fussed over, read from its bond with you. The words change with the bond; the number
+// itself never appears anywhere.
+const PET_LINES = ['looks up at you, curious', 'is happy to see you', 'leans into your hand', 'trots over and does a little spin', 'flops against your legs, delighted'];
+const petWord = (pet) => pet?.name ?? `the ${PETS[pet?.kind]?.name?.toLowerCase() ?? 'pet'}`;
+const petLine = (pet, bond) => `🐾 ${petWord(pet)} ${PET_LINES[Math.min(PET_LINES.length - 1, guestBondLevel(bond))]}.`;
+
+function publicPlayer(p, viewer = null) {
   for (const r of p.rooms ?? []) for (const f of r.furniture ?? []) if (!canRotate(f.item) && f.rot !== undefined) delete f.rot;
-  // Include pets with visitorBonds for AI simulation; UI should not display visitorBonds for other players' pets
-  const pets = (p.pets ?? []).map(pet => ({
-    ...pet,
-    visitorBonds: pet.visitorBonds ?? {}
-  }));
+  // Bonds never ride along as numbers: a guest gets their own bond with a pet (enough to decide whether it comes
+  // over), and everyone gets the guest the pet likes most among its housemates, so its walks agree on every screen
+  // and a favourite who moved out does not leave the pet waiting for someone who will never come back.
+  const pets = (p.pets ?? []).map((pet) => {
+    const { visitorBonds, ...rest } = pet;
+    const mine = viewer && viewer !== p.id ? guestBond(pet, viewer) : undefined;
+    const fav = favouriteGuest(pet, (id) => id !== p.id && db.players[id]?.house === p.house);
+    return { ...rest, ...(mine !== undefined && { myBond: mine }), ...(fav && { fav }) };
+  });
   return {
     id: p.id, name: p.name, look: p.look, rooms: p.rooms, focus: p.focus, pets,
     totalMinutes: p.totalMinutes, online: sockets.has(p.id), pos: positions.get(p.id) ?? null, fedAt: p.fedAt ?? 0,
@@ -343,6 +354,8 @@ function friendList(p) {
 }
 // Re-send state to each of these players' houses (friends and DMs reach across houses).
 const refresh = (...ids) => { for (const code of new Set(ids.map((id) => db.players[id]?.house))) if (code) broadcastHouse(code); };
+// This player has muted the thread's notifications: 0 is forever, a timestamp is when the pause ends.
+const threadMuted = (p, thread) => { const until = p.mutedThreads?.[thread]; return until === 0 || (typeof until === 'number' && Date.now() < until); };
 // The bell: things that happened to a player, kept (newest 30) so whatever they missed while away is there later.
 // The same thing from the same person within 10 minutes (petting, say) folds into one entry with a count.
 function inbox(q, kind, from, text) {
@@ -364,7 +377,7 @@ function broadcastHouse(code) {
   // now lets clients work out how far a playing video has got without trusting their own clocks.
   const house = {
     code, owner: h.owner ?? null, ownerName: db.players[h.owner]?.name ?? null,
-    members: h.members.map((id) => publicPlayer(db.players[id])), todos: h.todos ?? [], chat: h.chat ?? [],
+    todos: h.todos ?? [], chat: h.chat ?? [],
     events: h.events ?? [], announcements: h.announcements ?? [], watch: w ? { ...w, now: Date.now(), scope: 'house' } : null,
   };
   for (const id of h.members) {
@@ -373,7 +386,7 @@ function broadcastHouse(code) {
     const dmw = houseDmWatch(p);
     const gw = houseGroupWatch(p);
     const privateWatch = gw ? groupWatchPayload(gw[0], gw[1]) : dmw ? dmWatchPayload(dmw[0], dmw[1], id) : null;
-    send(sockets.get(id), { t: 'state', house: { ...house, todos: house.todos.filter((t) => canSee(t, h, id)) }, me: { id: p.id, home: p.home, ...houseLists(p), coins: p.coins, discount: !!p.discount, notes: p.notes ?? [], inbox: p.inbox ?? [], inboxSeen: p.inboxSeen ?? 0, tipsSeen: p.tipsSeen ?? [], events: p.events ?? [], inventory: p.inventory, crafted: p.crafted ?? [], ready: p.ready ?? {}, petAccs: p.petAccs ?? [], ...(sentSessions.get(id) !== (p.sessions ?? []).length && { sessions: p.sessions ?? [] }), subjects: p.subjects ?? [], hiddenSubjects: p.hiddenSubjects ?? [], todos: p.todos ?? [], dm: p.dm ?? {}, groups: p.groups ?? {}, friends: friendList(p), notify: p.notify ?? {}, mutedThreads: p.mutedThreads ?? {}, chatThemes: p.chatThemes ?? {}, pushKey: pushOn ? PUSH_KEY : undefined, watch: privateWatch } });
+    send(sockets.get(id), { t: 'state', house: { ...house, members: h.members.map((mid) => publicPlayer(db.players[mid], id)), todos: house.todos.filter((t) => canSee(t, h, id)) }, me: { id: p.id, home: p.home, ...houseLists(p), coins: p.coins, discount: !!p.discount, notes: p.notes ?? [], inbox: p.inbox ?? [], inboxSeen: p.inboxSeen ?? 0, tipsSeen: p.tipsSeen ?? [], events: p.events ?? [], inventory: p.inventory, crafted: p.crafted ?? [], ready: p.ready ?? {}, petAccs: p.petAccs ?? [], ...(sentSessions.get(id) !== (p.sessions ?? []).length && { sessions: p.sessions ?? [] }), subjects: p.subjects ?? [], hiddenSubjects: p.hiddenSubjects ?? [], todos: p.todos ?? [], dm: p.dm ?? {}, groups: p.groups ?? {}, friends: friendList(p), notify: p.notify ?? {}, mutedThreads: p.mutedThreads ?? {}, chatThemes: p.chatThemes ?? {}, pushKey: pushOn ? PUSH_KEY : undefined, watch: privateWatch } });
     if (sockets.has(id)) sentSessions.set(id, (p.sessions ?? []).length);
   }
 }
@@ -709,7 +722,14 @@ async function handle(p, m) {
       const owner = db.houses[p.house].members.includes(m.owner) ? db.players[m.owner] : null;
       if (owner?.rooms[m.r]?.furniture[m.index]?.item !== 'foodBowl' || !owner.pets?.length) return;
       owner.fedAt = Date.now();
-      if (owner.id !== p.id) { send(sockets.get(owner.id), { t: 'reward', text: `🐾 ${p.name} fed your pets.` }); inbox(owner, 'pet', p, 'fed your pets'); }
+      const fedPets = (owner.pets ?? []).filter((x) => !x.away);
+      if (owner.id !== p.id) {
+        // Filling someone else's bowl is a gift to their pets: they remember who did it.
+        for (const pet of fedPets) addGuestBond(pet, p.id, GUEST_BOND_STEP.feed);
+        send(sockets.get(owner.id), { t: 'reward', text: `🐾 ${p.name} fed your pets.` });
+        inbox(owner, 'pet', p, 'fed your pets');
+        if (fedPets.length) send(sockets.get(p.id), { t: 'info', text: `🍲 You filled the bowl — ${petWord(fedPets[0])} is happy you did.` });
+      }
       break;
     }
     case 'note': { // leave a note on a housemate's desk; they see it now, or next time they log in
@@ -747,18 +767,21 @@ async function handle(p, m) {
       lastCheer.set(p.id, Date.now());
       const pet = owner.pets[m.slot];
       if (owner.id !== p.id) {
-        pet.visitorBonds = pet.visitorBonds ?? {};
-        pet.visitorBonds[p.id] = (pet.visitorBonds[p.id] ?? 0) + 1;
-        inbox(owner, 'pet', p, `petted ${pet.name ?? `your ${pet.kind}`}`);
-      }
+        const bond = addGuestBond(pet, p.id, GUEST_BOND_STEP.pat);
+        inbox(owner, 'pet', p, `petted ${petWord(pet)}`);
+        send(sockets.get(p.id), { t: 'info', text: petLine(pet, bond) });
+      } else pet.bond = (pet.bond ?? 0) + 1; // your own pet warms to you too, slowly
       for (const id of h.members) send(sockets.get(id), { t: 'pat', owner: owner.id, slot: m.slot, by: p.id, name: p.name });
-      return;
+      break; // saved and rebroadcast, so the bond sticks
     }
     case 'fetch': { // threw the pet ball: the thrower's pets (or the room owner's) run for it
       if (![m.x, m.y].every(Number.isInteger) || Date.now() - (lastCheer.get(p.id) ?? 0) < 3000) return;
       lastCheer.set(p.id, Date.now());
+      // A ball thrown for someone else's pets counts as playing with them.
+      const owner = db.houses[p.house].members.includes(m.owner) ? db.players[m.owner] : null;
+      if (owner && owner.id !== p.id) for (const pet of owner.pets ?? []) if (!pet.away) addGuestBond(pet, p.id, GUEST_BOND_STEP.fetch);
       for (const id of db.houses[p.house].members) send(sockets.get(id), { t: 'fetch', by: p.id, owner: m.owner, x: m.x, y: m.y });
-      return;
+      break;
     }
     case 'highfive': { // both of us idle: a high five the whole house sees
       const h = db.houses[p.house], them = h.members.includes(m.to) && m.to !== p.id ? db.players[m.to] : null;
@@ -1176,7 +1199,7 @@ case 'dm': {
       trimDmThreads(to.dm);
       store.addMessage(thread, msg);
       if (to.house !== p.house) broadcastHouse(to.house);
-      if (!sockets.has(to.id)) push(to, { title: p.name, body: text || attachLabel(img), tag: `dm-${p.id}` }, 'dm');
+      if (!sockets.has(to.id) && !threadMuted(to, p.id)) push(to, { title: p.name, body: text || attachLabel(img), tag: `dm-${p.id}` }, 'dm');
       break;
     }
     // Older messages of one of my conversations (k: 'h' my house, 'd' a private thread with `id`, 'g' my group `id`).
@@ -1281,7 +1304,7 @@ case 'dm': {
         const q = db.players[id], qg = q?.groups?.[m.g];
         if (!qg) continue;
         qg.msgs = [...qg.msgs, msg].slice(-50);
-        if (id !== p.id && !sockets.has(id)) push(q, { title: g.name, body: `${p.name}: ${text || attachLabel(img)}`, tag: `g-${m.g}` }, 'dm');
+        if (id !== p.id && !sockets.has(id) && !threadMuted(q, `g:${m.g}`)) push(q, { title: g.name, body: `${p.name}: ${text || attachLabel(img)}`, tag: `g-${m.g}` }, 'dm');
       }
       for (const code of new Set(g.members.map((id) => db.players[id]?.house))) if (code && code !== p.house) broadcastHouse(code);
       break;
@@ -1324,13 +1347,13 @@ case 'chat': {
             if (mentionedNames.includes(player.name.toLowerCase())) {
               mentionedIds.add(id);
               inbox(player, 'chat', p, `mentioned you in house chat`);
-              if (!sockets.has(id)) push(player, { title: `💬 @${p.name} mentioned you`, body: text || attachLabel(img), tag: `house-${h.code}` }, 'chat');
+              if (!sockets.has(id) && !threadMuted(player, thread)) push(player, { title: `💬 @${p.name} mentioned you`, body: text || attachLabel(img), tag: `house-${h.code}` }, 'chat');
             }
           }
         }
       }
       // Notify other members (not mentioned, not sender)
-      for (const id of h.members) if (id !== p.id && !mentionedIds.has(id) && !sockets.has(id)) push(db.players[id], { title: `${p.name} · house chat`, body: text || attachLabel(img), tag: `house-${h.code}` }, 'house');
+      for (const id of h.members) if (id !== p.id && !mentionedIds.has(id) && !sockets.has(id) && !threadMuted(db.players[id], thread)) push(db.players[id], { title: `${p.name} · house chat`, body: text || attachLabel(img), tag: `house-${h.code}` }, 'house');
       break;
     }
     case 'watch': { // /watch <link>: in house chat starts for the whole house, in a DM starts for just us two
@@ -1435,13 +1458,17 @@ case 'chat': {
       }
       break;
     }
-    case 'mute': { // mute/unmute thread
+    case 'mute': { // mute/unmute thread: -1 back on, 0 forever, otherwise until a timestamp
       const thread = m.thread, until = m.until;
+      if (typeof thread !== 'string' || !thread || thread.length > 40 || !Number.isFinite(until)) return;
+      if (until !== -1 && until !== 0 && (until < Date.now() || until > Date.now() + 30 * 86_400_000)) return; // at most a month ahead
       p.mutedThreads ??= {};
       if (until === -1) delete p.mutedThreads[thread];
       else p.mutedThreads[thread] = until;
       // Persist to store
       if (store.setMuteThread) await store.setMuteThread(p.id, thread, until);
+      // Answer the asker with what was kept, so their bell settles on the truth (states already in flight may be older).
+      send(sockets.get(p.id), { t: 'mute', thread, until });
       break;
     }
     case 'theme': { // chat theme color

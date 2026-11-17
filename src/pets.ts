@@ -135,15 +135,14 @@ for (const [k, { rows }] of Object.entries(SPRITES)) {
   console.assert(k in PETS, `pet ${k} must be in PETS`);
 }
 
-const PET_SCALE: Record<string, number> = {
-  capybara: 1.0,
-  cat: 0.75, fox: 0.75, puppy: 0.75,
-  bunny: 0.6, penguin: 0.6, owl: 0.6,
-  raccoon: 0.55, koala: 0.55, axolotl: 0.55,
-  piglet: 0.5, sheep: 0.5, turtle: 0.5,
-  hamster: 0.55, duckling: 0.35, frog: 0.55, hedgehog: 0.55,
-  unicorn: 0.7, dragon: 0.8, platypus: 0.5, elephant: 0.9, trex: 0.7, cow: 0.65,
-};
+// Every pet stands at the capybara's size: the capybara's 16×12 art at 1.0 is the one size in the game, and the
+// smaller 12×10 sprites are scaled up to the same width. A duckling is still a duckling, it just takes up as much
+// floor as the biggest pet does.
+const PET_W = 16; // the capybara's sprite width
+const PET_SCALE: Record<string, number> = Object.fromEntries(
+  Object.entries(SPRITES).map(([kind, art]) => [kind, PET_W / (art as { rows: string[] }).rows[0].length]),
+);
+for (const [kind, scale] of Object.entries(PET_SCALE)) console.assert(scale >= 1, `pet ${kind} must not shrink below capybara size`);
 
 const coatOf = (kind: string, coat = 0) => {
   const coats = (PETS as Record<string, { coats: string[] }>)[kind]?.coats ?? ['#f2c48a'];
@@ -317,11 +316,14 @@ export function petPos(seed: number, now: number, areas: Area[], home = 0, near:
 
 // x, y = top-left of the tile the pet is on, in art pixels. act: 'perch' sits on top, 'sleep' dozes.
 export function drawPet(c: CanvasRenderingContext2D, kind: string, x: number, y: number, moving: boolean, left: boolean, now: number, act?: string, coat = 0, acc?: string) {
-  const sleeping = act === 'sleep';
+  // 'sun' is a doze in a window's light and 'chair' a nap on a cushion: both lie down like sleep does.
+  const sleeping = act === 'sleep' || act === 'sun' || act === 'chair', tricking = act === 'trick';
   const hop = sleeping ? 1 : act === 'watch' ? 0 : act === 'dance' ? -Math.abs(Math.round(Math.sin(now / 150) * 2))
+    : tricking ? -Math.abs(Math.round(Math.sin(now / 130) * 3))
     : moving ? -Math.abs(Math.round(Math.sin(now / 90) * 2)) : Math.floor(now / 800) % 2 ? 0 : -1;
   if (act === 'perch') y -= 16;
   else if (act === 'lap') y -= 8;
+  else if (act === 'chair') y -= 5; // curled up on a cushion, a few pixels up and no floor shadow at all
   else {
     c.fillStyle = 'rgba(58,38,51,0.18)';
     c.fillRect(x + 3, y + 14, 10, 2);
@@ -337,7 +339,7 @@ export function drawPet(c: CanvasRenderingContext2D, kind: string, x: number, y:
   if (sleeping) {
     const p = (now / 1600) % 1;
     c.globalAlpha = 1 - p;
-    c.fillStyle = '#fffaf3';
+    c.fillStyle = act === 'sun' ? '#ffd35c' : '#fffaf3'; // a sunbath's Zzz is warm gold
     const zx = Math.round(x + 12 + p * 4), zy = Math.round(y + 2 - p * 8);
     c.fillRect(zx, zy, 3, 1); c.fillRect(zx + 1, zy + 1, 1, 1); c.fillRect(zx, zy + 2, 3, 1);
     c.globalAlpha = 1;
@@ -365,6 +367,14 @@ export function drawPet(c: CanvasRenderingContext2D, kind: string, x: number, y:
     c.fillStyle = '#f0708e';
     c.fillRect(px + 3 * scale, py - 5 + up, 1, 3); c.fillRect(px + 1 * scale, py - 3 + up, 3, 1);
   }
+  if (tricking) { // a trick for someone it likes: three sparkles circling the pet
+    c.fillStyle = '#ffd35c';
+    for (let k = 0; k < 3; k++) {
+      const ang = now / 260 + k * 2.1, r = 10 + 2 * Math.sin(now / 180 + k);
+      const sx = Math.round(px + sw / 2 + Math.cos(ang) * r), sy = Math.round(py + sh / 2 + Math.sin(ang) * r * 0.5);
+      c.fillRect(sx, sy, 1, 1); c.fillRect(sx - 1, sy, 3, 1); c.fillRect(sx, sy - 1, 1, 3);
+    }
+  }
   if (spray > 0.2) { // droplets arcing up and out of the trunk tip
     c.fillStyle = '#9fd4f4';
     for (let k = 0; k < 3; k++) {
@@ -373,6 +383,15 @@ export function drawPet(c: CanvasRenderingContext2D, kind: string, x: number, y:
       c.fillRect(Math.round(px + 15 * scale + p * 3 + k * 0.5), Math.round(py + 3 - Math.sin(p * Math.PI) * 4 + p * 2), 1, 1);
     }
   }
-  if (acc) drawAcc(c, acc, px + ax * scale, py + ay * scale);
   c.restore();
+  // Accessories sit on the sprite's own art grid, like the shop icons, so they grow with the pet instead of
+  // shrinking onto its head when the art is scaled up.
+  if (acc) {
+    c.save();
+    c.translate(px, py);
+    c.scale(scale, scale);
+    if (left) { c.translate(pet.width, 0); c.scale(-1, 1); }
+    drawAcc(c, acc, ax, ay);
+    c.restore();
+  }
 }

@@ -567,6 +567,29 @@ export const PET_ACCS = {
 export const MAX_PETS = 4;
 // Bond grows by a minute for every focus minute a pet spends out in your room: level 1 at 25 min, 2 at 100, ... 5 at 625.
 export const bondLevel = (bond = 0) => Math.min(5, Math.floor(Math.sqrt(bond / 25)));
+// A pet also bonds with the people who fuss over it: every pat, bowl filled and ball thrown counts. Guests are
+// ranked by this, and it only ever shows in what the pet does — the number stays off the screen.
+export const GUEST_BOND_STEP = { pat: 1, feed: 2, fetch: 1 };
+export const guestBond = (pet, id) => Math.max(0, Number(pet?.visitorBonds?.[id]) || 0);
+// Returns the new bond, capped so a saved pet cannot grow a silly number.
+export function addGuestBond(pet, id, n = GUEST_BOND_STEP.pat) {
+  if (!pet || !id) return 0;
+  pet.visitorBonds = pet.visitorBonds ?? {};
+  pet.visitorBonds[id] = Math.min(999, guestBond(pet, id) + Math.max(0, n));
+  return pet.visitorBonds[id];
+}
+// A guest's level with a pet, 0-3: 4 interactions for it to notice you, 16 to come over, 36 to show off for you.
+export const guestBondLevel = (bond = 0) => Math.min(3, Math.floor(Math.sqrt(Math.max(0, bond) / 4)));
+// The guest a pet likes most: the one it seeks out when its owner is away. `keep` skips bonds that no longer mean
+// anything here (someone who moved out of the house keeps their bond, but is not the pet's favourite any more).
+export function favouriteGuest(pet, keep = null) {
+  let best = null, top = 0;
+  for (const [id, n] of Object.entries(pet?.visitorBonds ?? {})) {
+    const v = Number(n) || 0;
+    if (v > top && (!keep || keep(id))) { top = v; best = id; }
+  }
+  return best;
+}
 
 export const WALLPAPERS = ['#f6dcc0', '#cfe8d8', '#ddd5f5', '#fbd0d4', '#cfe1f7', '#f8edc0', '#fffaf3', '#e8d3c0', '#c9e4ef', '#e6d0ea',
   '#f4c8a0', '#b8e0c8', '#c8c0f0', '#f0b8c0', '#a8c8f0', '#f0e0a0', '#d8d0c8', '#3a4060', '#4a5a48', '#f0f0f0',

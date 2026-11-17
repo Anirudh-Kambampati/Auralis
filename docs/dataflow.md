@@ -38,12 +38,17 @@ client                         server                                    house m
 | `friend_search {q}` | At least 2 characters. Answered to the asker only with `friend_matches`: up to 8 usernames starting with `q`, never your own. |
 | `friend_request {name}` | A username, a housemate's name, or a house code (its owner); at most 20 requests waiting. |
 | `tip_seen {id}` | The id is one of the Guide's tips. Adds it to the player's `tipsSeen`, so that nudge never shows again. |
+| `pat {owner, slot}` | That pet exists in a house I'm in; one pat per 1.5 s. A guest's bond with the pet grows by `GUEST_BOND_STEP.pat` (a pet's own owner grows its `bond` by 1 instead), and the petter gets a `info` line about what the pet did. Saved and rebroadcast, so the bond sticks. |
+| `feed {owner, r, index}` | The bowl is that room owner's `foodBowl` and they have pets. Anyone in the house may fill it. A guest who does bonds `GUEST_BOND_STEP.feed` with each of that owner's pets outside; their owner is told as before. |
+| `fetch {owner, x, y}` | Whole tiles; one throw per 3 s. The thrower's pets run for it; if the pets belong to someone else, throwing the ball bonds `GUEST_BOND_STEP.fetch` with each of them. |
+| `mute {thread, until}` | `thread` is a thread key (`h:<code>`, `g:<id>` or a friend's id). `until` is `-1` (back on), `0` (forever) or a timestamp at most a month ahead. Saved per player in `me.mutedThreads`; it never reaches the other side. Answered to the asker with `mute {thread, until}`, so their bell settles on what was kept. |
 
 ## State sent to clients
 
 `{ t: 'state', house: { code, members[], todos[], chat[], watch }, me: { id, coins, inventory, sessions, subjects, watch } }`
 
 - `members[]` holds each housemate's public data: name, look, room, focus, pets, online, position. It never includes tokens or hashes.
+- `members` is built per recipient: each pet carries `myBond` (only the viewer's own hidden bond with it, for guests) and `fav` (the guest it likes most). Raw `visitorBonds` never leaves the server, so a bond only shows as behaviour: the pet seeking out the person it has bonded with.
 - `me` is private and only goes to its owner. That includes `crafted`, `ready` and `tipsSeen`: what you made by hand, which waits are yours, and which Guide nudges you have had. A wait never rides in `publicPlayer`, because it belongs to a person rather than to a piece.
 - `house.watch` is the active house-wide watch party (or `null`). `me.watch` is the active private watch party for that player (DM or group, or `null`), so users can watch together even when they are in different houses. The client prefers `me.watch` when both are present. Private/group watch state is not saved; a restarted server ends watch parties.
 

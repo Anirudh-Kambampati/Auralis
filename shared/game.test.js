@@ -6,6 +6,7 @@ import {
   DOOR, WALL, FLOOR, BLOCKED, VOID, ROOM_W, colsFor, isFocusLength, FOCUS_LENGTHS, bondLevel,
   DRINKS,
   CLAW_PRIZES, CLAW_COST, CLAW_COOLDOWN_MS, clawPrize, readyKey, pieceReadyAt, setPieceReady,
+  GUEST_BOND_STEP, guestBond, addGuestBond, guestBondLevel, favouriteGuest,
   CRAFT, CRAFT_COOLDOWN_MS, craftColour, craftItem, craftedPrice, craftedProblem, PASTELS,
 } from './game.js';
 
@@ -417,4 +418,48 @@ test('a crafted entry is only valid with a known item and a hex colour', () => {
   assert.ok(craftedProblem({ item: 'notAnItem', col: '#aabbcc' }));
   assert.ok(craftedProblem({ item: 'vase', col: 'red' }));
   assert.ok(craftedProblem(null));
+});
+
+test('a pet bonds with the guests who fuss over it, one step per interaction', () => {
+  const pet = { kind: 'cat' };
+  assert.equal(guestBond(pet, 'ann'), 0);
+  assert.equal(addGuestBond(pet, 'ann'), GUEST_BOND_STEP.pat);
+  assert.equal(addGuestBond(pet, 'ann', GUEST_BOND_STEP.feed), 3);
+  assert.equal(addGuestBond(pet, 'bob', GUEST_BOND_STEP.fetch), 1);
+  assert.equal(guestBond(pet, 'ann'), 3);
+  assert.equal(guestBond(pet, 'bob'), 1);
+  assert.equal(guestBond(pet, 'cara'), 0); // someone it has never met
+});
+
+test('a guest bond stops at the cap and never goes backwards', () => {
+  const pet = {};
+  addGuestBond(pet, 'ann', 5000);
+  assert.equal(guestBond(pet, 'ann'), 999);
+  addGuestBond(pet, 'ann', -20);
+  assert.equal(guestBond(pet, 'ann'), 999);
+  assert.equal(addGuestBond(null, 'ann'), 0); // a pet that has gone away
+});
+
+test('a guest bond only shows itself in levels, never as a raw number', () => {
+  const levels = [0, 3, 4, 15, 16, 35, 36, 999].map((n) => guestBondLevel(n));
+  assert.deepEqual(levels, [0, 0, 1, 1, 2, 2, 3, 3]);
+  assert.equal(guestBondLevel(-5), 0);
+});
+
+test('a pet favours the guest it has bonded with most', () => {
+  assert.equal(favouriteGuest({}), null);
+  const pet = {};
+  addGuestBond(pet, 'ann', 2);
+  assert.equal(favouriteGuest(pet), 'ann');
+  addGuestBond(pet, 'bob', 3);
+  assert.equal(favouriteGuest(pet), 'bob');
+  addGuestBond(pet, 'ann', 2);
+  assert.equal(favouriteGuest(pet), 'ann');
+  // Its owner is not a guest: petting your own pet never makes you its own favourite visitor.
+  assert.equal(favouriteGuest({ visitorBonds: {} }), null);
+  // A favourite who moved out no longer counts: the pet prefers the best of the people still here.
+  addGuestBond(pet, 'cat', 9);
+  assert.equal(favouriteGuest(pet), 'cat');
+  assert.equal(favouriteGuest(pet, (id) => id !== 'cat'), 'ann');
+  assert.equal(favouriteGuest(pet, () => false), null);
 });

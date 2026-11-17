@@ -138,7 +138,9 @@ export interface Pet {
   away?: boolean;
   follow?: boolean;
   bond?: number;
-  visitorBonds?: Record<string, number>; // hidden bonds with visitors who pet this pet
+  visitorBonds?: Record<string, number>; // server-side only: bonds with visitors, never sent as-is
+  myBond?: number; // my own bond with this pet (guests only); drives its behaviour, never shown as a number
+  fav?: string | null; // the guest this pet likes most, so every screen agrees on who it follows
 }
 
 export interface Focus {
@@ -319,6 +321,8 @@ export interface ClientMessages {
   chat: { t: 'chat'; text: string; img?: string; replyTo?: number };
   dm: { t: 'dm'; to: string; text: string; img?: string; replyTo?: number };
   gmsg: { t: 'gmsg'; g: string; text: string; img?: string; replyTo?: number };
+  // Notifications for one thread: -1 back on, 0 forever, any other value the time it runs out
+  mute: { t: 'mute'; thread: string; until: number };
   // History
   history: { t: 'history'; k: 'h' | 'd' | 'g'; id?: string; before: number };
   // Friends

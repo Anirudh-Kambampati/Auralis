@@ -3,7 +3,7 @@ import {
   WALLPAPERS, WALL_PATTERNS, FLOORS, FLOOR_STYLES, SKINS, HAIRS, SHIRTS, STYLES, FACES, OUTFITS, BODIES, SIZES, ACCESSORIES, FOCUS_LENGTHS, isFocusLength, SCAR_ACCS, SCAR_COLOURS,
   WALL_H, WALL, FLOOR, DOOR, BLOCKED, VOID, buddyMultiplier, focusEnd, streakDays, streakBonus, sellPrice, footprint, lying, canRotate, THIRSTY_MS, isPlant, discounted, GIFT_COINS, activeEvents, nextEvent,
   docName, attachLabel, DOC_TYPES, usernameProblem, emailProblem, passwordProblem, LIGHTS, DRINKS, caffeineMinutes,
-  CLAW_COST, readyKey, pieceReadyAt, CRAFT, craftedPrice,
+  CLAW_COST, readyKey, pieceReadyAt, CRAFT, craftedPrice, guestBondLevel,
 } from '../shared/game.js';
 import { GUIDE_SECTIONS, GUIDE_START, GUIDE_TIPS, tourSteps, unseenTips } from '../shared/guide.js';
 import {
@@ -22,7 +22,7 @@ type Furniture = { item: string; x: number; y: number; v?: number; s?: number; f
 type Room = { wallpaper: string; floor: string; pattern?: string; floorStyle?: string; level?: number; curtains?: boolean; wallColor?: string; floorColor?: string; furniture: Furniture[] };
 type Member = {
   id: string; name: string; look: Look; rooms: Room[]; focus: Focus | null;
-  totalMinutes: number; online: boolean; pos: { x: number; y: number } | null; pets: { kind: string; name?: string; coat?: number; acc?: string; away?: boolean; follow?: boolean; bond?: number; visitorBonds?: Record<string, number> }[]; fedAt?: number;
+  totalMinutes: number; online: boolean; pos: { x: number; y: number } | null; pets: { kind: string; name?: string; coat?: number; acc?: string; away?: boolean; follow?: boolean; bond?: number; myBond?: number; fav?: string | null }[]; fedAt?: number;
   exams?: { subject: string; date: string }[]; // YYYY-MM-DD, soonest first
   caffeineSince?: number; caffeineUntil?: number; tipsyUntil?: number; // the caffeine window rides on the member, so housemates see the flame
   presence?: Presence;
@@ -92,6 +92,13 @@ let missed = 0; // messages that arrived while I was focusing, quietly
 const cheers = new Map<string, { text: string; at: number; hop?: boolean }>(); // 👏 or ✋ floating up over a player (hop: a little jump too)
 const petCheers = new Map<string, { text: string; at: number }>(); // 👏 floating up over a pet cheering its owner
 const petPlay = new Map<string, number>(); // key -> until timestamp (pets play together after high-five)
+const petNameAt = new Map<string, number>(); // key -> until: this pet's name tag is showing (names come and go)
+const petTrickAt = new Map<string, number>(); // key -> until: this pet is in the middle of a trick
+const petSaid = new Map<string, number>(); // key -> when I last said this pet came over to me
+const petGreetMe = new Map<string, number>(); // key -> when this pet came to greet me at the door (not my pet)
+const petSeat = new Map<string, { x: number; y: number }>(); // key -> the chair this pet is curled up on (it only gets up when clicked)
+const petSunAt = new Map<string, { x: number; y: number; until: number }>(); // key -> the sunny patch it is dozing in, until then
+let logonGreeted = false; // my pets have already come to say hello since I signed in
 let me: Me = { id: myId, coins: 0, inventory: {}, sessions: [], subjects: [], hiddenSubjects: [], todos: [], dm: {} };
 let statsTab = 'mine';
 let statsRange = 'week';
@@ -100,8 +107,16 @@ let boardScope = 'house', boardPeriod = 'week';
 let board: Board | null = null;
 let grid = buildGrid([]);
 let petSpots: { x: number; y: number }[][] = []; // walkable floor tiles per room, for pets to wander
+let petSun: { x: number; y: number; act: string }[][] = []; // floor under each window, where a sunbath happens
 let petNear: number[][] = []; // per room: the rooms its pets can walk into (through an opening or doorway)
 let petRoutes = new Map<string, { x: number; y: number }[] | null>(); // pet walks between rooms, cached until the house changes
+
+// A pet's name, or a phrase for it when its owner never gave one.
+const petNameOf = (p: { kind: string; name?: string }) => p.name ?? `The ${(PETS as Record<string, { name?: string }>)[p.kind]?.name?.toLowerCase() ?? 'pet'}`;
+// A spot a little way from someone, so a pet settles beside them instead of standing on them.
+const spotNear = (who: { x: number; y: number }, spread: number) => ({ x: who.x + (Math.random() - 0.5) * spread, y: who.y + (Math.random() - 0.5) * spread });
+// Which room a point is in: a pet walks straight at its goal, so it may only go to someone in its own room.
+const roomAtPoint = (x: number, y: number) => grid.owner[Math.round(y) * grid.w + Math.round(x)];
 
 // The nearest person who is singing, within earshot of a pet (4 tiles).
 function nearestSinger(px: number, py: number) {
@@ -207,8 +222,13 @@ function onMessage(m: any) {
     houseEvents = m.house.events ?? [];
     houseAnnouncements = m.house.announcements ?? [];
     me = { ...m.me, sessions: m.me.sessions ?? me.sessions }; // study history only comes when it changed
+    // A mute I just changed is the truth for the rest of the session: state messages that were already in
+    // flight when I clicked still carry the old value, and would flip the bell back.
+    const myMutes = new Map([...mutedThreads].filter(([thread]) => muteChosen.has(thread)));
     mutedThreads.clear();
     for (const [thread, until] of Object.entries(m.me.mutedThreads ?? {})) mutedThreads.set(thread, until as number);
+    for (const [thread, until] of myMutes) mutedThreads.set(thread, until);
+    for (const thread of muteChosen) if (!myMutes.has(thread)) mutedThreads.delete(thread);
     threadThemes.clear();
     for (const [thread, color] of Object.entries(m.me.chatThemes ?? {})) threadThemes.set(thread, color as string);
     subscribePush();
@@ -236,6 +256,19 @@ function onMessage(m: any) {
       if (f.presence) userPresence.set(f.id, { status: f.presence.status, custom: f.presence.custom || '', until: f.presence.until || 0, at: f.presence.at || Date.now() });
     }
     onlineSeen = new Set(members.filter((o) => o.online).map((o) => o.id));
+    // Signing in: my own pets get up from wherever they were dozing and trot over to say hello, and so does any pet
+    // in the house that likes me best.
+    if (!logonGreeted) {
+      logonGreeted = true;
+      petGreet.set(myId, Date.now());
+      for (const o of members) o.pets?.forEach((pet, slot) => {
+        if (pet.fav !== myId) return;
+        const k = `${o.id}:${slot}`;
+        petGreetMe.set(k, Date.now());
+        petSeat.delete(k); petSunAt.delete(k);
+      });
+      for (const k of [...petSeat.keys(), ...petSunAt.keys()]) if (k.startsWith(`${myId}:`)) { petSeat.delete(k); petSunAt.delete(k); }
+    }
     focusSeen = new Set(members.filter((o) => o.focus).map((o) => o.id));
     const notes = (me.notes ?? []).filter((n) => n.at > notesSeen);
     if (notes.length) {
@@ -272,6 +305,20 @@ function onMessage(m: any) {
       const spots = [];
       for (let y = 0; y < grid.h; y++) for (let x = 0; x < grid.w; x++) if (grid.owner[y * grid.w + x] === i && grid.at(x, y) === FLOOR) spots.push({ x, y });
       return spots;
+    });
+    // Pets and their naps belong to housemates: forget the state of pets whose owner has left the house.
+    const live = new Set(slots.map(({ m }) => `${m.id}:`));
+    for (const map of [petFx, petNameAt, petTrickAt, petSaid, petSeat, petSunAt, petGreetMe]) for (const k of map.keys()) if (!live.has(k.slice(0, k.indexOf(':') + 1))) map.delete(k);
+    // The floor under each window is a patch of sun: the tiles a pet lies in when it sunbathes.
+    petSun = slots.map((_, i) => {
+      const o = grid.origins[i], s = grid.sizes[i], out: { x: number; y: number; act: string }[] = [];
+      const mine = petSpots[i] ?? [];
+      if (!o || !s) return out;
+      for (let lx = 1; lx + 2 <= s.w - 1; lx += 6) for (let j = 0; j < 2; j++) { // windows are 2 tiles wide, every 6
+        const x = o.x + lx + j, ys = mine.filter((sp) => sp.x === x).map((sp) => sp.y);
+        if (ys.length) out.push({ x, y: Math.min(...ys), act: 'sun' });
+      }
+      return out;
     });
     acts = new Map();
     petToys = slots.map(({ room }, i) => {
@@ -366,6 +413,9 @@ function onMessage(m: any) {
     if (!m.missed) sysNotify('todo', 'Auralis reminder', m.text);
   } else if (m.t === 'pat') {
     patAt.set(`${m.owner}:${m.slot}`, Date.now());
+    petNameAt.set(`${m.owner}:${m.slot}`, Date.now() + 6000); // fussing over a pet shows its name for a moment
+    petSeat.delete(`${m.owner}:${m.slot}`); // a pat wakes the pet: it gets off the chair or out of the sun
+    petSunAt.delete(`${m.owner}:${m.slot}`);
     const pet = m.owner === myId && m.by !== myId ? myMember()?.pets[m.slot] : undefined;
     if (pet) toast(`💕 <b>${esc(m.name)}</b> petted ${petName(pet)}.`);
   } else if (m.t === 'fetch') { // the thrower's pets run for the ball, or the room owner's if they have none
@@ -1417,8 +1467,18 @@ function render(t: number, dt: number) {
     if (!a || m.focus || (!m.online && m.id !== myId) || a.x !== a.tx || a.y !== a.ty || acts.get(tileKey(a.x, a.y))?.act !== 'sit') continue;
     laps[grid.owner[a.y * grid.w + a.x]]?.push({ x: a.x, y: a.y, act: 'lap' });
   }
+  // Empty seats: a pet may curl up on a chair or sofa, and only gets up when someone clicks it.
+  const seats: { x: number; y: number }[][] = slots.map(() => []);
+  for (const [k, v] of acts) {
+    if (v.act !== 'sit') continue;
+    const ax = k % 10000, ay = Math.floor(k / 10000), room = grid.owner[ay * grid.w + ax];
+    if (room < 0 || !seats[room]) continue;
+    if (members.some((o) => { const a = avatars.get(o.id); return !!a && (o.online || o.id === myId) && a.x === ax && a.y === ay; })) continue;
+    seats[room].push({ x: ax, y: ay });
+  }
+  const sunny = sky === 'day' && weather !== 'rain' && weather !== 'snow';
   const areas = slots.map((_, j) => ({ spots: petSpots[j], toys: petToys[j], laps: laps[j] }));
-  type PetNow = { m: Member; p: Member['pets'][number]; slot: number; pos: ReturnType<typeof petPos>; goal?: { x: number; y: number }; act?: string; run?: boolean };
+  type PetNow = { m: Member; p: Member['pets'][number]; slot: number; seed: number; room: number; pos: ReturnType<typeof petPos>; goal?: { x: number; y: number }; act?: string; run?: boolean };
   const pets: PetNow[] = [];
   slots.forEach(({ m, room, ri }, i) => {
     const o = grid.origins[i];
@@ -1454,7 +1514,8 @@ function render(t: number, dt: number) {
     });
     if (ri === 0) m.pets?.forEach((p, slot) => { // pets live in their owner's first room
       if (!petSpots[i]?.length || p.away) return; // switched off in the You panel
-      pets.push({ m, p, slot, pos: petPos(seedOf(m.id, slot), now, areas, i, petNear[i], petRoute) });
+      const seed = seedOf(m.id, slot);
+      pets.push({ m, p, slot, seed, room: i, pos: petPos(seed, now, areas, i, petNear[i], petRoute) });
     });
   });
   // Breadcrumbs of where each person walked, so a following pet can walk the same path behind them.
@@ -1465,14 +1526,25 @@ function render(t: number, dt: number) {
     if (Math.hypot(a.x - last.x, a.y - last.y) > 0.2) { tr.pts.push({ x: a.x, y: a.y }); if (tr.pts.length > 60) tr.pts.shift(); tr.movedAt = now; }
     trails.set(m.id, tr);
   }
-  // What each pet does over its usual wander, most important first: fetch, nap by its studying owner
-  // (unless it's a follower: those roam free while I study or stand still), a happy spin (session done,
-  // or a pat once bonded), then greeting its owner or following their trail while they walk.
+  // What each pet does over its usual wander, most important first: fetch, the nap it is already in, a nap beside
+  // its studying owner (followers roam free while I study), the happy spin for a finished session or a pat,
+  // greeting its owner or following their trail, a lazy sunbathe or a stolen chair, and finally company. Company is
+  // only someone actually here (online, or me) and only in the room the pet is standing in: its walk is a straight
+  // line to the goal, so a target in the next room would take it through a wall.
+  const present = new Map(members.filter((o) => o.online || o.id === myId).map((o) => [o.id, avatars.get(o.id)] as const).filter((e): e is [string, Avatar] => !!e[1]));
+  const meHere = present.get(myId);
   for (const x of pets) {
-    const { m, p, slot } = x, key = `${m.id}:${slot}`, a = avatars.get(m.id), here = a && (m.online || m.id === myId) ? a : null;
+    const { m, p, slot } = x, key = `${m.id}:${slot}`, here = present.get(m.id) ?? null;
     const side = slot % 2 ? -0.7 : 0.7, back = slot > 1 ? 0.6 : 0.25, fe = fetches.get(key), fa = fe ? now - fe.at : Infinity;
+    const guestA = m.id === myId ? undefined : meHere, myLvl = guestBondLevel(p.myBond ?? 0);
     const by = fe && avatars.get(fe.by), tr = trails.get(m.id), gap = 2.5 + slot * 0.9;
-    if (fe && fa < 4500) x.goal = fa < 2000 || !by ? fe : { x: by.x + side, y: by.y + back };
+    // A pet asleep on a chair, or dozing in a patch of sun, stays there: the chair one gets up only when someone
+    // clicks it, the sun one when its warm spell runs out.
+    const seat = petSeat.get(key), sunning = petSunAt.get(key);
+    if (sunning && sunning.until <= now) petSunAt.delete(key);
+    if (seat) { x.goal = { x: seat.x, y: seat.y }; x.act = 'chair'; }
+    else if (sunning && sunning.until > now) { x.goal = { x: sunning.x, y: sunning.y }; x.act = 'sun'; }
+    else if (fe && fa < 4500) x.goal = fa < 2000 || !by ? fe : { x: by.x + side, y: by.y + back };
     else if (here && m.focus && !p.follow) { x.goal = { x: here.x + side, y: here.y + back }; x.act = 'sleep'; }
     // Pet cheers owner during focus (like a supportive housemate)
     if (here && m.focus && !p.follow && x.act === 'sleep' && Math.random() < 0.001 * dt * 60) {
@@ -1484,49 +1556,48 @@ function render(t: number, dt: number) {
       const cur = petFx.get(key) ?? x.pos, dx = cur.x - here.x, dy = cur.y - here.y, d = Math.hypot(dx, dy) || 1;
       x.goal = d > gap ? { x: here.x + (dx / d) * gap, y: here.y + (dy / d) * gap } : { x: cur.x, y: cur.y };
     }
-    // Visit bonded visitors (after owner priority)
-    else if (!x.goal && p.visitorBonds) {
-      const visitorEntries = Object.entries(p.visitorBonds);
-      if (visitorEntries.length) {
-        // Sort by bond strength, highest first
-        visitorEntries.sort((a, b) => b[1] - a[1]);
-        for (const [visitorId, bond] of visitorEntries) {
-          if (bond < 3) break; // only visit if bond >= 3
-          const visitor = members.find(mem => mem.id === visitorId);
-          const vAvatar = visitor && avatars.get(visitorId);
-          if (visitor && vAvatar && (visitor.online || visitorId === myId)) {
-            const vHere = vAvatar;
-            const cur = petFx.get(key) ?? x.pos;
-            const dx = vHere.x - cur.x, dy = vHere.y - cur.y, d = Math.hypot(dx, dy) || 1;
-            // Visit more frequently for higher bonds, and much more when owner is offline
-            const ownerOnline = here && (m.online || m.id === myId);
-            const baseChance = Math.min(0.008 * bond, 0.06); // 0.8% per bond level, max 6% per frame
-            const visitChance = ownerOnline ? baseChance : baseChance * 5; // 5x more likely when owner away
-            if (d > gap && Math.random() < visitChance * dt * 60) {
-              x.goal = { x: vHere.x + (Math.random() - 0.5) * 1.5, y: vHere.y + (Math.random() - 0.5) * 1.5 };
-              x.act = 'sleep'; // nap near visitor
-            }
-            // If owner is offline and we're already near the visitor, stay there (hang out)
-            if (!ownerOnline && d < 2 && !x.goal) {
-              x.goal = { x: vHere.x + (Math.random() - 0.5) * 0.8, y: vHere.y + (Math.random() - 0.5) * 0.8 };
-              x.act = 'sleep';
-            }
-            break; // only visit the top bonded visitor at a time
-          }
-        }
-      }
+    // The same hello from a pet that likes me best, when its owner isn't the one who just walked in.
+    else if (guestA && now - (petGreetMe.get(key) ?? 0) < 5000 && roomAtPoint(guestA.x, guestA.y) === roomAtPoint(x.pos.x, x.pos.y)) {
+      const cur = petFx.get(key) ?? x.pos, dx = cur.x - guestA.x, dy = cur.y - guestA.y, d = Math.hypot(dx, dy) || 1;
+      x.goal = d > gap ? { x: guestA.x + (dx / d) * gap, y: guestA.y + (dy / d) * gap } : { x: cur.x, y: cur.y };
     }
+    // Lazy afternoons: on a clear day a pet finds the light under a window, or curls up on an empty chair.
+    else if (!x.goal && sunny && petSun[x.room]?.length && Math.random() < 0.0004 * dt * 60) {
+      const spots = petSun[x.room], spot = spots[Math.floor(Math.random() * spots.length)];
+      petSunAt.set(key, { x: spot.x, y: spot.y, until: now + 20_000 + Math.random() * 25_000 });
+    }
+    else if (!x.goal && seats[x.room]?.length && Math.random() < 0.00005 * dt * 60) {
+      const sp = seats[x.room][Math.floor(Math.random() * seats[x.room].length)];
+      petSeat.set(key, { x: sp.x, y: sp.y });
+    }
+    // Company: the owner comes first, then the housemate this pet has bonded with most. A guest bond grows from
+    // every pat, bowl filled and ball thrown, and shows only in what the pet does — never as a number. With the
+    // owner away, the pet settles beside its favourite guest instead of drifting back to an empty room.
+    else if (!x.goal) {
+      const cur = petFx.get(key) ?? x.pos, room = roomAtPoint(cur.x, cur.y);
+      const inRoom = (who: Avatar) => roomAtPoint(who.x, who.y) === room;
+      const favA = present.get(p.fav ?? '');
+      if (!here && favA && inRoom(favA)) { // owner away: walk over to the favourite guest and stay beside them
+        if (Math.hypot(favA.x - cur.x, favA.y - cur.y) > 2.2) x.goal = spotNear(favA, 1);
+        else if (Math.random() < 0.03) { x.goal = spotNear(favA, 0.9); x.act = Math.random() < 0.3 ? 'sleep' : undefined; }
+      } else if (guestA && myLvl && inRoom(guestA) && Math.random() < Math.min(0.06, 0.008 * myLvl) * (here ? 1 : 3) * dt * 60) {
+        x.goal = spotNear(guestA, 1.5); // a guest it has fussed over often: come over
+      } else if (here && Math.random() < 0.0015 * (1 + bondLevel(p.bond)) * dt * 60) x.goal = spotNear(here, 1.6); // the owner, now and then
+    }
+    // A pet that likes you enough shows off: a little spin and a hop, close by.
+    if (!x.goal && myLvl >= 2 && guestA && Math.random() < 0.008 * dt * 60
+      && Math.hypot(guestA.x - x.pos.x, guestA.y - x.pos.y) < 3) { petTrickAt.set(key, now + 1600); petNameAt.set(key, now + 5500); }
     // A pet near someone singing stops to watch, or bounces along on the beat. Which one is a pure function
     // of the pet's seed and the clock; a second microphone nearby makes pets prefer the quiet watch.
     const singer = !x.goal && !x.run ? nearestSinger(x.pos.x, x.pos.y) : null;
     if (singer) {
       const side = x.pos.x < singer.x ? -0.9 : 0.9;
       x.goal = { x: singer.x + side, y: singer.y + 0.55 };
-      x.act = micNearTile(singer.x, singer.y) ? 'watch' : singPetAct(seedOf(m.id, slot), now);
+      x.act = micNearTile(singer.x, singer.y) ? 'watch' : singPetAct(x.seed, now);
     }
   }
   // Pet play from high-five: pets with active play state chase each other
-  const playingPets = pets.filter(x => petPlay.get(`${x.m.id}:${x.slot}`) ?? 0 > now);
+  const playingPets = pets.filter((x) => (petPlay.get(`${x.m.id}:${x.slot}`) ?? 0) > now);
   for (const A of playingPets) for (const B of playingPets) {
     if (A === B || A.goal || B.goal || Math.hypot(A.pos.x - B.pos.x, A.pos.y - B.pos.y) > 3) continue;
     const cx = (A.pos.x + B.pos.x) / 2, cy = (A.pos.y + B.pos.y) / 2, sx = Math.sin(now / 300) * 1.2, sy = Math.cos(now / 300) * 0.6;
@@ -1540,7 +1611,7 @@ function render(t: number, dt: number) {
     A.goal = { x: cx + sx, y: cy + sy }; B.goal = { x: cx - sx, y: cy - sy }; A.run = B.run = true;
   }
   petHits = [];
-  for (const { m, p, slot, pos, goal, act, run } of pets) {
+  for (const { m, p, slot, seed, pos, goal, act, run } of pets) {
     const key = `${m.id}:${slot}`, fx = petFx.get(key);
     let { x: px, y: py, moving, left, act: pact } = pos;
     if (goal || fx) { // ease toward the goal (or back onto the wander) instead of jumping
@@ -1555,10 +1626,22 @@ function render(t: number, dt: number) {
     }
     if (run) { moving = true; if (!goal) left = Math.floor(now / 150) % 2 === 0; } // spin: flip side to side
     petHits.push({ m, slot, x: px, y: py });
-    if (p.name) petLabels.push({ x: px, y: py - (pact === 'perch' ? 1 : 0), name: p.name });
+    // Names are not always on screen: a pet wears its name while it trots about, for a moment after it is fussed
+    // over or does a trick, and now and then while it idles (a per-pet offset, so they never all flicker at once).
+    const nameNow = (petNameAt.get(key) ?? 0) > now;
+    if ((petTrickAt.get(key) ?? 0) > now) { pact = 'trick'; left = Math.floor(now / 160) % 2 === 0; }
+    const guestA = m.id === myId ? undefined : meHere; // me, when this pet isn't mine
+    const myLvl = guestBondLevel(p.myBond ?? 0);
+    if (p.name && (nameNow || moving || (now + seed * 37) % 27_000 < 3_600)) petLabels.push({ x: px, y: py - (pact === 'perch' ? 1 : 0), name: p.name });
+    // The pet it likes has come over: say so, quietly and not every ten seconds.
+    if (guestA && myLvl && Math.hypot(px - guestA.x, py - guestA.y) < 1.9 && now - (petSaid.get(key) ?? 0) > 120_000) {
+      petSaid.set(key, now);
+      petNameAt.set(key, now + 6000);
+      toast(`🐾 <b>${esc(petNameOf(p))}</b> comes over to keep you company.`, 'reward');
+    }
     const love = Math.min(now - (m.fedAt ?? 0), (now - (patAt.get(key) ?? 0)) * 4); // fed or petted: a heart floats up
     const petCheer = petCheers.get(key);
-    sprites.push({ y: py + (pact === 'lap' ? 2 : 0.9), draw: () => {
+    sprites.push({ y: py + (pact === 'lap' ? 2 : pact === 'chair' ? 1.4 : 0.9), draw: () => {
       drawPet(ctx, p.kind, Math.round(px * T), Math.round(py * T), moving, left, now, pact, p.coat, p.acc);
       if (love < 6000) drawHeart(ctx, px * T + T / 2, py * T - love / 400);
       // Pet cheer: 👏 floating up like a housemate cheer
@@ -2939,6 +3022,8 @@ let dmReady = false;
 
 // Mute threads: thread -> until (0 = forever, timestamp = temporary)
 const mutedThreads = new Map<string, number>();
+// Threads I muted or unmuted myself this session: my choice outranks older state messages still on the wire.
+const muteChosen = new Set<string>();
 
 // Chat colors/themes per thread
 const CHAT_PALETTE = ['#f48a8a', '#ffd27a', '#8fd0a8', '#7fb2e8', '#b89af0', '#f4a6b8', '#f2b48a', '#9db4ee', '#d9a06a', '#cfe1f7', '#fff4e6', '#e8e3dc'];
@@ -2986,17 +3071,17 @@ function noteNewDms() {
 
 // ===== NEW CHAT FEATURES =====
 
-// Check if thread is muted
+// Check if thread is muted: 0 is forever, any other value is the time it runs out.
 function isMuted(thread: string): boolean {
   const until = mutedThreads.get(thread);
-  if (!until) return false;
-  if (until === 0) return true;
-  return Date.now() < until;
+  return until === 0 || (until !== undefined && Date.now() < until);
 }
 
-// Mute a thread
+// Mute a thread: -1 turns notifications back on, 0 mutes for good, a timestamp mutes until then.
 function muteThread(thread: string, until: number) {
-  mutedThreads.set(thread, until);
+  muteChosen.add(thread);
+  if (until === -1) mutedThreads.delete(thread);
+  else mutedThreads.set(thread, until);
   send({ t: 'mute', thread, until });
   syncChatList();
 }
@@ -3249,6 +3334,26 @@ const faceURL = (look: Look) => { const k = JSON.stringify(look); if (!faces.has
 const ago = (at: number) => { const s = (Date.now() - at) / 1000; return s < 60 ? 'now' : s < 3600 ? `${Math.floor(s / 60)}m` : s < 86_400 ? `${Math.floor(s / 3600)}h` : `${Math.floor(s / 86_400)}d`; };
 let chatListHTML = '';
 const visitToasted = new Set<string>(); // friends whose visit ask I've been told about
+// The thread's buttons are rewritten on every render tick (the chat card re-renders twice a second). Touching the
+// DOM only when what they say changes keeps the same node under the pointer: replacing it between mousedown and
+// mouseup makes the browser drop the click, which is why Unfriend and Leave group used to do nothing.
+let chatActionsHTML = '';
+function setChatActions(html: string) {
+  const el = document.getElementById('chatThreadActions');
+  if (!el || chatActionsHTML === html) return;
+  chatActionsHTML = html;
+  el.innerHTML = html;
+  el.hidden = !html;
+}
+// The bell in the thread header: a small gold bell (crossed out while the thread is muted) that opens the three
+// choices. Muting only silences the thread — its unread badge still counts, as the list shows.
+function muteMenuHTML(thread: string): string {
+  const muted = isMuted(thread);
+  return `<span class="mute-wrap"><button type="button" class="off small chat-mute-btn" data-mute-menu aria-haspopup="true" aria-expanded="false" aria-label="${muted ? 'Muted' : 'Mute notifications'}" title="${muted ? 'Notifications muted' : 'Mute notifications'}"><img src="${uiIconURL(muted ? 'bellOff' : 'bell')}" alt=""></button>`
+    + '<div class="mute-menu" hidden><button type="button" data-mute="120">For 2 hours</button><button type="button" data-mute="480">For 8 hours</button><button type="button" data-mute="always">Always</button>'
+    + `${muted ? '<button type="button" data-mute="off">Unmute</button>' : ''}</div></span>`;
+}
+
 function renderChatHeader() {
   const title = $('#chatTitle');
   const icon = document.getElementById('chatHeadIcon') as HTMLImageElement | null;
@@ -3256,7 +3361,6 @@ function renderChatHeader() {
   const face = document.getElementById('chatHeadFace') as HTMLImageElement | null;
   const status = document.getElementById('chatHeadStatus');
   const typing = document.getElementById('chatTypingHead');
-  const threadActions = document.getElementById('chatThreadActions') as HTMLElement | null;
   if (!chatOpen) {
     title.textContent = 'Chats';
     if (icon) { icon.hidden = false; icon.src = icon.dataset.src || uiIconURL('chat'); }
@@ -3265,7 +3369,7 @@ function renderChatHeader() {
     if (status) status.textContent = '';
     typing?.setAttribute('hidden', '');
     if (typing) typing.textContent = '';
-    if (threadActions) { threadActions.hidden = true; threadActions.innerHTML = ''; }
+    setChatActions('');
     return;
   }
   const thread = threadKey(dmPeer);
@@ -3274,7 +3378,7 @@ function renderChatHeader() {
     if (icon) { icon.hidden = false; icon.src = uiIconURL('house'); }
     faceWrap?.setAttribute('hidden', '');
     if (status) { status.hidden = false; status.textContent = `${members.filter(m => m.online).length} online`; status.classList.toggle('on', members.some(m => m.online)); }
-    if (threadActions) { threadActions.hidden = true; threadActions.innerHTML = ''; }
+    setChatActions(muteMenuHTML(thread));
   } else {
     const g = groupOf(dmPeer);
     if (g) {
@@ -3282,11 +3386,8 @@ function renderChatHeader() {
       if (icon) { icon.hidden = false; icon.src = uiIconURL('chat'); }
       faceWrap?.setAttribute('hidden', '');
       if (status) { const online = g.members.filter(id => members.some(m => m.id === id && m.online)).length; status.hidden = false; status.textContent = `${g.members.length} members${online ? ` · ${online} online` : ''}`; status.classList.toggle('on', online > 0); }
-      if (threadActions) {
-        threadActions.hidden = false;
-        const groupId = dmPeer!.startsWith('g:') ? dmPeer!.slice(2) : '';
-        threadActions.innerHTML = `<button class="off small" data-group-leave="${groupId}">Leave group</button>`;
-      }
+      const groupId = dmPeer!.startsWith('g:') ? dmPeer!.slice(2) : '';
+      setChatActions(`<button class="off small" data-group-leave="${groupId}">Leave group</button>` + muteMenuHTML(thread));
     } else {
       const p = person(dmPeer);
       title.textContent = p?.name ?? 'Chat';
@@ -3300,21 +3401,10 @@ function renderChatHeader() {
       if (status) { status.hidden = false; status.textContent = bits.join(' · '); status.classList.toggle('on', !!p?.online); }
       const friendThread = !!dmPeer && friendsOnly().some((f) => f.id === dmPeer);
       const pending = (me.friends ?? []).find((f) => f.id === dmPeer);
-      if (threadActions) {
-        if (friendThread) {
-          threadActions.hidden = false;
-          threadActions.innerHTML = `<button class="off small" data-unfriend="${dmPeer}">Unfriend</button>`;
-        } else if (pending && pending.status === 'outgoing') {
-          threadActions.hidden = false;
-          threadActions.innerHTML = `<button class="off small" data-cancel-request="${dmPeer}">Cancel request</button>`;
-        } else if (pending && pending.status === 'incoming') {
-          threadActions.hidden = false;
-          threadActions.innerHTML = `<button class="off small" data-unfriend="${dmPeer}">Decline</button>`;
-        } else {
-          threadActions.hidden = true;
-          threadActions.innerHTML = '';
-        }
-      }
+      setChatActions((friendThread ? `<button class="off small" data-unfriend="${dmPeer}">Unfriend</button>`
+        : pending?.status === 'outgoing' ? `<button class="off small" data-cancel-request="${dmPeer}">Cancel request</button>`
+          : pending?.status === 'incoming' ? `<button class="off small" data-unfriend="${dmPeer}">Decline</button>`
+            : '') + muteMenuHTML(thread));
     }
   }
   const t = typingIndicatorHTML(thread);
@@ -3351,13 +3441,12 @@ function syncChatList() {
     const c = r.list[r.list.length - 1];
     const who = !c ? '' : c.from === myId ? 'You: ' : r.dm || !c.by ? '' : `${esc(c.by)}: `; // group notes ("made the group") have no speaker
     const preview = c ? `${who}${c.img ? esc(attachLabel(c.img)) : esc(c.text)}` : r.dm ? (r.pal ? 'Say hi 👋' : 'Say hi 👋') : 'Talk to the whole house';
-    const mutedIcon = r.muted ? '🔕' : '';
     const themeStyle = r.theme ? `style="--thread-accent:${r.theme};"` : '';
     const presence = r.dm && r.id ? getPresence(r.id) : null;
     const presenceHTML = presence ? `<span class="chat-status" title="${presenceIcon(presence.status, presence.custom)}">${presenceIcon(presence.status, presence.custom).split(' ')[0]}</span>` : '';
     return `<li><button class="chat-row${r.n ? ' unread' : ''}${r.muted ? ' muted' : ''}" data-peer="${r.id}" ${themeStyle}><span class="chat-face-wrap${'on' in r && r.on ? ' on' : ''}"><img class="chat-face${r.dm ? '' : ' house'}" src="${r.pic}" alt=""></span>
-      <span class="chat-mid"><b>${esc(r.name)}</b>${presenceHTML}${r.dm ? `<span class="chat-online${r.on ? ' on' : ''}">${r.on ? 'Online' : 'Offline'}</span>` : ''}<small>${preview}</small></span>
-      <span class="chat-end">${c ? `<small>${ago(c.at)}</small>` : ''}${r.n ? `<i>${r.n > 99 ? '99+' : r.n}</i>` : ''}${mutedIcon}</span></button></li>`;
+      <span class="chat-mid"><b>${esc(r.name)}${r.muted ? `<img class="chat-mute" src="${uiIconURL('bellOff')}" alt="" title="Notifications muted">` : ''}</b>${presenceHTML}${r.dm ? `<span class="chat-online${r.on ? ' on' : ''}">${r.on ? 'Online' : 'Offline'}</span>` : ''}<small>${preview}</small></span>
+      <span class="chat-end">${c ? `<small>${ago(c.at)}</small>` : ''}${r.n ? `<i>${r.n > 99 ? '99+' : r.n}</i>` : ''}</span></button></li>`;
   }).join('');
   // Friend requests on top: theirs to answer, mine waiting.
   const fr = me.friends ?? [];
@@ -3780,7 +3869,9 @@ mentionPicker.addEventListener('click', (e) => {
 });
 // Hide mentions when clicking outside
 document.addEventListener('click', (e) => {
-  if (!(e.target as HTMLElement).closest('#chatInput') && !(e.target as HTMLElement).closest('#chatMentions')) hideMentions();
+  const t = e.target as HTMLElement;
+  if (!t.closest('#chatInput') && !t.closest('#chatMentions')) hideMentions();
+  if (!t.closest('.mute-wrap')) ui.querySelectorAll<HTMLElement>('#chatThreadActions .mute-menu').forEach((m) => { m.hidden = true; });
 });
 $('#chatList').addEventListener('click', (e) => {
   const t = e.target as HTMLElement, acc = t.closest<HTMLButtonElement>('[data-accept]'), rm = t.closest<HTMLButtonElement>('[data-unfriend]');
@@ -3800,7 +3891,21 @@ $('#chatList').addEventListener('click', (e) => {
 $('#chatBack').addEventListener('click', () => { chatOpen = false; renderSide(); });
 // Chat thread action buttons (unfriend, leave group, cancel request)
 $('#chatThreadActions').addEventListener('click', (e) => {
-  const unfriendBtn = (e.target as HTMLElement).closest<HTMLButtonElement>('[data-unfriend]');
+  const t = e.target as HTMLElement;
+  const bell = t.closest<HTMLButtonElement>('[data-mute-menu]');
+  if (bell) {
+    const menu = bell.parentElement?.querySelector<HTMLElement>('.mute-menu');
+    if (menu) { menu.hidden = !menu.hidden; bell.setAttribute('aria-expanded', String(!menu.hidden)); }
+    return;
+  }
+  const pick = t.closest<HTMLButtonElement>('[data-mute]');
+  if (pick) {
+    const v = pick.dataset.mute!, until = v === 'off' ? -1 : v === 'always' ? 0 : Date.now() + Number(v) * 60_000;
+    muteThread(threadKey(dmPeer), until);
+    toast(v === 'off' ? 'Notifications for this chat are back on.' : v === 'always' ? 'This chat stays quiet from now on.' : `Muted for ${v === '120' ? '2 hours' : '8 hours'}.`);
+    return;
+  }
+  const unfriendBtn = t.closest<HTMLButtonElement>('[data-unfriend]');
   if (unfriendBtn) {
     const id = unfriendBtn.dataset.unfriend!;
     const f = friendsOnly().find((x) => x.id === id);

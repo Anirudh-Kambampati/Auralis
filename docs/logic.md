@@ -41,6 +41,30 @@ Each pet's position is a pure function of `(owner id, pet slot, current time, wa
 
 A pet within 4 tiles of someone who is singing stops beside them and reacts: it watches, or bounces along with little notes over its head (`singPetAct` in `src/pets.ts`, a hash of the pet's seed and the clock, so every viewer picks the same one every 12 s). Nothing about it is sent to the server.
 
+A pet's name tag is not always on screen. It shows while the pet trots somewhere, for six seconds after it is petted, while it does a trick, and now and then while it idles (`(now + seed * 37) % 27_000 < 3_600`, so housemates' pets never all flicker together).
+
+### Bonding with someone else's pet
+
+A pet keeps a hidden `visitorBonds` map, one number per person who has fussed over it: +1 for a pat, +2 for filling its bowl, +1 for throwing its ball (`GUEST_BOND_STEP` in `shared/game.js`). It is never shown as a number and never chosen by the UI. `guestBondLevel` turns it into what the pet does: level 1 at 4 interactions (it comes over now and then), level 2 at 16 (it also does tricks nearby), level 3 at 36.
+
+### Who a pet goes to
+
+The owner always outranks everyone: a pet with its owner in the room naps beside them while they study, greets them, follows to them if it is a follower, and pads over now and then otherwise. Guests come next, ranked by their own bond: the highest-bonded guest is `fav`, which every client receives, so however many screens are watching, they agree on who that pet seeks out. `fav` is picked among the pet's current housemates: someone who moved out stops being its favourite (their bond is kept, in case they come back), and a favourite who has not been in the house for a while does not leave the pet waiting for someone who is not there. A pet also only goes to somebody standing in the room it is already in, because its walk is a straight line to the goal and a target in the next room would take it through a wall.
+
+With the owner away, the pet goes and hangs out beside `fav` instead of drifting back to an empty room. That is all a guest's client needs: it also has `myBond`, so each person's own visits are theirs without anyone else's numbers on the wire.
+
+A pet that reaches the person it likes (within 1.3 tiles) says so, once every two minutes per pet, in a toast. Patting or feeding one gets an answer in the pet's own words (`PET_LINES` on the server, picked by bond level).
+
+### Saying hello, sunbathing and stealing a chair
+
+Signing in is a small reunion: on the first house state after a login, `petGreet` is stamped for me, so my own pets get up from whatever they were doing and trot over to me. A pet that likes me best greets me too, even though it isn't mine: `petGreetMe` is stamped for every pet whose `fav` is me, and its nap is lifted so it can come — but only if it is in the room I am standing in, since its walk is a straight line. My own pets outrank that, so a pet with its owner and its favourite guest both signing in goes to its owner. Pets also greet an owner who comes online while I'm watching, and do a happy spin when a session ends.
+
+On a clear day (`sky === 'day'`, not rain or snow) a pet now and then picks a floor tile under one of the room's windows and lies in the light for 20–45 seconds (`act: 'sun'`, with a warm gold Zzz). It will not do this at night or in the rain: the light is the whole point.
+
+A pet also sometimes curls up on an empty chair, armchair, sofa or bench (`act: 'chair'`, lifted a few pixels so it reads as on the cushion, with no floor shadow). It stays there — no wandering, no visits — until someone clicks it: any `pat` clears `petSeat` and `petSunAt` on every client, so it gets up for the whole house at once.
+
+A trick is a hop with a side-to-side spin and three gold sparkles (`act: 'trick'` in `src/pets.ts`); a pet with level 2 or more with you may do one near you.
+
 ## Camera
 
 - The zoom is the largest whole number at which the current room (with walls) fits the space the HUD, dock, side bar and panels leave free. Whole numbers keep the pixels crisp.
@@ -107,4 +131,11 @@ The coin gift sends `GIFT_COINS` (10) and is capped so coins cannot be shovelled
 - The house grid is every housemate's rooms in order: all of player 1's rooms, then player 2's, and so on, so a player's rooms sit next to each other.
 - Room-specific messages (`place`, `move`, `pickup`, `room`, `flip`, `restyle`, `shape`, `expand`) carry `r`, the room index (first room when missing). The server ignores an index the player doesn't own.
 - On startup the server moves old single-`room` saves into `rooms[0]`.
+
+## Muting a chat
+
+- A thread can be muted from the bell in its header, beside Leave group or Unfriend: **2 hours**, **8 hours** or **always**. Muted threads offer **Unmute** instead.
+- Muting is per player and per thread (`me.mutedThreads`: `0` means always, any other value is the moment it ends). It only lives on your side — the other person can still hear from you.
+- A muted thread still counts its messages: the unread badge keeps growing and the chat stays bold, and a crossed-out bell sits beside its name in the list. Only the sound, the speech bubble, the system notification and the push are dropped. A temporary mute simply runs out; nothing has to be undone.
+- House chat, groups and private threads are muted the same way.
 - Pets live in their owner's first room. Decorate starts on the room you're standing in (if it's yours), and you switch rooms with the chips at the top or by tapping one of your other rooms.
