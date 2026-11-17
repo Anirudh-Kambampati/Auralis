@@ -130,6 +130,11 @@ function push(p, body, kind) {
 const sockets = new Map(); // playerId -> ws
 const positions = new Map(); // playerId -> { x, y }
 const lastChat = new Map(); // playerId -> ms, simple flood guard
+// Coalesce full-house broadcasts: rapid minor updates to one house collapse into a single
+// payload after the house goes quiet for BROADCAST_MS. Targeted messages (pos, cheer, pat,
+// fetch, ...) still go out immediately, so nothing visible is delayed by more than a frame.
+const BROADCAST_MS = 100;
+const broadcastTimers = new Map(); // house code -> pending broadcast timeout
 // house code -> the video the house is watching together: { src, by, byName, playing, pos, at }. Not saved: a restart ends it.
 const watches = new Map();
 // Private watch parties between two users (can be in different houses). key = pairKey(a,b) -> { src, by, byName, playing, pos, at }
@@ -370,14 +375,14 @@ function send(ws, msg) {
   if (ws?.readyState === 1) ws.send(JSON.stringify(msg));
 }
 
-function broadcastHouse(code) {
+function broadcastHouseNow(code) {
   const h = db.houses[code];
   if (!h) return;
   const w = watches.get(code);
   // now lets clients work out how far a playing video has got without trusting their own clocks.
   const house = {
     code, owner: h.owner ?? null, ownerName: db.players[h.owner]?.name ?? null,
-    todos: h.todos ?? [], chat: h.chat ?? [],
+    todos: h.todos ?? [], chat: (h.chat ?? []).slice(-50),
     events: h.events ?? [], announcements: h.announcements ?? [], watch: w ? { ...w, now: Date.now(), scope: 'house' } : null,
   };
   for (const id of h.members) {
@@ -389,6 +394,18 @@ function broadcastHouse(code) {
     send(sockets.get(id), { t: 'state', house: { ...house, members: h.members.map((mid) => publicPlayer(db.players[mid], id)), todos: house.todos.filter((t) => canSee(t, h, id)) }, me: { id: p.id, home: p.home, ...houseLists(p), coins: p.coins, discount: !!p.discount, notes: p.notes ?? [], inbox: p.inbox ?? [], inboxSeen: p.inboxSeen ?? 0, tipsSeen: p.tipsSeen ?? [], events: p.events ?? [], inventory: p.inventory, crafted: p.crafted ?? [], ready: p.ready ?? {}, petAccs: p.petAccs ?? [], ...(sentSessions.get(id) !== (p.sessions ?? []).length && { sessions: p.sessions ?? [] }), subjects: p.subjects ?? [], hiddenSubjects: p.hiddenSubjects ?? [], todos: p.todos ?? [], dm: p.dm ?? {}, groups: p.groups ?? {}, friends: friendList(p), notify: p.notify ?? {}, mutedThreads: p.mutedThreads ?? {}, chatThemes: p.chatThemes ?? {}, pushKey: pushOn ? PUSH_KEY : undefined, watch: privateWatch } });
     if (sockets.has(id)) sentSessions.set(id, (p.sessions ?? []).length);
   }
+}
+// Throttled full-house broadcast: repeated updates to the same house within BROADCAST_MS
+// collapse into a single payload, cutting WebSocket traffic on bursts of minor changes.
+function broadcastHouse(code) {
+  const h = db.houses[code];
+  if (!h) return;
+  const existing = broadcastTimers.get(code);
+  if (existing) clearTimeout(existing);
+  broadcastTimers.set(code, setTimeout(() => {
+    broadcastTimers.delete(code);
+    broadcastHouseNow(code);
+  }, BROADCAST_MS));
 }
 
 // The room a message is about: m.r picks one of the player's rooms (the first when missing).
@@ -772,7 +789,7 @@ async function handle(p, m) {
         send(sockets.get(p.id), { t: 'info', text: petLine(pet, bond) });
       } else pet.bond = (pet.bond ?? 0) + 1; // your own pet warms to you too, slowly
       for (const id of h.members) send(sockets.get(id), { t: 'pat', owner: owner.id, slot: m.slot, by: p.id, name: p.name });
-      break; // saved and rebroadcast, so the bond sticks
+      save(); return; // bond is private to the pet row; every member already got the pat message
     }
     case 'fetch': { // threw the pet ball: the thrower's pets (or the room owner's) run for it
       if (![m.x, m.y].every(Number.isInteger) || Date.now() - (lastCheer.get(p.id) ?? 0) < 3000) return;
@@ -781,7 +798,7 @@ async function handle(p, m) {
       const owner = db.houses[p.house].members.includes(m.owner) ? db.players[m.owner] : null;
       if (owner && owner.id !== p.id) for (const pet of owner.pets ?? []) if (!pet.away) addGuestBond(pet, p.id, GUEST_BOND_STEP.fetch);
       for (const id of db.houses[p.house].members) send(sockets.get(id), { t: 'fetch', by: p.id, owner: m.owner, x: m.x, y: m.y });
-      break;
+      save(); return; // pets animate from the fetch message; no shared state to rebroadcast
     }
     case 'highfive': { // both of us idle: a high five the whole house sees
       const h = db.houses[p.house], them = h.members.includes(m.to) && m.to !== p.id ? db.players[m.to] : null;
