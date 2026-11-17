@@ -61,7 +61,7 @@ Signing in is a small reunion: on the first house state after a login, `petGreet
 
 On a clear day (`sky === 'day'`, not rain or snow) a pet now and then picks a floor tile under one of the room's windows and lies in the light for 20–45 seconds (`act: 'sun'`, with a warm gold Zzz). It will not do this at night or in the rain: the light is the whole point.
 
-A pet also sometimes curls up on an empty chair, armchair, sofa or bench (`act: 'chair'`, lifted a few pixels so it reads as on the cushion, with no floor shadow). It stays there — no wandering, no visits — until someone clicks it: any `pat` clears `petSeat` and `petSunAt` on every client, so it gets up for the whole house at once.
+A pet also sometimes curls up on an empty chair, armchair, sofa or bench (`act: 'chair'`, lifted a few pixels so it reads as on the cushion, with no floor shadow). It stays there — no wandering, no visits — until someone clicks it: any `pat` clears `petSeat` and `petSunAt` on every client, so it gets up for the whole house at once. A click is not the only way out: a chair nap times out after four to eight minutes and the pet gets up on its own, so a pet in a house where nobody clicks it is never stuck asleep for a whole session. A sunbath ends the same way, after its twenty-to-forty-five seconds.
 
 A trick is a hop with a side-to-side spin and three gold sparkles (`act: 'trick'` in `src/pets.ts`); a pet with level 2 or more with you may do one near you.
 

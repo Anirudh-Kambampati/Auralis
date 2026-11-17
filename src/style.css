@@ -1185,8 +1185,10 @@ body.signed-out #deck, body.signed-out #game, body.signed-out #zoom { display: n
 }
 
 /* Thread theme accent color */
-#chatLog, #chatInput, #chatForm { --thread-accent: var(--blue); --thread-bg: var(--blue); }
-#chatLog { background: var(--thread-bg); }
+#chatLog, #chatInput, #chatForm { --thread-accent: var(--blue); }
+/* The log behind the messages is a wash of the thread's accent, not the accent itself: light enough that a white
+   bubble reads on it, and still per thread, since the tint is mixed from whatever accent the theme sets. */
+#chatLog { background: #f6f7fc; background: color-mix(in srgb, var(--thread-accent) 12%, #fff); }
 #chatLog p { border-color: var(--ink); background: #fff; } /* both sides' bubbles are white, so they read against the thread's tinted log */
 #chatLog p.mine b { color: var(--ink); }
 #chatLog .chat-reply { background: var(--thread-accent); }

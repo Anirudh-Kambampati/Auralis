@@ -96,7 +96,7 @@ const petNameAt = new Map<string, number>(); // key -> until: this pet's name ta
 const petTrickAt = new Map<string, number>(); // key -> until: this pet is in the middle of a trick
 const petSaid = new Map<string, number>(); // key -> when I last said this pet came over to me
 const petGreetMe = new Map<string, number>(); // key -> when this pet came to greet me at the door (not my pet)
-const petSeat = new Map<string, { x: number; y: number }>(); // key -> the chair this pet is curled up on (it only gets up when clicked)
+const petSeat = new Map<string, { x: number; y: number; until: number }>(); // key -> the chair this pet is curled up on, and when it gives up on its own
 const petSunAt = new Map<string, { x: number; y: number; until: number }>(); // key -> the sunny patch it is dozing in, until then
 let logonGreeted = false; // my pets have already come to say hello since I signed in
 let me: Me = { id: myId, coins: 0, inventory: {}, sessions: [], subjects: [], hiddenSubjects: [], todos: [], dm: {} };
@@ -1538,11 +1538,12 @@ function render(t: number, dt: number) {
     const side = slot % 2 ? -0.7 : 0.7, back = slot > 1 ? 0.6 : 0.25, fe = fetches.get(key), fa = fe ? now - fe.at : Infinity;
     const guestA = m.id === myId ? undefined : meHere, myLvl = guestBondLevel(p.myBond ?? 0);
     const by = fe && avatars.get(fe.by), tr = trails.get(m.id), gap = 2.5 + slot * 0.9;
-    // A pet asleep on a chair, or dozing in a patch of sun, stays there: the chair one gets up only when someone
-    // clicks it, the sun one when its warm spell runs out.
+    // A pet asleep on a chair, or dozing in a patch of sun, stays put: a click wakes either one early, and both get
+    // up on their own when their spell runs out, so a pet in a house nobody clicks is never stuck there all session.
     const seat = petSeat.get(key), sunning = petSunAt.get(key);
     if (sunning && sunning.until <= now) petSunAt.delete(key);
-    if (seat) { x.goal = { x: seat.x, y: seat.y }; x.act = 'chair'; }
+    if (seat && seat.until <= now) petSeat.delete(key);
+    if (seat && seat.until > now) { x.goal = { x: seat.x, y: seat.y }; x.act = 'chair'; }
     else if (sunning && sunning.until > now) { x.goal = { x: sunning.x, y: sunning.y }; x.act = 'sun'; }
     else if (fe && fa < 4500) x.goal = fa < 2000 || !by ? fe : { x: by.x + side, y: by.y + back };
     else if (here && m.focus && !p.follow) { x.goal = { x: here.x + side, y: here.y + back }; x.act = 'sleep'; }
@@ -1568,7 +1569,7 @@ function render(t: number, dt: number) {
     }
     else if (!x.goal && seats[x.room]?.length && Math.random() < 0.00005 * dt * 60) {
       const sp = seats[x.room][Math.floor(Math.random() * seats[x.room].length)];
-      petSeat.set(key, { x: sp.x, y: sp.y });
+      petSeat.set(key, { x: sp.x, y: sp.y, until: now + 240_000 + Math.random() * 240_000 }); // a four-to-eight minute nap
     }
     // Company: the owner comes first, then the housemate this pet has bonded with most. A guest bond grows from
     // every pat, bowl filled and ball thrown, and shows only in what the pet does — never as a number. With the
@@ -3095,8 +3096,8 @@ function applyThreadTheme(thread: string) {
   const accent = color || '';
   for (const el of [log, input, form]) {
     if (!el) continue;
-    if (accent) { el.style.setProperty('--thread-accent', accent); el.style.setProperty('--thread-bg', accent); }
-    else { el.style.removeProperty('--thread-accent'); el.style.removeProperty('--thread-bg'); }
+    if (accent) el.style.setProperty('--thread-accent', accent);
+    else el.style.removeProperty('--thread-accent');
   }
 }
 
