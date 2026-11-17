@@ -73,7 +73,7 @@ const panel = $('#panel');
 let myId = '';
 let token = localStorage.getItem('auralis.token');
 const legacyId = localStorage.getItem('auralis.id'); // guest progress from before accounts; claimed at sign-up
-const apiBase = import.meta.env.VITE_API ?? '';
+const apiBase = import.meta.env.BACKEND_API ?? '';
 
 let members: Member[] = [];
 let todos: Todo[] = [];
@@ -167,7 +167,7 @@ let camRoom = 0;
 
 // ---------- network ----------
 let ws: WebSocket;
-const serverUrl = import.meta.env.VITE_SERVER ?? `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws`;
+const serverUrl = import.meta.env.BACKEND_SERVER ?? `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws`;
 // Loading screen until the first house state arrives; after a few seconds explain the wait.
 let hintTimer = 0;
 let reconnectAttempts = 0;
