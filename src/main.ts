@@ -60,14 +60,9 @@ const onKey = (fn: (e: KeyboardEvent) => void) => { keyFns.push(fn); addEventLis
 
 // Global keyboard shortcuts
 onKey((e) => {
-  // Cmd/Ctrl+K for search in chat
-  if ((e.metaKey || e.ctrlKey) && e.key === 'k' && chatOpen && dmPeer) {
-    e.preventDefault();
-    openSearch();
-  }
-  // Escape to close search
-  if (e.key === 'Escape' && searchQuery) {
-    closeSearch();
+  // Escape to close chat row menus
+  if (e.key === 'Escape') {
+    document.querySelectorAll<HTMLElement>('.chat-row-menu-panel:not([hidden])').forEach(p => p.hidden = true);
   }
 });
 const canvas = $<HTMLCanvasElement>('#game');
@@ -426,9 +421,6 @@ function onMessage(m: any) {
     toast(esc(m.text), 'error');
   } else if (m.t === 'info') { // news that isn't a refusal: a plain toast
     toast(esc(m.text));
-  } else if (m.t === 'read') { // read receipt
-    if (m.by !== myId) readTimes.set(m.id, { by: m.by, at: m.at });
-    renderSide();
   } else if (m.t === 'typing') { // typing indicator
     if (typingThread && typingThread.thread === m.thread && m.user !== myId) {
       if (m.typing) typingThread.users.set(m.user, { name: m.name, at: Date.now() });
@@ -2956,9 +2948,6 @@ const threadThemes = new Map<string, string>();
 const typingTimers = new Map<string, number>();
 let typingThread: { thread: string; users: Map<string, { name: string; at: number }> } | null = null;
 
-// Search in thread state
-let searchQuery = '', searchResults: { msg: Chat; idx: number; score: number }[] = [], searchIndex = -1;
-
 // Image gallery state
 let galleryOpen = false, galleryIndex = -1, galleryImages: { key: string; at: number; by: string }[] = [];
 
@@ -2966,10 +2955,6 @@ let galleryOpen = false, galleryIndex = -1, galleryImages: { key: string; at: nu
 const userPresence = new Map<string, { status: string; custom: string; until: number; at: number }>();
 const PRESENCE_TTL = 5 * 60 * 1000;
 let myPresenceTimer: number | null = null;
-
-// Read receipts
-const readReceiptsEnabled = true;
-const readTimes = new Map<number, { by: string; at: number }>();
 
 function noteNewDms() {
   const threads: [string, Chat[]][] = [...Object.entries(me.dm ?? {}), ...Object.entries(me.groups ?? {}).map(([id, g]) => [`g:${id}`, g.msgs] as [string, Chat[]])];
@@ -3025,8 +3010,8 @@ function applyThreadTheme(thread: string) {
   const accent = color || '';
   for (const el of [log, input, form]) {
     if (!el) continue;
-    if (accent) { el.style.setProperty('--thread-accent', accent); el.style.setProperty('--theme', accent); }
-    else { el.style.removeProperty('--thread-accent'); el.style.removeProperty('--theme'); }
+    if (accent) { el.style.setProperty('--thread-accent', accent); el.style.setProperty('--thread-bg', accent); }
+    else { el.style.removeProperty('--thread-accent'); el.style.removeProperty('--thread-bg'); }
   }
 }
 
@@ -3102,64 +3087,6 @@ function activeTypingHTML(thread: string): string {
   return t ? `<div class="typing-indicator">${t}</div>` : '';
 }
 
-// Search in thread
-function openSearch() {
-  let bar = document.getElementById('chatSearch');
-  if (!bar) {
-    const html = `<div id="chatSearch" class="chat-search"><input id="searchInput" type="text" placeholder="Search messages…" aria-label="Search in thread"><span id="searchCount"></span><button type="button" id="searchPrev" title="Previous match" aria-label="Previous match">↑</button><button type="button" id="searchNext" title="Next match" aria-label="Next match">↓</button><button type="button" id="searchClose" aria-label="Close search">✕</button></div>`;
-    $('#chatLog').insertAdjacentHTML('beforebegin', html);
-    bar = document.getElementById('chatSearch')!;
-    $<HTMLInputElement>('#searchInput').addEventListener('input', (e) => doSearch((e.target as HTMLInputElement).value));
-    $('#searchPrev').addEventListener('click', () => navigateSearch(-1));
-    $('#searchNext').addEventListener('click', () => navigateSearch(1));
-    $('#searchClose').addEventListener('click', closeSearch);
-  }
-  bar.hidden = false;
-  $<HTMLInputElement>('#searchInput').focus();
-}
-
-function closeSearch() {
-  const bar = $('#chatSearch');
-  if (bar) bar.hidden = true;
-  searchQuery = ''; searchResults = []; searchIndex = -1;
-  renderSide(); // re-render without highlights
-}
-
-function doSearch(q: string) {
-  searchQuery = q.toLowerCase().trim();
-  const msgs = threadMsgs(dmPeer);
-  searchResults = msgs.map((m, i) => ({ msg: m, idx: i, score: scoreMatch(m, searchQuery) }))
-    .filter(r => r.score > 0).sort((a, b) => b.score - a.score);
-  searchIndex = searchResults.length ? 0 : -1;
-  $('#searchCount').textContent = searchResults.length ? `${searchIndex + 1} / ${searchResults.length}` : 'No matches';
-  renderSide();
-}
-
-function scoreMatch(m: Chat, q: string): number {
-  if (!m.text || !q) return 0;
-  const t = m.text.toLowerCase();
-  if (t === q) return 100;
-  if (t.includes(q)) return 50;
-  return t.split(' ').some(w => w.startsWith(q)) ? 25 : 0;
-}
-
-function navigateSearch(dir: number) {
-  if (!searchResults.length) return;
-  searchIndex = (searchIndex + dir + searchResults.length) % searchResults.length;
-  $('#searchCount').textContent = `${searchIndex + 1} / ${searchResults.length}`;
-  const target = searchResults[searchIndex].msg.id;
-  const el = $('#chatLog').querySelector(`[data-quote="${target}"]`);
-  if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-  renderSide(); // re-render with highlight
-}
-
-function highlightSearch(text: string): string {
-  if (!searchQuery) return esc(text);
-  const parts = text.split(new RegExp(`(${escapeRegExp(searchQuery)})`, 'gi'));
-  return parts.map(p => p.toLowerCase() === searchQuery ? `<mark>${esc(p)}</mark>` : esc(p)).join('');
-}
-
-function escapeRegExp(s: string) { return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
 
 // Image Gallery
 function collectThreadImages(): { key: string; at: number; by: string }[] {
@@ -3259,25 +3186,6 @@ function renderGallery() {
   [galleryIndex - 1, galleryIndex + 1].forEach(i => { if (galleryImages[i]) preloadImage(galleryImages[i].key); });
 }
 
-// Read receipts
-function markRead(thread: string, msgId: number) {
-  if (!readReceiptsEnabled || !msgId) return;
-  const msg = threadMsgs(dmPeer).find((m) => m.id === msgId);
-  if (!msg || msg.from === myId) return;
-  if (readTimes.has(msgId)) return;
-  readTimes.set(msgId, { by: myId, at: Date.now() });
-  send({ t: 'read', thread, id: msgId });
-}
-
-function renderReceipt(msg: Chat): string {
-  if (msg.from !== myId) return '';
-  const reads = [...readTimes.entries()].filter(([id, r]) => id === msg.id && r.by !== myId);
-  const peer = dmPeer && !groupOf(dmPeer) ? person(dmPeer) : null;
-  const delivered = peer ? !!peer.online : members.some((m) => m.id !== myId && m.online);
-  if (reads.length) return '<span class="receipt read" title="Read">✓✓</span>';
-  if (delivered) return '<span class="receipt delivered" title="Delivered">✓✓</span>';
-  return '<span class="receipt sent" title="Sent">✓</span>';
-}
 
 function setMyStatusPrompt() {
   const cur = getPresence(myId);
@@ -3289,102 +3197,6 @@ function setMyStatusPrompt() {
   setMyPresence(status, custom.trim());
   renderSide();
   toast('Activity status updated.');
-}
-
-function chatMenuAction(act: string) {
-  const thread = threadKey(dmPeer);
-  if (act === 'mute') {
-    if (isMuted(thread)) { mutedThreads.delete(thread); send({ t: 'mute', thread, until: -1 }); syncChatList(); toast('Thread unmuted.'); }
-    else muteThreadMenu(thread);
-  } else if (act === 'theme') {
-    themePickerMenu(thread, getThreadTheme(thread));
-  } else if (act === 'search') {
-    openSearch();
-  } else if (act === 'status') {
-    setMyStatusPrompt();
-  } else if (act === 'leave') {
-    const g = groupOf(dmPeer), f = !g && friendsOnly().find((x) => x.id === dmPeer);
-    if (!g && !f && dmPeer) { send({ t: 'friend_request', id: dmPeer }); return; }
-    if (f) { if (confirm(`Unfriend ${f.name}? ${members.some((m) => m.id === f.id) ? '' : "You won't be able to message each other any more."}`)) { send({ t: 'friend_remove', id: f.id }); chatOpen = false; renderSide(); } return; }
-    if (g && confirm(`Leave "${g.name}"? You won't see its messages any more.`)) { send({ t: 'group_leave', g: dmPeer!.slice(2) }); chatOpen = false; renderSide(); }
-  } else if (act === 'friend') {
-    if (dmPeer) send({ t: 'friend_request', id: dmPeer });
-  }
-}
-
-function renderChatMenu() {
-  const menu = document.getElementById('chatMenu') as HTMLElement | null;
-  const btn = document.getElementById('chatMenuBtn') as HTMLButtonElement | null;
-  if (!menu || !btn) return;
-  if (!chatOpen) { btn.hidden = true; menu.hidden = true; btn.setAttribute('aria-expanded', 'false'); return; }
-  const thread = threadKey(dmPeer);
-  const g = groupOf(dmPeer);
-  const friendThread = !!dmPeer && friendsOnly().some((f) => f.id === dmPeer);
-  const pending = (me.friends ?? []).find((f) => f.id === dmPeer);
-  const canLeave = !!dmPeer && (g || friendThread || (!!pending && !friendThread));
-  const canFriend = !!dmPeer && !g && !friendThread && (!pending || pending.status === 'incoming');
-  const items: string[] = [
-    `<button data-chat-menu="mute">${isMuted(thread) ? 'Unmute thread' : 'Mute thread…'}</button>`,
-    `<button data-chat-menu="theme">Change chat color…</button>`,
-    `<button data-chat-menu="search">Search in chat</button>`,
-    `<button data-chat-menu="status">Set my activity status…</button>`,
-  ];
-  if (canFriend) items.push(`<button data-chat-menu="friend">Add friend</button>`);
-  if (canLeave) items.push('<hr>', `<button data-chat-menu="leave">${g ? 'Leave group' : friendThread ? 'Unfriend' : 'Cancel request'}</button>`);
-  menu.innerHTML = items.join('');
-  btn.hidden = false;
-  if (!menu.hidden) btn.setAttribute('aria-expanded', 'true');
-}
-
-// Mute thread menu
-function muteThreadMenu(thread: string) {
-  const menu = document.createElement('div');
-  menu.className = 'context-menu';
-  menu.style.left = '50%';
-  menu.style.top = '50%';
-  menu.style.transform = 'translate(-50%, -50%)';
-  menu.innerHTML = `
-    <button data-until="3600000">1 hour</button>
-    <button data-until="28800000">8 hours</button>
-    <button data-until="0">Forever</button>
-  `;
-  document.body.appendChild(menu);
-  const remove = () => menu.remove();
-  menu.querySelectorAll<HTMLButtonElement>('[data-until]').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const until = Number(btn.dataset.until);
-      muteThread(thread, until === 0 ? 0 : Date.now() + until);
-      remove();
-    });
-  });
-  document.addEventListener('click', remove, { once: true });
-  document.addEventListener('keydown', remove, { once: true });
-}
-
-// Theme picker menu
-function themePickerMenu(thread: string, current?: string) {
-  const menu = document.createElement('div');
-  menu.className = 'context-menu';
-  menu.style.left = '50%';
-  menu.style.top = '50%';
-  menu.style.transform = 'translate(-50%, -50%)';
-  const colors = CHAT_PALETTE.map(c => `<button data-color="${c}" style="background:${c};" title="${c === current ? 'Current' : ''}"></button>`).join('');
-  menu.innerHTML = `
-    <div class="theme-picker">
-      ${colors}
-      <input type="color" id="customColor" value="${current || '#f48a8a'}" title="Custom color">
-      <button data-clear>Clear theme</button>
-    </div>
-  `;
-  document.body.appendChild(menu);
-  const remove = () => menu.remove();
-  menu.querySelectorAll<HTMLButtonElement>('[data-color]').forEach(btn => {
-    btn.addEventListener('click', () => { setThreadTheme(thread, btn.dataset.color!); remove(); });
-  });
-  menu.querySelector('#customColor')!.addEventListener('change', (e) => { setThreadTheme(thread, (e.target as HTMLInputElement).value); remove(); });
-  menu.querySelector('[data-clear]')!.addEventListener('click', () => { threadThemes.delete(thread); send({ t: 'theme', thread, color: '' }); applyThreadTheme(thread); syncChatList(); remove(); });
-  document.addEventListener('click', remove, { once: true });
-  document.addEventListener('keydown', remove, { once: true });
 }
 
 // ===== END NEW CHAT FEATURES =====
@@ -3444,6 +3256,7 @@ function renderChatHeader() {
   const face = document.getElementById('chatHeadFace') as HTMLImageElement | null;
   const status = document.getElementById('chatHeadStatus');
   const typing = document.getElementById('chatTypingHead');
+  const threadActions = document.getElementById('chatThreadActions') as HTMLElement | null;
   if (!chatOpen) {
     title.textContent = 'Chats';
     if (icon) { icon.hidden = false; icon.src = icon.dataset.src || uiIconURL('chat'); }
@@ -3452,6 +3265,7 @@ function renderChatHeader() {
     if (status) status.textContent = '';
     typing?.setAttribute('hidden', '');
     if (typing) typing.textContent = '';
+    if (threadActions) { threadActions.hidden = true; threadActions.innerHTML = ''; }
     return;
   }
   const thread = threadKey(dmPeer);
@@ -3460,6 +3274,7 @@ function renderChatHeader() {
     if (icon) { icon.hidden = false; icon.src = uiIconURL('house'); }
     faceWrap?.setAttribute('hidden', '');
     if (status) { status.hidden = false; status.textContent = `${members.filter(m => m.online).length} online`; status.classList.toggle('on', members.some(m => m.online)); }
+    if (threadActions) { threadActions.hidden = true; threadActions.innerHTML = ''; }
   } else {
     const g = groupOf(dmPeer);
     if (g) {
@@ -3467,6 +3282,11 @@ function renderChatHeader() {
       if (icon) { icon.hidden = false; icon.src = uiIconURL('chat'); }
       faceWrap?.setAttribute('hidden', '');
       if (status) { const online = g.members.filter(id => members.some(m => m.id === id && m.online)).length; status.hidden = false; status.textContent = `${g.members.length} members${online ? ` · ${online} online` : ''}`; status.classList.toggle('on', online > 0); }
+      if (threadActions) {
+        threadActions.hidden = false;
+        const groupId = dmPeer!.startsWith('g:') ? dmPeer!.slice(2) : '';
+        threadActions.innerHTML = `<button class="off small" data-group-leave="${groupId}">Leave group</button>`;
+      }
     } else {
       const p = person(dmPeer);
       title.textContent = p?.name ?? 'Chat';
@@ -3478,6 +3298,23 @@ function renderChatHeader() {
       const bits = [p?.online ? 'Online' : 'Offline'];
       if (pr) bits.push(presenceIcon(pr.status, pr.custom));
       if (status) { status.hidden = false; status.textContent = bits.join(' · '); status.classList.toggle('on', !!p?.online); }
+      const friendThread = !!dmPeer && friendsOnly().some((f) => f.id === dmPeer);
+      const pending = (me.friends ?? []).find((f) => f.id === dmPeer);
+      if (threadActions) {
+        if (friendThread) {
+          threadActions.hidden = false;
+          threadActions.innerHTML = `<button class="off small" data-unfriend="${dmPeer}">Unfriend</button>`;
+        } else if (pending && pending.status === 'outgoing') {
+          threadActions.hidden = false;
+          threadActions.innerHTML = `<button class="off small" data-cancel-request="${dmPeer}">Cancel request</button>`;
+        } else if (pending && pending.status === 'incoming') {
+          threadActions.hidden = false;
+          threadActions.innerHTML = `<button class="off small" data-unfriend="${dmPeer}">Decline</button>`;
+        } else {
+          threadActions.hidden = true;
+          threadActions.innerHTML = '';
+        }
+      }
     }
   }
   const t = typingIndicatorHTML(thread);
@@ -3496,7 +3333,6 @@ function syncChatList() {
   $('#chatLog').hidden = !chatOpen;
   $('#chatForm').hidden = !chatOpen;
   renderChatHeader();
-  renderChatMenu();
   if (chatOpen) {
     // Apply theme when opening thread
     const thread = threadKey(dmPeer);
@@ -3559,8 +3395,8 @@ function renderSide() {
   const msgs = threadMsgs(dmPeer), group = groupOf(dmPeer);
   const peerName = group?.name ?? person(dmPeer)?.name ?? 'them';
   const thread = threadKey(dmPeer);
-  // Include theme and search state in signature
-  const cSig = `${dmPeer}|${peerName}|${msgs.length}|${msgs[0]?.id ?? 0}|${msgs[msgs.length - 1]?.id ?? 0}|${getThreadTheme(thread) ?? ''}|${searchQuery}`;
+  // Include theme in signature
+  const cSig = `${dmPeer}|${peerName}|${msgs.length}|${msgs[0]?.id ?? 0}|${msgs[msgs.length - 1]?.id ?? 0}|${getThreadTheme(thread) ?? ''}`;
   if (cSig !== chatSig) {
     chatSig = cSig;
     const atBottom = log.scrollHeight - log.scrollTop - log.clientHeight < 40, fromBottom = log.scrollHeight - log.scrollTop;
@@ -3571,8 +3407,8 @@ function renderSide() {
       ? more + msgs.map((c, i) => {
         if (!c.from) return `<p class="note">${esc(c.text)}</p>`;
         const imgIdx = c.img ? msgs.slice(0, i).filter((m) => m.img).length : -1;
-        return `<p class="${c.from === myId ? 'mine' : ''}" data-quote="${c.id}"><b>${esc(c.by)}</b>${quoteOf(c)}${highlightSearch(linkify(c.text))}${c.img ? `<span class="chat-att">${docName(c.img) ? `<button type="button" class="chat-doc" data-key="${esc(c.img)}">📎 <span>${esc(docName(c.img)!)}</span></button>` : `<img class="chat-img" data-key="${esc(c.img)}" alt="Picture from ${esc(c.by)}" data-index="${imgIdx}">`}`
-          + `<button type="button" class="chat-dl" data-dl="${esc(c.img)}" title="Download" aria-label="Download ${esc(docName(c.img) ?? 'picture')}">⬇</button></span>` : ''}${renderReceipt(c)}<button type="button" class="chat-reply" title="Reply" aria-label="Reply to ${esc(c.by)}">↩</button></p>`;
+        return `<p class="${c.from === myId ? 'mine' : ''}" data-quote="${c.id}"><b>${esc(c.by)}</b>${quoteOf(c)}${linkify(c.text)}${c.img ? `<span class="chat-att">${docName(c.img) ? `<button type="button" class="chat-doc" data-key="${esc(c.img)}">📎 <span>${esc(docName(c.img)!)}</span></button>` : `<img class="chat-img" data-key="${esc(c.img)}" alt="Picture from ${esc(c.by)}" data-index="${imgIdx}">`}`
+          + `<button type="button" class="chat-dl" data-dl="${esc(c.img)}" title="Download" aria-label="Download ${esc(docName(c.img) ?? 'picture')}">⬇</button></span>` : ''}<button type="button" class="chat-reply" title="Reply" aria-label="Reply to ${esc(c.by)}">↩</button></p>`;
       }).join('')
       : dmPeer
         ? `<p class="empty">${group ? `Just the people in ${esc(peerName)}.` : `Just you and ${esc(peerName)} — nobody else can see this.`}</p>`
@@ -3580,27 +3416,7 @@ function renderSide() {
     if (atBottom) scrollChat();
     else log.scrollTop = log.scrollHeight - fromBottom; // older messages added above: stay on what I was reading
     loadChatImages(log, atBottom);
-    // Read receipts: mark messages as read when they're in view
-    if (readReceiptsEnabled && dmPeer) {
-      const thread = threadKey(dmPeer);
-      const observer = new IntersectionObserver((entries) => {
-        for (const entry of entries) {
-          if (entry.isIntersecting) {
-            const el = entry.target as HTMLElement;
-            const msgId = Number(el.dataset.quote);
-            if (msgId && !readTimes.has(msgId)) markRead(thread, msgId);
-          }
-        }
-      }, { root: log, threshold: 0.5 });
-      log.querySelectorAll('[data-quote]').forEach(el => observer.observe(el));
-      // Cleanup observer on next render
-      (log as any)._readObserver?.disconnect?.();
-      (log as any)._readObserver = observer;
-    }
   }
-  // Ensure search bar visibility matches state
-  const searchBar = $('#chatSearch');
-  if (searchBar) searchBar.hidden = !searchQuery;
   // Typing indicator (keep below log only as fallback)
   const typingDiv = $('#typingIndicator');
   const typingHTML = activeTypingHTML(thread);
@@ -3613,7 +3429,6 @@ function renderSide() {
     log.parentElement?.insertBefore(div, log.nextSibling);
   }
   renderChatHeader();
-  renderChatMenu();
   const box = $<HTMLTextAreaElement>('#chatInput'), ph = dmPeer ? `Message ${peerName}…` : 'Say something…';
   if (box.placeholder !== ph) box.placeholder = ph;
   // The message I'm replying to: show it above the box, or clear it when the thread changes.
@@ -3983,51 +3798,37 @@ $('#chatList').addEventListener('click', (e) => {
   $('#chatInput').focus();
 });
 $('#chatBack').addEventListener('click', () => { chatOpen = false; renderSide(); });
-$('#chatMenuBtn').addEventListener('click', (e) => {
-  e.stopPropagation();
-  const menu = document.getElementById('chatMenu')!;
-  menu.hidden = !menu.hidden;
-  $('#chatMenuBtn').setAttribute('aria-expanded', String(!menu.hidden));
-  if (!menu.hidden) renderChatMenu();
-});
-$('#chatMenu').addEventListener('click', (e) => {
-  const b = (e.target as HTMLElement).closest<HTMLButtonElement>('[data-chat-menu]');
-  if (!b) return;
-  $('#chatMenu').hidden = true; $('#chatMenuBtn').setAttribute('aria-expanded', 'false');
-  chatMenuAction(b.dataset.chatMenu!);
-});
-document.addEventListener('click', (e) => {
-  const menu = document.getElementById('chatMenu');
-  const btn = document.getElementById('chatMenuBtn');
-  if (menu && !menu.hidden && !(e.target as HTMLElement).closest('.chat-menu-wrap')) { menu.hidden = true; btn?.setAttribute('aria-expanded', 'false'); }
-});
-// Context menu for chat rows: mute, theme
-$('#chatList').addEventListener('contextmenu', (e) => {
-  const row = (e.target as HTMLElement).closest<HTMLButtonElement>('.chat-row');
-  if (!row || !row.dataset.peer) return;
-  e.preventDefault();
-  const peer = row.dataset.peer;
-  const thread = peer ? (peer.startsWith('g:') ? `g:${peer.slice(2)}` : peer) : `h:${houseCode}`;
-  const isMutedNow = isMuted(thread);
-  const currentTheme = getThreadTheme(thread);
-  const menu = document.createElement('div');
-  menu.className = 'context-menu';
-  menu.style.left = `${e.clientX}px`;
-  menu.style.top = `${e.clientY}px`;
-  menu.innerHTML = `
-    <button data-mute>${isMutedNow ? 'Unmute' : 'Mute…'}</button>
-    <button data-theme>Change color${currentTheme ? ' ✦' : ''}</button>
-  `;
-  document.body.appendChild(menu);
-  const remove = () => menu.remove();
-  menu.querySelector('[data-mute]')!.addEventListener('click', () => {
-    if (isMutedNow) { mutedThreads.delete(thread); send({ t: 'mute', thread, until: -1 }); syncChatList(); }
-    else { muteThreadMenu(thread); }
-    remove();
-  });
-  menu.querySelector('[data-theme]')!.addEventListener('click', () => { themePickerMenu(thread, currentTheme); remove(); });
-  document.addEventListener('click', remove, { once: true });
-  document.addEventListener('keydown', remove, { once: true });
+// Chat thread action buttons (unfriend, leave group, cancel request)
+$('#chatThreadActions').addEventListener('click', (e) => {
+  const unfriendBtn = (e.target as HTMLElement).closest<HTMLButtonElement>('[data-unfriend]');
+  if (unfriendBtn) {
+    const id = unfriendBtn.dataset.unfriend!;
+    const f = friendsOnly().find((x) => x.id === id);
+    if (f && confirm(`Unfriend ${f.name}? ${members.some((m) => m.id === f.id) ? '' : "You won't be able to message each other any more."}`)) {
+      send({ t: 'friend_remove', id: f.id });
+      chatOpen = false;
+      renderSide();
+    }
+    return;
+  }
+  const cancelBtn = (e.target as HTMLElement).closest<HTMLButtonElement>('[data-cancel-request]');
+  if (cancelBtn) {
+    const id = cancelBtn.dataset.cancelRequest!;
+    send({ t: 'friend_remove', id });
+    chatOpen = false;
+    renderSide();
+    return;
+  }
+  const leaveBtn = (e.target as HTMLElement).closest<HTMLButtonElement>('[data-group-leave]');
+  if (leaveBtn) {
+    const g = groupOf(dmPeer);
+    if (g && confirm(`Leave "${g.name}"? You won't see its messages any more.`)) {
+      send({ t: 'group_leave', g: dmPeer!.slice(2) });
+      chatOpen = false;
+      renderSide();
+    }
+    return;
+  }
 });
 // (chatLeave button removed; actions live in chat menu)
 // Add a friend by username.

@@ -1089,14 +1089,10 @@ body.signed-out #deck, body.signed-out #game, body.signed-out #zoom { display: n
 .chat-head .chat-face-wrap.on::after { content:''; position:absolute; right:-1px; bottom:-1px; width:8px; height:8px; background:#4caf50; border:2px solid var(--paper); border-radius:50%; }
 .chat-typing-head { font-size: 12px; color: var(--muted); max-width: 90px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: none; }
 .chat-head-actions { display: flex; align-items: center; gap: 6px; flex: none; }
-.chat-menu-wrap { position: relative; }
-#chatMenuBtn { width: 32px; height: 32px; padding: 0; font-size: 18px; line-height: 1; }
-.chat-menu { position: absolute; top: calc(100% + 4px); right: 0; z-index: 220; min-width: 190px; display: flex; flex-direction: column; gap: 2px; padding: 6px; background: var(--paper); border: 2px solid var(--ink); border-radius: 12px; box-shadow: 0 4px 16px rgba(43,37,48,0.2); }
-.chat-menu[hidden] { display: none; }
-.chat-menu button { width: 100%; text-align: left; padding: 8px 10px; font: inherit; font-size: 14px; font-weight: 600; background: none; border: none; border-radius: 8px; cursor: var(--point); color: var(--ink); }
-.chat-menu button:hover { background: var(--gold); }
-.chat-menu hr { margin: 4px 0; border: none; border-top: 2px dashed var(--soft); }
-.chat-menu .menu-label { padding: 4px 10px 2px; font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+.chat-thread-actions { display: flex; align-items: center; gap: 4px; }
+.chat-thread-actions button { padding: 4px 8px; font: inherit; font-size: 12px; font-weight: 600; background: var(--soft); border: 2px solid var(--ink); border-radius: 6px; cursor: var(--point); color: var(--ink); }
+.chat-thread-actions button:hover { background: var(--gold); }
+
 .chat-row.new .chat-face { padding: 8px; background: #ffe3a3; }
 #chatLog p.note { align-self: center; padding: 0; font-size: 12px; color: var(--muted); background: none; border: none; }
 /* Bell menu, folded at the bottom: which browser notifications I want */
@@ -1178,9 +1174,10 @@ body.signed-out #deck, body.signed-out #game, body.signed-out #zoom { display: n
 }
 
 /* Thread theme accent color */
-#chatLog, #chatInput, #chatForm { --thread-accent: var(--blue); }
-#chatLog p { border-color: var(--ink); }
-#chatLog p.mine { background: var(--theme); }
+#chatLog, #chatInput, #chatForm { --thread-accent: var(--blue); --thread-bg: var(--blue); }
+#chatLog { background: var(--thread-bg); }
+#chatLog p { border-color: var(--ink); background: var(--paper); }
+#chatLog p.mine { background: var(--blue); }
 #chatLog p.mine b { color: var(--ink); }
 #chatLog .chat-reply { background: var(--thread-accent); }
 
