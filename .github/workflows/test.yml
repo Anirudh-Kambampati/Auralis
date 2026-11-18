@@ -46,5 +46,7 @@ jobs:
           status=$?
           kill "$server" || true
           exit $status
+      - name: world and social domains end to end
+        run: node scripts/e2e-domains.js
       - name: study log end to end
         run: node scripts/e2e-sessions.js

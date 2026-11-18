@@ -51,7 +51,7 @@ Auralis is one Node.js server plus a browser client. The server owns the truth; 
 
 ## Tests and CI
 
-`npm test` runs the unit suites (`shared/*.test.js`), the two store tests (the SQLite one, and the conformance suite that also runs against Postgres when `TEST_DATABASE_URL` names a test branch), the handler-context suite and the chat-cache suite. `.github/workflows/test.yml` runs all of it with a Postgres service, builds the client, and then runs the two end-to-end harnesses against a throwaway server: `scripts/e2e-chat.js` (a house line, a DM, a read receipt, history, a mute and a read mark surviving a reconnect, and account deletion) and `scripts/e2e-sessions.js` (sessions written while the server is stopped come back in the panel and the leaderboard).
+`npm test` runs the unit suites (`shared/*.test.js`), the two store tests (the SQLite one, and the conformance suite that also runs against Postgres when `TEST_DATABASE_URL` names a test branch), the handler-context suite and the chat-cache suite. `.github/workflows/test.yml` runs all of it with a Postgres service, builds the client, and then runs the three end-to-end harnesses against throwaway servers: `scripts/e2e-chat.js` (a house line, a DM, a read receipt, history, a mute and a read mark surviving a reconnect, and account deletion), `scripts/e2e-domains.js` (a moved verb from the room and shop domain — sell, restyle, pet_release — and one from the house domain — todo_add, event_add — each asserted by its effect, with the pet's row seeded while the server is stopped because adopting costs 300 coins) and `scripts/e2e-sessions.js` (sessions written while the server is stopped come back in the panel and the leaderboard).
 
 ## Deployment shape
 
