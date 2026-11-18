@@ -1,4 +1,4 @@
-// The context contract of server/handlers.js, checked without running a game.
+// The context contract of the message modules, checked without running a game.
 //
 // Splitting handle() into modules moved the bodies but left every name they use to a destructuring
 // line and a hand-written object in index.js. Nothing in the build or in the other tests evaluates
@@ -6,17 +6,20 @@
 // `const` cannot take) is silent until a player happens to send that message. Both of those shipped
 // once; this suite is what makes the next one a failing test instead.
 //
-// TypeScript's parser does the work: the file is parsed, identifiers are collected, and a name that
-// is neither declared in the file nor a JavaScript global is reported with its line.
+// TypeScript's parser does the work: each module is parsed, identifiers are collected, and a name
+// that is neither declared in that file nor a JavaScript global is reported with its line.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import ts from 'typescript';
 
-const read = (name) => fs.readFileSync(new URL(name, import.meta.url), 'utf8');
-const handlersSrc = read('./handlers.js');
-const indexSrc = read('./index.js');
-const handlersFile = ts.createSourceFile('handlers.js', handlersSrc, ts.ScriptTarget.ESNext, true);
+const MODULES = ['handlers.js', 'world.js', 'social.js'];
+const files = new Map();
+for (const name of MODULES) {
+  const src = fs.readFileSync(new URL(name, import.meta.url), 'utf8');
+  files.set(name, { src, sf: ts.createSourceFile(name, src, ts.ScriptTarget.ESNext, true) });
+}
+const indexSrc = fs.readFileSync(new URL('./index.js', import.meta.url), 'utf8');
 const indexFile = ts.createSourceFile('index.js', indexSrc, ts.ScriptTarget.ESNext, true);
 
 const lineOf = (sf, node) => sf.getLineAndCharacterOfPosition(node.getStart(sf)).line + 1;
@@ -72,6 +75,9 @@ function declared(sf) {
     }
   };
   const visit = (node) => {
+    if (ts.isImportClause(node) && node.name) names.add(node.name.text);
+    if (ts.isImportSpecifier(node)) names.add(node.name.text);
+    if (ts.isNamespaceImport(node)) names.add(node.name.text);
     if (ts.isVariableDeclaration(node) || ts.isParameter(node) || ts.isBindingElement(node)) addBinding(node.name);
     if ((ts.isFunctionDeclaration(node) || ts.isMethodDeclaration(node) || ts.isClassDeclaration(node)) && node.name) names.add(node.name.text);
     ts.forEachChild(node, visit);
@@ -134,43 +140,64 @@ function ctxLiteral(sf) {
   return found;
 }
 
-const keys = ctxKeys(handlersFile);
-const byDomain = domains(handlersFile);
+const allKeys = new Map();
 
-test('the context contract exists and every handler binds all of it', () => {
-  assert.ok(keys?.length, 'ctxKeys is exported as an array of names');
-  assert.ok(byDomain.size >= 2, 'focus and chat are exported as objects of handlers');
-  for (const [domain, methods] of byDomain) {
-    for (const method of methods) {
-      const bound = boundNames(method);
-      assert.ok(bound, `${domain}.${method.name.getText()} starts by destructuring its context`);
-      assert.deepEqual(bound, keys, `${domain}.${method.name.getText()} binds exactly ctxKeys`);
+for (const name of MODULES) {
+  const { sf } = files.get(name);
+  const keys = ctxKeys(sf);
+  const byDomain = domains(sf);
+  const file = name.replace('.js', '');
+  if (keys) allKeys.set(name, keys);
+
+  test(`${file}: every method binds only context names, and between them all of them`, () => {
+    assert.ok(keys?.length, 'ctxKeys is exported as an array of names');
+    assert.ok(byDomain.size >= 1, 'a domain is exported as an object of handlers');
+    const used = new Set();
+    for (const [domain, methods] of byDomain) {
+      for (const method of methods) {
+        const bound = boundNames(method);
+        assert.ok(bound, `${domain}.${method.name.getText()} starts by destructuring its context`);
+        for (const bound_ of bound) {
+          assert.ok(keys.includes(bound_), `${domain}.${method.name.getText()} binds ${bound_}, which ctxKeys does not promise`);
+          used.add(bound_);
+        }
+      }
     }
-  }
-});
+    assert.deepEqual([...used].sort(), [...keys].sort(), 'every promised name is bound somewhere');
+  });
 
-test('no handler mentions a name the module does not declare', () => {
-  const known = declared(handlersFile);
-  const globals = new Set([...Object.getOwnPropertyNames(globalThis), 'undefined', 'NaN', 'Infinity']);
-  const missing = [...new Set(references(handlersFile)
-    .filter((node) => !known.has(node.text) && !globals.has(node.text))
-    .map((node) => `${node.text} (line ${lineOf(handlersFile, node)})`))];
-  assert.deepEqual(missing, [], 'every name a handler uses comes from the context or is a global');
-});
+  test(`${file}: no method mentions a name the module does not declare`, () => {
+    const known = declared(sf);
+    const globals = new Set([...Object.getOwnPropertyNames(globalThis), 'undefined', 'NaN', 'Infinity']);
+    const missing = [...new Set(references(sf)
+      .filter((node) => !known.has(node.text) && !globals.has(node.text))
+      .map((node) => `${node.text} (line ${lineOf(sf, node)})`))];
+    assert.deepEqual(missing, [], 'every name comes from the context or is a global');
+  });
 
-test('no handler assigns to a context name', () => {
-  // A destructured context value is a `const`: `nextId++` throws at runtime. A value a body has to
-  // change arrives as a function instead (see `newId` in index.js).
-  const written = [...new Set(assignments(handlersFile)
-    .filter((node) => keys.includes(node.text))
-    .map((node) => `${node.text} (line ${lineOf(handlersFile, node)})`))];
-  assert.deepEqual(written, [], 'a handler never writes to the context it is given');
-});
+  test(`${file}: no method assigns to a context name`, () => {
+    // A destructured context value is a `const`: `nextId++` throws at runtime. A value a body has to
+    // change arrives as a function instead (see `newId` in index.js).
+    const written = [...new Set(assignments(sf)
+      .filter((node) => keys.includes(node.text))
+      .map((node) => `${node.text} (line ${lineOf(sf, node)})`))];
+    assert.deepEqual(written, [], 'a handler never writes to the context it is given');
+  });
+}
 
-test('index.js provides every name the handlers bind', () => {
+test('index.js provides every name the modules bind', () => {
   const literal = ctxLiteral(indexFile);
   assert.ok(literal, 'handle() builds its context in an object literal');
   const provided = new Set(literal.properties.map((p) => (p.name ?? p).getText()));
-  const absent = keys.filter((name) => !provided.has(name));
-  assert.deepEqual(absent, [], 'the dispatcher passes every name ctxKeys promises');
+  const absent = [...allKeys.values()].flat().filter((name) => !provided.has(name));
+  assert.deepEqual([...new Set(absent)], [], 'the dispatcher passes every name the modules promise');
+
+  // A shorthand property (`newId,`) names a variable: it has to exist. `newId: () => nextId++` is what
+  // a value the handlers change looks like, and getting that wrong once already threw at runtime.
+  const known = declared(indexFile);
+  const globals = new Set([...Object.getOwnPropertyNames(globalThis), 'undefined', 'NaN', 'Infinity']);
+  const undefinedNames = literal.properties
+    .filter((p) => ts.isShorthandPropertyAssignment(p) && !known.has(p.name.getText()) && !globals.has(p.name.getText()))
+    .map((p) => `${p.name.getText()} (line ${lineOf(indexFile, p)})`);
+  assert.deepEqual(undefinedNames, [], 'a shorthand context property names a variable that exists');
 });

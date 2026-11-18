@@ -2443,6 +2443,7 @@ function panelBody(mine: Member) {
         <label>Name <input id="name" maxlength="20" pattern="[A-Za-z0-9_.-]{3,20}" title="Also your username: 3–20 letters, numbers, _ . or -" value="${esc(mine.name)}"></label>
         <p class="hint">Total focus: <b>${mine.totalMinutes}</b> min</p>
         <div class="me-actions"><button class="off small-chip" data-act="logout">Log out</button>
+        <button class="danger small-chip" data-act="deleteaccount" title="Erase this account and everything in it">Delete account</button>
         <button class="off small-chip" data-act="chimes">${chimes ? '🔔 Sounds on' : '🔕 Sounds off'}</button>
         ${installPrompt ? '<button class="off small-chip" data-act="install">📲 Install app</button>' : ''}
         <a class="hint" href="/privacy.html" target="_blank" rel="noopener">Privacy policy</a></div></div></div>
@@ -2757,6 +2758,7 @@ panel.addEventListener('click', (e) => {
       } else send({ t: 'kick', id: v });
       break;
     case 'logout': signOut(true); break;
+    case 'deleteaccount': void deleteAccount(); break;
     case 'chimes':
       chimes = !chimes;
       localStorage.setItem('auralis.chimes', chimes ? 'on' : 'off');
@@ -4103,6 +4105,20 @@ function showLanding(on: boolean) {
   ui.documentElement.classList.toggle('signed-out', on);
   $('#landing').hidden = !on;
   if (on) requestAnimationFrame(heroFrame);
+}
+
+// Erase the account across every table. The password is the proof, and it is asked for here rather than
+// kept anywhere: a stolen token can log out, but only the person can delete the account.
+async function deleteAccount() {
+  const password = prompt('Type your password to delete your account and everything in it. This cannot be undone.');
+  if (!password) return;
+  if (!confirm('Delete your Auralis account for good? Your rooms, chats and study history go with it.')) return;
+  const username = myMember()?.name ?? '';
+  const res = await fetch(`${apiBase}/api/delete`, {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ username, password }),
+  }).catch(() => null);
+  if (!res?.ok) { toast(res ? 'That password was not right.' : 'Could not reach the server. Try again.', 'error'); return; }
+  signOut(false); // the token went with the account: back to the landing page
 }
 
 function signOut(tellServer: boolean) {

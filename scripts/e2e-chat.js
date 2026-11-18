@@ -53,6 +53,14 @@ await sleep(800);
 ok('a house line reaches the housemate', B.house().some((m) => m.text === line));
 ok('the line carries an id to page from', Number.isFinite(B.house().at(-1)?.id));
 
+// The room and shop domain (world.js): buy a piece and put it down, which used to be switch cases.
+A.send({ t: 'buy', item: 'desk' });
+await sleep(500);
+A.send({ t: 'place', item: 'desk', x: 1, y: 1 });
+await sleep(700);
+const mine = A.state.house.members.find((m) => m.id === A.id);
+ok('a bought piece can be placed (world domain)', mine.rooms[0].furniture.some((f) => f.item === 'desk' && f.x === 1 && f.y === 1));
+
 // A DM, both sides, and the reply quote.
 A.send({ t: 'dm', to: B.id, text: 'psst' });
 await sleep(800);
