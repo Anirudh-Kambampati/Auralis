@@ -1561,13 +1561,13 @@ function render(t: number, dt: number) {
     else if (now - (petDone.get(m.id) ?? 0) < 3000 || (now - (patAt.get(key) ?? 0) < 1200 && bondLevel(p.bond) >= 2)) x.run = true;
     else if (here && p.follow && !m.focus && tr && now - tr.movedAt < 600) x.goal = trailPoint(tr.pts, gap);
     else if (here && now - (petGreet.get(m.id) ?? 0) < 5000) { // greeting: run up, but stop a little way off
-      const cur = petFx.get(key) ?? x.pos, dx = cur.x - here.x, dy = cur.y - here.y, d = Math.hypot(dx, dy) || 1;
-      x.goal = d > gap ? { x: here.x + (dx / d) * gap, y: here.y + (dy / d) * gap } : { x: cur.x, y: cur.y };
+      const dx = x.pos.x - here.x, dy = x.pos.y - here.y, d = Math.hypot(dx, dy) || 1;
+      x.goal = d > gap ? { x: here.x + (dx / d) * gap, y: here.y + (dy / d) * gap } : { x: x.pos.x, y: x.pos.y };
     }
     // The same hello from a pet that likes me best, when its owner isn't the one who just walked in.
     else if (guestA && now - (petGreetMe.get(key) ?? 0) < 5000 && roomAtPoint(guestA.x, guestA.y) === roomAtPoint(x.pos.x, x.pos.y)) {
-      const cur = petFx.get(key) ?? x.pos, dx = cur.x - guestA.x, dy = cur.y - guestA.y, d = Math.hypot(dx, dy) || 1;
-      x.goal = d > gap ? { x: guestA.x + (dx / d) * gap, y: guestA.y + (dy / d) * gap } : { x: cur.x, y: cur.y };
+      const dx = x.pos.x - guestA.x, dy = x.pos.y - guestA.y, d = Math.hypot(dx, dy) || 1;
+      x.goal = d > gap ? { x: guestA.x + (dx / d) * gap, y: guestA.y + (dy / d) * gap } : { x: x.pos.x, y: x.pos.y };
     }
     // Lazy afternoons: on a clear day a pet finds the light under a window, or curls up on an empty chair.
     else if (!x.goal && sunny && petSun[x.room]?.length && Math.random() < 0.0004 * dt * 60) {
