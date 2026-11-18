@@ -1562,12 +1562,12 @@ function render(t: number, dt: number) {
     else if (here && p.follow && !m.focus && tr && now - tr.movedAt < 600) x.goal = trailPoint(tr.pts, gap);
     else if (here && now - (petGreet.get(m.id) ?? 0) < 5000) { // greeting: run up, but stop a little way off
       const dx = x.pos.x - here.x, dy = x.pos.y - here.y, d = Math.hypot(dx, dy) || 1;
-      x.goal = d > gap ? { x: here.x + (dx / d) * gap, y: here.y + (dy / d) * gap } : { x: x.pos.x, y: x.pos.y };
+      if (d > gap) x.goal = { x: here.x + (dx / d) * gap, y: here.y + (dy / d) * gap };
     }
     // The same hello from a pet that likes me best, when its owner isn't the one who just walked in.
     else if (guestA && now - (petGreetMe.get(key) ?? 0) < 5000 && roomAtPoint(guestA.x, guestA.y) === roomAtPoint(x.pos.x, x.pos.y)) {
       const dx = x.pos.x - guestA.x, dy = x.pos.y - guestA.y, d = Math.hypot(dx, dy) || 1;
-      x.goal = d > gap ? { x: guestA.x + (dx / d) * gap, y: guestA.y + (dy / d) * gap } : { x: x.pos.x, y: x.pos.y };
+      if (d > gap) x.goal = { x: guestA.x + (dx / d) * gap, y: guestA.y + (dy / d) * gap };
     }
     // Lazy afternoons: on a clear day a pet finds the light under a window, or curls up on an empty chair.
     else if (!x.goal && sunny && petSun[x.room]?.length && Math.random() < 0.0004 * dt * 60) {
