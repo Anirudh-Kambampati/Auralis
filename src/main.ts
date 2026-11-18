@@ -3480,6 +3480,9 @@ function syncChatList() {
     // Start typing indicator tracking for this thread
     typingThread = { thread, users: new Map() };
     sendTyping(thread, false); // signal we're viewing
+    // Mark thread as read
+    const msgs = threadMsgs(dmPeer);
+    if (msgs.length) markRead(dmPeer, msgs[msgs.length - 1].id);
     return;
   }
   const lastAt = (l: Chat[]) => l[l.length - 1]?.at ?? 0;
