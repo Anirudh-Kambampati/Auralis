@@ -35,8 +35,8 @@ If either fails, the docs and the code are out of step — fix the code, not the
 - **`shared/stats.js`** is study statistics only.
 - **`src/main.ts`** and **`src/draw.ts`** are the client: networking, the game loop, the panels
   and all the pixel art.
-- **Tests** are `node --test` suites in `shared/*.test.js`, `server/store.test.js` and
-  `scripts/e2e-*.js`. `npm test` runs the unit tests.
+- **`server/schema.js`** is the one schema. Tables and indexes are described there once, rendered for SQLite and Postgres, and applied as numbered migrations. Never write DDL in a store.
+- **Tests** are `node --test` suites in `shared/*.test.js`, `server/store.test.js`, `server/store.conformance.test.js`, `server/handlers.test.js` and `scripts/e2e-*.js`. `npm test` runs the unit tests; the conformance suite also runs against Postgres when `TEST_DATABASE_URL` names a test branch.
 
 ## Conventions
 

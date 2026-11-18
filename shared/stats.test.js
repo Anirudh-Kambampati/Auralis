@@ -30,6 +30,13 @@ test('day, month and year charts', () => {
   assert.equal(year.values[10], 45);
 });
 
+test('a rolled-up day counts as the sessions it stands for', () => {
+  const c = chart([{ at: at(2026, 9, 27), minutes: 120, tag: 'Maths', n: 4 }], 'month', at(2026, 9, 5));
+  assert.equal(c.total, 120);
+  assert.equal(c.count, 4);
+  assert.deepEqual(c.tags, [{ tag: 'Maths', minutes: 120, pct: 100 }]);
+});
+
 test('ranges step and title correctly', () => {
   const from = startOf('week', at(2026, 9, 28));
   assert.equal(from.getDay(), 0);

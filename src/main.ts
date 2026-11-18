@@ -3049,6 +3049,16 @@ const userPresence = new Map<string, { status: string; custom: string; until: nu
 const PRESENCE_TTL = 5 * 60 * 1000;
 let myPresenceTimer: number | null = null;
 
+// How far each thread has been read, sent once per new line while the thread is on screen. The server
+// stores it on `threads.seen` and passes it back in `me.threadSeen`.
+const lastReadSent: Record<string, number> = {};
+function markRead(peer: string | null, id: number) {
+  const key = threadKey(peer);
+  if (!Number.isFinite(id) || (lastReadSent[key] ?? 0) >= id) return;
+  lastReadSent[key] = id;
+  send({ t: 'read', thread: key, id });
+}
+
 function noteNewDms() {
   const threads: [string, Chat[]][] = [...Object.entries(me.dm ?? {}), ...Object.entries(me.groups ?? {}).map(([id, g]) => [`g:${id}`, g.msgs] as [string, Chat[]])];
   for (const [peer, list] of threads) {
@@ -3059,6 +3069,8 @@ function noteNewDms() {
     // Remember where every thread stands, even when there is nothing new in it: otherwise the next
     // state would read a thread we already know as unseen and ping once more for old messages.
     dmSeen[peer] = last.id;
+    // On screen means read: tell the server, which keeps it on the conversation list and relays it.
+    if (viewing(peer)) markRead(peer, last.id);
     if (last.id <= seen) continue;
     const fresh = list.filter((c) => c.id > seen && c.from !== myId).length;
     // Unread unless that thread is open on screen right now.

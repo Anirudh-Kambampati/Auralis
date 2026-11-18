@@ -8,6 +8,11 @@ import webpush from 'web-push';
 import { openStore, checkPassword, dmThread } from './store.js';
 import { openPgStore } from './store-pg.js';
 import { files, isPng, isJpeg } from './files.js';
+import { focus as focusHandlers, chat as chatHandlers } from './handlers.js';
+import {
+  tail, pushTail, warm, dmView as dmViewInCache, groupsView as groupsViewInCache, mutedView, seenView, threadMuted, setMute, muting, serverThread,
+  noteSeen, flushSeen, makeRefreshThread, loadPlayerThreads, noteThread as noteThreadInCache,
+} from './chat-cache.js';
 import {
   ITEMS, WALLPAPERS, FLOORS, SKINS, HAIRS, SHIRTS, STYLES, FACES, OUTFITS, BODIES, ACCESSORIES, isFocusLength, canPlace, placeSwaps, focusReward, quitReward, quitMinutes, focusEnd, streakDays, streakBonus,
   WALL_PATTERNS, FLOOR_STYLES, PETS, MAX_PETS, SIZES, bondLevel, NOTIFY, wantsNotify, EXPAND_COST, colorsFor, USES, PET_ACCS, MAX_ROOMS, ROOM_COST,
@@ -41,6 +46,65 @@ const store = process.env.DATABASE_URL
   : openStore(process.env.DB_FILE || path.join(root, 'auralis.db'), legacy);
 console.log(`Storage: ${process.env.DATABASE_URL ? 'Postgres (DATABASE_URL)' : 'local SQLite'}; files: ${files ? 'Neon Object Storage' : 'off'}`);
 const { db } = store;
+
+// The chat cache (tails, thread list, mutes, and the state views) lives in chat-cache.js. index.js
+// keeps only the glue: it builds `refreshThread` from the live world and passes `store` to the cache
+// functions that read or write the archive.
+
+// ---------- study sessions: an append-only log, rolled up after 90 days ----------
+// The newest 3000 sessions used to ride on the player row, rewritten on every save. They are a table of
+// their own now: the stats panel shows the last 90 days in detail plus one entry per earlier day and
+// subject, and the leaderboard sums minutes from the log and the roll-up.
+const SESSION_DAYS = 90;
+const sessionCutoff = () => Date.now() - SESSION_DAYS * 86_400_000;
+const sessionCache = new Map(); // playerId -> their sessions, oldest first (connected players only)
+const mySessions = (p) => sessionCache.get(p.id) ?? [];
+
+// What the panel needs on connect: the detail window, and the days already folded up.
+async function loadSessions(p) {
+  const [recent = [], days = []] = await Promise.all([store.sessionsFor?.(p.id, sessionCutoff()), store.sessionDaysFor?.(p.id)]);
+  const all = [...days, ...recent].sort((a, b) => a.at - b.at);
+  sessionCache.set(p.id, all);
+  return all;
+}
+
+// A finished session is appended to the log. A failed append is queued and retried, because losing the
+// row while `totalMinutes` still counts it makes the panel and the leaderboard disagree forever.
+const pendingSessions = new Map(); // `${playerId}|${at}|${tag}` -> [playerId, session]
+const queueSession = (playerId, session) => pendingSessions.set(`${playerId}|${session.at}|${session.tag}`, [playerId, session]);
+function recordSession(p, session) {
+  Promise.resolve(store.addSession?.(p.id, session))
+    .then(() => boardCache.clear()) // the boards are stale from this moment
+    .catch((err) => { queueSession(p.id, session); console.error('session not saved; will retry', err); });
+  const list = sessionCache.get(p.id) ?? [];
+  list.push(session);
+  sessionCache.set(p.id, list);
+}
+setInterval(async () => {
+  for (const [key, [playerId, session]] of [...pendingSessions]) {
+    try { await store.addSession?.(playerId, session); pendingSessions.delete(key); boardCache.clear(); }
+    catch { return; } // still unreachable: try again next round
+  }
+}, 60_000).unref();
+
+// The leaderboard sums two tables across everyone who could appear on it, and the same board is asked
+// for by everyone looking at it. A short memo, dropped whenever a session is appended, is enough.
+const boardCache = new Map(); // scope|period|ids -> { at, minutes }
+const BOARD_MS = 30_000;
+async function boardMinutes(since, ids, key) {
+  const hit = boardCache.get(key);
+  if (hit && Date.now() - hit.at < BOARD_MS) return hit.minutes;
+  let minutes = {};
+  try { minutes = (await store.sessionTotals?.(since, ids)) ?? {}; } catch (err) { console.error('leaderboard totals failed', err); }
+  boardCache.set(key, { at: Date.now(), minutes });
+  if (boardCache.size > 200) boardCache.clear();
+  return minutes;
+}
+
+// First boot after the `threads` table exists: build everyone's conversation list from the chat the
+// player and house rows still carry. Later boots find it already seeded and do nothing.
+const seededThreads = await store.seedThreads?.();
+if (seededThreads) console.log(`Threads: seeded ${seededThreads} conversation rows`);
 // Friends, by pair key "a|b" (sorted ids). Saved straight to the friends table on every change.
 const friends = new Map((await store.friends()).map((f) => [`${f.a}|${f.b}`, f]));
 const pairKey = (x, y) => [x, y].sort().join('|');
@@ -100,6 +164,110 @@ const save = () => {
   clearTimeout(saveTimer);
   saveTimer = setTimeout(store.saveAll, 500);
 };
+
+// Chat used to ride on the player and house rows. It lives only in `messages`/`threads` now, so the rows
+// are cleaned once: mutes move onto `threads`, and the arrays go, which is what makes the next save stop
+// writing them. Idempotent — a second boot finds nothing left to move.
+for (const row of (await store.threadMutes?.()) ?? []) setMute({ id: row.playerId }, row.thread, row.until);
+let movedMutes = 0;
+for (const p of Object.values(db.players)) {
+  for (const [thread, until] of Object.entries(p.mutedThreads ?? {})) {
+    const key = serverThread(p, thread); // rows from before the split name a DM by the person
+    if (muting(p, key) !== undefined) continue;
+    setMute(p, key, until);
+    Promise.resolve(store.setThreadMute?.(p.id, key, until)).catch((err) => console.error('mute move failed', err));
+    movedMutes++;
+  }
+  delete p.mutedThreads;
+}
+if (movedMutes) console.log(`Chat: ${movedMutes} mutes moved onto the conversation list`);
+store.clearMutedThreads?.(); // the old table is migrated; stop reading it back into rows
+
+// Chat themes used to be written into the player row on every pick (and Postgres never read them back,
+// so they did not survive a restart there). They are a table now: read once, kept in memory, and the
+// copy on the row is dropped so saves stop writing it. Entries only on a row are moved across first.
+const storedThemes = (await store.chatThemes?.()) ?? [];
+const themeKeys = new Set(storedThemes.map((t) => `${t.playerId}|${t.thread}`));
+for (const t of storedThemes) {
+  const p = db.players[t.playerId];
+  if (p) { p.chatThemes = p.chatThemes ?? {}; p.chatThemes[t.thread] = t.color; }
+}
+let movedThemes = 0;
+for (const p of Object.values(db.players)) {
+  for (const [thread, color] of Object.entries(p.chatThemes ?? {})) {
+    if (themeKeys.has(`${p.id}|${thread}`)) continue;
+    Promise.resolve(store.setChatTheme?.(p.id, thread, color)).catch((err) => console.error('theme move failed', err));
+    movedThemes++;
+  }
+  delete p.chatThemes;
+}
+if (movedThemes) { save(); console.log(`Chat: ${movedThemes} themes moved into their own table`); }
+let droppedChat = false;
+for (const h of Object.values(db.houses)) if ('chat' in h) { delete h.chat; droppedChat = true; }
+for (const p of Object.values(db.players)) {
+  if ('dm' in p) { delete p.dm; droppedChat = true; }
+  for (const g of Object.values(p.groups ?? {})) if ('msgs' in g) { delete g.msgs; droppedChat = true; }
+}
+if (droppedChat) { save(); console.log('Chat: conversations moved into the archive; the rows no longer carry them'); }
+
+// Study sessions used to ride on the player row (the newest 3000 of them). They are a log in their own
+// table now: move what is still on the rows across once, wait for it, then drop it so saves stop writing it.
+const movingSessions = [];
+let movedSessions = 0;
+for (const p of Object.values(db.players)) {
+  if (!Array.isArray(p.sessions)) continue;
+  for (const s of p.sessions) {
+    if (!Number.isFinite(s?.at) || !Number.isFinite(s?.minutes)) continue;
+    movingSessions.push(Promise.resolve(store.addSession?.(p.id, s)).catch((err) => console.error('session move failed', err)));
+    movedSessions++;
+  }
+  delete p.sessions;
+}
+if (movedSessions) {
+  await Promise.all(movingSessions);
+  save();
+  console.log(`Sessions: ${movedSessions} moved into their own table`);
+}
+// Anything past the detail window folds into the day roll-up: once at boot, then every six hours.
+const rollUp = () => Promise.resolve(store.rollUpSessions?.(sessionCutoff()))
+  .then((n) => n && console.log(`Sessions: rolled up ${n} day rows`))
+  .catch((err) => console.error('session roll-up failed', err));
+await rollUp();
+setInterval(rollUp, 6 * 3600_000).unref();
+// The log is the source of truth, so a total that is behind it was a write that never landed: raise it
+// (never lower it, which would erase history older than the log window).
+const sessionTotals = (await Promise.resolve(store.sessionTotals?.(0)).catch(() => ({}))) ?? {};
+let fixedTotals = 0;
+for (const [id, minutes] of Object.entries(sessionTotals)) {
+  const p = db.players[id];
+  if (p && minutes > (p.totalMinutes ?? 0)) { p.totalMinutes = minutes; fixedTotals++; }
+}
+if (fixedTotals) { save(); console.log(`Sessions: reconciled ${fixedTotals} totals with the log`); }
+
+// Chat history is kept two years, then pruned daily: the archive is a feature, not a promise to keep
+// every byte forever. Pictures the deleted messages carried are swept up by the upload cleaner, which
+// deletes any file no message refers to.
+const CHAT_RETENTION_DAYS = 730;
+async function pruneChat() {
+  const before = Date.now() - CHAT_RETENTION_DAYS * 86_400_000;
+  try {
+    // The pictures go with their messages: after the delete nothing refers to them any more.
+    if (files) {
+      for (const key of (await Promise.resolve(store.messageImages?.(before))) ?? []) {
+        await files.delete(key).catch((err) => console.error('pruned picture not deleted', key, err));
+      }
+    }
+    const n = await Promise.resolve(store.pruneMessages?.(before));
+    if (n) console.log(`Chat: pruned ${n} messages older than two years`);
+  } catch (err) {
+    console.error('chat prune failed', err);
+  }
+}
+await pruneChat();
+setInterval(pruneChat, 24 * 3600_000).unref();
+
+// Read receipts are held for a moment and written once per thread (see chat-cache.js).
+setInterval(() => flushSeen(store), 2000).unref();
 
 // Pick up coins edited by hand in the accounts table. Only while someone's online, so an idle Neon database can still sleep.
 setInterval(async () => {
@@ -162,13 +330,11 @@ const endDmWatch = (key, byId) => {
   const [a, b] = key.split('|');
   const by = db.players[byId ?? w.by]?.name ?? 'Someone';
   const msg = { id: nextId++, from: byId ?? w.by, by, text: 'ended the watch party', at: Date.now() };
-  const pa = db.players[a], pb = db.players[b];
-  if (pa && pb) {
-    pa.dm ??= {}; pb.dm ??= {};
-    pa.dm[b] = [...(pa.dm[b] ?? []), msg].slice(-50);
-    pb.dm[a] = [...(pb.dm[a] ?? []), msg].slice(-50);
-    trimDmThreads(pa.dm); trimDmThreads(pb.dm);
-    store.addMessage(dmThread(a, b), msg);
+  if (db.players[a] && db.players[b]) {
+    const thread = dmThread(a, b);
+    store.addMessage(thread, msg);
+    pushTail(thread, msg);
+    noteThread(thread, msg, [a, b]);
   }
   for (const id of [a, b]) send(sockets.get(id), { t: 'watch_ended', scope: 'dm' });
   refresh(a, b);
@@ -183,11 +349,9 @@ const endGroupWatch = (gid, byId) => {
   const g = db.players[w.by]?.groups?.[gid] ?? Object.values(db.players).map((q) => q.groups?.[gid]).find(Boolean);
   const members = g?.members ?? [];
   store.addMessage(`g:${gid}`, msg);
-  for (const id of members) {
-    const qg = db.players[id]?.groups?.[gid];
-    if (qg) qg.msgs = [...qg.msgs, msg].slice(-50);
-    send(sockets.get(id), { t: 'watch_ended', scope: 'group' });
-  }
+  noteThread(`g:${gid}`, msg, members);
+  pushTail(`g:${gid}`, msg);
+  for (const id of members) send(sockets.get(id), { t: 'watch_ended', scope: 'group' });
   refresh(...members);
   save();
 };
@@ -196,28 +360,13 @@ const lastDm = new Map(); // playerId -> ms, same guard for private messages
   const cheerCount = new Map(); // playerId -> number of cheers received in current focus session
   const lastInvite = new Map(); // 'from>to' -> ms: one study invite per pair every 30 s
   const MAX_EVENTS = 100; // per calendar; the earliest dates drop off first
-  let nextId = Date.now();
-  // A message someone is replying to, by id: the newest 50 of a thread live on player/house rows, so look there.
-  const findMsg = (thread, id) => {
+  // A message id must never repeat: the archive ignores a duplicate and history is paged by
+  // `id < before`, so a restart has to resume after the newest stored message, not at Date.now().
+  let nextId = Math.max(Date.now(), (Number(await store.lastMessageId?.()) || 0) + 1);
+  // A message someone is replying to, by id: history lives in the archive, so that is where the quote is read.
+  const findMsg = async (thread, id) => {
     if (!Number.isFinite(id)) return null;
-    if (thread.startsWith('h:')) {
-      const h = db.houses[thread.slice(2)];
-      return (h?.chat ?? []).find((m) => m.id === id) ?? null;
-    }
-    if (thread.startsWith('d:')) {
-      const [a, b] = thread.slice(2).split('|');
-      const list = db.players[a]?.dm?.[b] ?? db.players[b]?.dm?.[a] ?? [];
-      return list.find((m) => m.id === id) ?? null;
-    }
-    if (thread.startsWith('g:')) {
-      const gid = thread.slice(2);
-      for (const pid of Object.keys(db.players)) {
-        const qg = db.players[pid]?.groups?.[gid];
-        if (qg) return (qg.msgs ?? []).find((m) => m.id === id) ?? null;
-      }
-      return null;
-    }
-    return null;
+    try { return (await store.messageIn?.(thread, id)) ?? null; } catch (err) { console.error('reply lookup failed', err); return null; }
   };
 
 const newCode = () => {
@@ -306,16 +455,6 @@ const has = (table, key) => typeof key === 'string' && Object.hasOwn(table, key)
 const cleanText = (s, max) => String(s ?? '').replace(/[\u0000-\u001f]/g, '').trim().slice(0, max);
 const cleanName = (s) => String(s ?? '').replace(/[^\p{L}\p{N} _.-]/gu, '').trim().slice(0, 16) || 'Studier';
 
-// Keep private conversations bounded: forget the least recently used threads.
-const MAX_DM_THREADS = 20;
-function trimDmThreads(rec) {
-  const keys = Object.keys(rec);
-  if (keys.length <= MAX_DM_THREADS) return;
-  const lastAt = (k) => rec[k].at(-1)?.at ?? 0;
-  keys.sort((a, b) => lastAt(a) - lastAt(b));
-  for (const k of keys.slice(0, keys.length - MAX_DM_THREADS)) delete rec[k];
-}
-
 // How a pet answers being fussed over, read from its bond with you. The words change with the bond; the number
 // itself never appears anywhere.
 const PET_LINES = ['looks up at you, curious', 'is happy to see you', 'leans into your hand', 'trots over and does a little spin', 'flops against your legs, delighted'];
@@ -359,8 +498,9 @@ function friendList(p) {
 }
 // Re-send state to each of these players' houses (friends and DMs reach across houses).
 const refresh = (...ids) => { for (const code of new Set(ids.map((id) => db.players[id]?.house))) if (code) broadcastHouse(code); };
-// This player has muted the thread's notifications: 0 is forever, a timestamp is when the pause ends.
-const threadMuted = (p, thread) => { const until = p.mutedThreads?.[thread]; return until === 0 || (typeof until === 'number' && Date.now() < until); };
+// Which houses should see a thread change? A house's own, or the houses of the people in a dm or group.
+// Built here because it needs the live world; the cache itself knows nothing about houses.
+const refreshThread = makeRefreshThread({ broadcastHouse, refresh, db });
 // The bell: things that happened to a player, kept (newest 30) so whatever they missed while away is there later.
 // The same thing from the same person within 10 minutes (petting, say) folds into one entry with a count.
 function inbox(q, kind, from, text) {
@@ -371,28 +511,44 @@ function inbox(q, kind, from, text) {
   save();
 }
 
+// A client that stopped reading (a phone that lost signal) would otherwise keep every broadcast
+// queued inside its socket - the usual way a WebSocket server runs out of memory. Past a couple of
+// megabytes, drop the socket instead: it reconnects and gets a fresh state.
+const MAX_BUFFERED = 2 * 1024 * 1024;
+// The cache writers, bound to the live store. Thin wrappers so call sites read the same as before.
+const noteThread = (thread, msg, memberIds) => noteThreadInCache(thread, msg, memberIds, store);
+const loadPlayerThreadsIn = (p) => loadPlayerThreads(p, store);
+const dmView = (p) => dmViewInCache(p, store, refreshThread);
+const groupsView = (p) => groupsViewInCache(p, store, refreshThread);
+
 function send(ws, msg) {
-  if (ws?.readyState === 1) ws.send(JSON.stringify(msg));
+  if (ws?.readyState !== 1) return;
+  if (ws.bufferedAmount > MAX_BUFFERED) { ws.terminate(); return; }
+  ws.send(JSON.stringify(msg));
 }
 
 function broadcastHouseNow(code) {
   const h = db.houses[code];
   if (!h) return;
   const w = watches.get(code);
+  const thread = `h:${code}`;
+  warm(thread, store, refreshThread); // the first state may carry no lines; the load sends another one when it lands
   // now lets clients work out how far a playing video has got without trusting their own clocks.
   const house = {
     code, owner: h.owner ?? null, ownerName: db.players[h.owner]?.name ?? null,
-    todos: h.todos ?? [], chat: (h.chat ?? []).slice(-50),
+    todos: h.todos ?? [], chat: tail(thread),
     events: h.events ?? [], announcements: h.announcements ?? [], watch: w ? { ...w, now: Date.now(), scope: 'house' } : null,
   };
   for (const id of h.members) {
+    const ws = sockets.get(id);
     const p = db.players[id];
+    if (!ws) continue; // nobody to send to: their state is not built
     // Personal to-dos ride along in `me`, which only this player receives.
     const dmw = houseDmWatch(p);
     const gw = houseGroupWatch(p);
     const privateWatch = gw ? groupWatchPayload(gw[0], gw[1]) : dmw ? dmWatchPayload(dmw[0], dmw[1], id) : null;
-    send(sockets.get(id), { t: 'state', house: { ...house, members: h.members.map((mid) => publicPlayer(db.players[mid], id)), todos: house.todos.filter((t) => canSee(t, h, id)) }, me: { id: p.id, home: p.home, ...houseLists(p), coins: p.coins, discount: !!p.discount, notes: p.notes ?? [], inbox: p.inbox ?? [], inboxSeen: p.inboxSeen ?? 0, tipsSeen: p.tipsSeen ?? [], events: p.events ?? [], inventory: p.inventory, crafted: p.crafted ?? [], ready: p.ready ?? {}, petAccs: p.petAccs ?? [], ...(sentSessions.get(id) !== (p.sessions ?? []).length && { sessions: p.sessions ?? [] }), subjects: p.subjects ?? [], hiddenSubjects: p.hiddenSubjects ?? [], todos: p.todos ?? [], dm: p.dm ?? {}, groups: p.groups ?? {}, friends: friendList(p), notify: p.notify ?? {}, mutedThreads: p.mutedThreads ?? {}, chatThemes: p.chatThemes ?? {}, pushKey: pushOn ? PUSH_KEY : undefined, watch: privateWatch } });
-    if (sockets.has(id)) sentSessions.set(id, (p.sessions ?? []).length);
+    send(ws, { t: 'state', house: { ...house, members: h.members.map((mid) => publicPlayer(db.players[mid], id)), todos: house.todos.filter((t) => canSee(t, h, id)) }, me: { id: p.id, home: p.home, ...houseLists(p), coins: p.coins, discount: !!p.discount, notes: p.notes ?? [], inbox: p.inbox ?? [], inboxSeen: p.inboxSeen ?? 0, tipsSeen: p.tipsSeen ?? [], events: p.events ?? [], inventory: p.inventory, crafted: p.crafted ?? [], ready: p.ready ?? {}, petAccs: p.petAccs ?? [], ...(sentSessions.get(id) !== mySessions(p).length && { sessions: mySessions(p) }), subjects: p.subjects ?? [], hiddenSubjects: p.hiddenSubjects ?? [], todos: p.todos ?? [], dm: dmView(p), groups: groupsView(p), friends: friendList(p), notify: p.notify ?? {}, mutedThreads: mutedView(p), threadSeen: seenView(p), chatThemes: p.chatThemes ?? {}, pushKey: pushOn ? PUSH_KEY : undefined, watch: privateWatch } });
+    sentSessions.set(id, mySessions(p).length);
   }
 }
 // Throttled full-house broadcast: repeated updates to the same house within BROADCAST_MS
@@ -418,13 +574,57 @@ const buddiesOf = (p, now) => db.houses[p.house].members.filter((id) => {
 }).length;
 function newRoom() { return { wallpaper: WALLPAPERS[0], floor: FLOORS[0], furniture: [] }; }
 
+// One message budget per connection: a burst of 40, then 8 a second. The per-intent cooldowns (chat,
+// pats, cheers) are separate rules; this is the backstop against a script doing something legal at
+// full speed. Over budget the message is dropped and the client is told, rather than disconnected.
+const RATE_BURST = 40, RATE_PER_MS = 8 / 1000;
+function takeTurn(ws) {
+  const now = Date.now();
+  ws.tokens = Math.min(RATE_BURST, (ws.tokens ?? RATE_BURST) + (now - (ws.lastTurn ?? now)) * RATE_PER_MS);
+  ws.lastTurn = now;
+  if (ws.tokens < 1) return false;
+  ws.tokens -= 1;
+  return true;
+}
+
 async function handle(p, m) {
+  const ws = sockets.get(p.id);
+  if (ws && !takeTurn(ws)) {
+    if (Date.now() - (ws.rateTold ?? 0) > 1000) { ws.rateTold = Date.now(); send(ws, { t: 'error', text: 'Slow down a little — too many actions at once.' }); }
+    return;
+  }
   const room = roomOf(p, m);
   if (['place', 'move', 'pickup', 'room', 'flip', 'restyle', 'shape', 'expand', 'curtains', 'turn'].includes(m.t) && !room) return;
   // Furniture is addressed by position. Anything but a real integer fetches a built-in
   // (`furniture['toString']`) or nothing, so those messages only run for real indices.
   if (['move', 'pickup', 'turn', 'flip', 'restyle', 'shape', 'light', 'paint', 'water', 'brew', 'claw', 'craft'].includes(m.t) && !Number.isInteger(m.index)) return;
   if (m.t === 'water' && !Number.isInteger(m.r)) return;
+  // Focus and chat live in handlers.js. Each domain is a plain object of methods with the same cases
+  // the switch had, called with one context object; the switch keeps its guards, its default and its
+  // save()/broadcastHouse() tail, so a domain move is byte-for-byte.
+  const domain = focusHandlers[m.t] ? focusHandlers : chatHandlers[m.t] ? chatHandlers : null;
+  if (domain) {
+    const ctx = {
+      sockets, db, p, m, store, pushTail, noteThread, dmThread, findMsg, isFriend, cleanText,
+      lastDm, lastChat, chatImg, attachLabel, threadMuted, push, inbox, save, broadcastHouse,
+      refresh, lastCheer, cheerCount, lastInvite, setTz, focusEnd, focusStart, buddiesOf,
+      quitReward, quitMinutes, caffeineOverlap, recordSession, streakDays, streakBonus,
+      caffeineMinutes, mySessions, bondLevel, PETS, send, groupWatches, houseGroupWatch,
+      watches, dmWatches, endDmWatch, pairKey, parseVideo, room,
+      // Names the moved bodies still reach for outside the per-message state: the catalog rules they
+      // call, the live world's friend and visit sets, the mute writer, and `handle` itself (a visit
+      // approval is the same path as joining by code).
+      isFocusLength, focusReward, friends, visitAsks, setMute, houseDmWatch, handle, noteSeen, serverThread,
+      // Message ids are the one value a moved body changes. It is a counter (`let nextId` below), so
+      // the body is handed a function instead: a destructured number would be a stale copy and
+      // `nextId++` on it would throw.
+      newId: () => nextId++,
+    };
+    // A method returns true where the switch had a `break;` (fall through to save + broadcast), and
+    // undefined where it had a `return;` (skip them). Same tail, same cases.
+    if (await domain[m.t](ctx)) { save(); broadcastHouse(p.house); }
+    return;
+  }
   switch (m.t) {
     case 'look': {
       // Your name is your login username, so a new one must be free and username-shaped.
@@ -522,31 +722,27 @@ async function handle(p, m) {
     }
     case 'leaderboard': {
       // Ranked by focused minutes, this week (last 7 days) or all time; house only, friends, everyone, or houses.
+      // The minutes are summed from the session log and its roll-up, never from a number kept on a row.
       const since = m.period === 'all' ? 0 : Date.now() - 7 * 86_400_000;
+      const pool = m.scope === 'all' ? Object.values(db.players)
+        : m.scope === 'friends' ? [p, ...friendList(p).filter((f) => f.status === 'friend').map((f) => db.players[f.id])].filter(Boolean)
+          : m.scope === 'houses' ? [] : db.houses[p.house].members.map((id) => db.players[id]).filter(Boolean);
+      // null means everyone, which is the only pool too big to name.
+      const ids = m.scope === 'all' ? null
+        : m.scope === 'houses' ? [...new Set(Object.values(db.houses).filter((h) => h.owner && h.members.length).flatMap((h) => h.members))]
+          : pool.map((o) => o.id);
+      const minutes = await boardMinutes(since, ids, `${m.scope}|${m.period}|${ids ? [...ids].sort().join(',') : '*'}`);
+      const sumOf = (members) => members.reduce((n, id) => n + (minutes[id] ?? 0), 0);
       let rows;
       if (m.scope === 'houses') {
-        // Aggregate house-level leaderboard
-        const houseStats = Object.values(db.houses).filter((h) => h.owner && h.members.length > 0).map((h) => {
-          const members = h.members.map((id) => db.players[id]).filter(Boolean);
-          const minutes = since
-            ? members.reduce((sum, o) => sum + (o.sessions ?? []).filter((s) => s.at >= since).reduce((n, s) => n + s.minutes, 0), 0)
-            : members.reduce((sum, o) => sum + o.totalMinutes, 0);
-          return { name: h.ownerName ?? 'Unnamed house', members: members.length, minutes, me: h.code === p.house };
-        });
-        rows = houseStats
+        rows = Object.values(db.houses).filter((h) => h.owner && h.members.length > 0)
+          .map((h) => ({ name: h.ownerName ?? 'Unnamed house', members: h.members.length, minutes: sumOf(h.members), me: h.code === p.house }))
           .filter((r) => r.minutes > 0 || r.me)
           .sort((a, b) => b.minutes - a.minutes)
           .slice(0, 25);
       } else {
-        const pool = m.scope === 'all' ? Object.values(db.players)
-          : m.scope === 'friends' ? [p, ...friendList(p).filter((f) => f.status === 'friend').map((f) => db.players[f.id])]
-            : db.houses[p.house].members.map((id) => db.players[id]);
         rows = pool
-          .map((o) => ({
-            name: o.name,
-            me: o.id === p.id,
-            minutes: since ? (o.sessions ?? []).filter((s) => s.at >= since).reduce((n, s) => n + s.minutes, 0) : o.totalMinutes,
-          }))
+          .map((o) => ({ name: o.name, me: o.id === p.id, minutes: minutes[o.id] ?? 0 }))
           .filter((r) => r.minutes > 0 || r.me)
           .sort((a, b) => b.minutes - a.minutes)
           .slice(0, 25);
@@ -563,85 +759,6 @@ async function handle(p, m) {
         }
       }
       return; // no full broadcast for movement
-    case 'focus_start':
-      if (!isFocusLength(m.minutes) || p.focus) return;
-      setTz(p, m.tz);
-      p.focus = { minutes: m.minutes, endsAt: Date.now() + m.minutes * 60_000, tag: cleanText(m.tag, 24) || 'Study' };
-      p.hiddenSubjects = (p.hiddenSubjects ?? []).filter((t) => t !== p.focus.tag); // using a subject again brings it back
-      for (const id of db.houses[p.house].members) {
-        if (id === p.id) continue;
-        inbox(db.players[id], 'study', p, `started studying ${p.focus.tag}`);
-        if (!sockets.has(id)) push(db.players[id], { title: '📚 Study time', body: `${p.name} started studying ${p.focus.tag}`, tag: `study-${p.id}` }, 'study');
-      }
-      break;
-    case 'focus_join': { // join a housemate's running session: same subject, and the timer ends when theirs does
-      const o = db.houses[p.house].members.includes(m.id) ? db.players[m.id] : null;
-      const endsAt = o?.focus && !o.focus.pausedAt ? o.focus.endsAt : 0, left = endsAt - Date.now();
-      if (p.focus || left < 60_000) return;
-      setTz(p, m.tz);
-      p.focus = { minutes: Math.round(left / 60_000), endsAt, tag: o.focus.tag };
-      break;
-    }
-    case 'focus_pause':
-      if (!p.focus || p.focus.pausedAt) return;
-      p.focus.pausedAt = Date.now();
-      break;
-    case 'focus_resume':
-      if (!p.focus?.pausedAt) return;
-      p.focus.endsAt = focusEnd(p.focus);
-      p.focus.pausedAt = null;
-      break;
-    case 'focus_cancel': {
-      if (!p.focus) return;
-      const now = Date.now();
-      const elapsed = now - (focusEnd(p.focus, now) - p.focus.minutes * 60_000); // paused time doesn't count
-      const reward = quitReward(p.focus.minutes, buddiesOf(p, now), elapsed)
-        + caffeineOverlap(focusStart(p.focus, now), now, p.caffeineSince, p.caffeineUntil); // the time you actually worked while caffeinated
-      const minutes = quitMinutes(p.focus.minutes, elapsed);
-      p.coins += reward;
-      if (minutes) {
-        p.totalMinutes += minutes;
-        p.sessions ??= [];
-        // early: counts toward stats and the leaderboard, not toward tomatoes or the long break
-        p.sessions.push({ at: now, minutes, tag: p.focus.tag ?? 'Study', early: true });
-        if (p.sessions.length > 3000) p.sessions.splice(0, p.sessions.length - 3000);
-      }
-      cheerCount.delete(p.id);
-      p.focus = null;
-      if (reward) send(sockets.get(p.id), { t: 'reward', coins: reward, text: `Ended early: +${reward} coins and ${minutes} focus min for the time you put in.` });
-      else send(sockets.get(p.id), { t: 'error', text: 'Ended too early to earn anything. Stay a quarter of the way for a reward.' });
-      break;
-    }
-    case 'focus_done': {
-      if (!p.focus || Date.now() < focusEnd(p.focus) - 2000) return;
-      const now = Date.now();
-      const buddies = buddiesOf(p, now);
-      p.totalMinutes += p.focus.minutes;
-      p.lastDoneAt = now;
-      p.sessions ??= [];
-      p.sessions.push({ at: now, minutes: p.focus.minutes, tag: p.focus.tag ?? 'Study' });
-      if (p.sessions.length > 3000) p.sessions.splice(0, p.sessions.length - 3000);
-      const streak = streakDays(p.sessions, now, p.tz); // includes today, now that this session counts
-      const reward = focusReward(p.focus.minutes, buddies) + Math.ceil(p.focus.minutes * streakBonus(streak))
-        + caffeineMinutes(p.focus, p.caffeineSince, p.caffeineUntil, now); // one extra coin per caffeinated minute of the session
-      // Cheer bonus: 2 coins per cheer, max 5 cheers (10 coins)
-      const cheers = cheerCount.get(p.id) ?? 0;
-      const cheerBonus = Math.min(cheers, 5) * 2;
-      p.coins += reward + cheerBonus;
-      const studied = p.focus.minutes;
-      cheerCount.delete(p.id);
-      p.focus = null;
-      send(sockets.get(p.id), { t: 'reward', coins: reward + cheerBonus, buddies, streak, cheerBonus });
-      // Pets out in the room bond with you as you study; a well-bonded one sometimes digs up a few coins.
-      const out = (p.pets ?? []).filter((x) => !x.away);
-      for (const x of out) x.bond = (x.bond ?? 0) + studied;
-      const best = out.reduce((b, x) => (bondLevel(x.bond) > bondLevel(b?.bond) ? x : b), null), lvl = bondLevel(best?.bond);
-      if (lvl && Math.random() < lvl * 0.1) {
-        p.coins += lvl * 2;
-        send(sockets.get(p.id), { t: 'reward', text: `🐾 ${best.name ?? `Your ${PETS[best.kind]?.name.toLowerCase() ?? 'pet'}`} found ${lvl * 2} coins for you!` });
-      }
-      break;
-    }
     case 'buy': {
       if (!has(ITEMS, m.item)) return;
       const it = ITEMS[m.item];
@@ -1196,333 +1313,6 @@ async function handle(p, m) {
       p.todos = (p.todos ?? []).filter((x) => x.id !== m.id);
       break;
     }
-    // Private messages: the newest 50 ride on both players' records; every one is kept in the messages table.
-    // You can message housemates and friends.
-case 'dm': {
-      const to = db.players[m.to];
-      const text = cleanText(m.text, 200);
-      const img = chatImg(p, m.img);
-      if (!to || !(text || img) || to.id === p.id || !(db.houses[p.house]?.members.includes(to.id) || isFriend(p.id, to.id))) return;
-      const now = Date.now();
-      if (now - (lastDm.get(p.id) ?? 0) < 600) return send(sockets.get(p.id), { t: 'error', text: 'Slow down a little — that message was not sent.' });
-      lastDm.set(p.id, now);
-      const thread = dmThread(p.id, to.id), reply = findMsg(thread, m.replyTo);
-      const msg = { id: nextId++, from: p.id, by: p.name, text, at: now, ...(img && { img }), ...(reply ? { replyTo: reply.id, replyBy: reply.by } : {}) };
-      p.dm ??= {};
-      to.dm ??= {};
-      p.dm[to.id] = [...(p.dm[to.id] ?? []), msg].slice(-50);
-      to.dm[p.id] = [...(to.dm[p.id] ?? []), msg].slice(-50);
-      trimDmThreads(p.dm);
-      trimDmThreads(to.dm);
-      store.addMessage(thread, msg);
-      if (to.house !== p.house) broadcastHouse(to.house);
-      if (!sockets.has(to.id) && !threadMuted(to, p.id)) push(to, { title: p.name, body: text || attachLabel(img), tag: `dm-${p.id}` }, 'dm');
-      break;
-    }
-    // Older messages of one of my conversations (k: 'h' my house, 'd' a private thread with `id`, 'g' my group `id`).
-    case 'history': {
-      const thread = m.k === 'h' ? `h:${p.house}` : m.k === 'd' && typeof m.id === 'string' ? dmThread(p.id, m.id) : m.k === 'g' && p.groups?.[m.id] ? `g:${m.id}` : null;
-      if (!thread || !Number.isFinite(m.before)) return;
-      Promise.resolve(store.history(thread, m.before, 50))
-        .then((msgs) => send(sockets.get(p.id), { t: 'history', k: m.k, id: m.id ?? null, msgs }))
-        .catch((err) => console.error('history failed', err));
-      return;
-    }
-    // Friends: ask by username; they accept or decline. Friends can message each other from any house.
-    case 'friend_request': {
-      // By username, a housemate's display name or id, or a house code (its owner).
-      const mate = (db.houses[p.house]?.members ?? []).map((id) => db.players[id])
-        .find((q) => q.id === m.id || (m.name && q.name?.toLowerCase() === String(m.name).trim().toLowerCase()));
-      const name = cleanText(m.name, 40) || mate?.name;
-      if (!name) return;
-      const fail = (text) => send(sockets.get(p.id), { t: 'error', text });
-      if ([...friends.values()].filter((f) => f.asked_by === p.id && f.status === 'pending').length >= 20) return fail('You have 20 friend requests waiting already.');
-      Promise.resolve(store.playerByUsername(name)).then((id) => {
-        const q = db.players[id] ?? mate ?? db.players[db.houses[name.toUpperCase()]?.owner];
-        if (!q) return fail(`No one is called "${name}", and no house has that code.`);
-        if (q.id === p.id) return fail("That's you!");
-        const key = pairKey(p.id, q.id), f = friends.get(key);
-        if (f?.status === 'accepted') return fail(`You and ${q.name} are already friends.`);
-        if (f?.asked_by === p.id) return fail(`You already asked ${q.name}.`);
-        const [a, b] = key.split('|');
-        // They had already asked me: asking back is a yes.
-        const row = { a, b, status: f ? 'accepted' : 'pending', asked_by: f ? f.asked_by : p.id, at: Date.now() };
-        friends.set(key, row);
-        store.setFriend(row);
-        if (!f) inbox(q, 'friend', p, 'wants to be friends');
-        if (!f && !sockets.has(q.id)) push(q, { title: 'Friend request', body: `${p.name} wants to be friends`, tag: `friend-${p.id}` }, 'dm');
-        refresh(p.id, q.id);
-      }).catch((err) => console.error('friend request failed', err));
-      return;
-    }
-    // Suggestions while typing a friend's username: up to 8 that start with what's typed.
-    case 'friend_search': { // shortcut: scans every player per lookup, move to an indexed store query if players reach the tens of thousands
-      const q = cleanText(m.q, 40).toLowerCase();
-      if (q.length < 2) return;
-      const names = Object.values(db.players).filter((x) => x.id !== p.id && x.name?.toLowerCase().startsWith(q)).slice(0, 8).map((x) => x.name);
-      send(sockets.get(p.id), { t: 'friend_matches', names });
-      return;
-    }
-    // Visiting a friend: ask, and they let you in (you join their house) or say no.
-    case 'visit_ask': {
-      const q = db.players[m.id];
-      if (!q || !isFriend(p.id, q.id) || !q.house || q.house === p.house) return;
-      visitAsks.add(`${q.id}|${p.id}`);
-      inbox(q, 'visit', p, 'wants to visit your house');
-      if (!sockets.has(q.id)) push(q, { title: 'Visit request', body: `${p.name} wants to visit your house`, tag: `visit-${p.id}` }, 'dm');
-      refresh(p.id, q.id);
-      return;
-    }
-    case 'visit_answer': {
-      const guest = db.players[m.id];
-      if (!visitAsks.delete(`${p.id}|${m.id}`) || !guest) return;
-      if (m.yes && isFriend(p.id, guest.id) && p.house) return await handle(guest, { t: 'join', code: p.house }); // same checks as joining by code
-      refresh(p.id, guest.id);
-      return;
-    }
-    case 'friend_accept': {
-      const key = pairKey(p.id, String(m.id)), f = friends.get(key);
-      if (f?.status !== 'pending' || f.asked_by === p.id) return;
-      f.status = 'accepted';
-      f.at = Date.now();
-      store.setFriend(f);
-      refresh(p.id, m.id);
-      return;
-    }
-    case 'friend_remove': { // decline a request, cancel mine, or unfriend
-      const key = pairKey(p.id, String(m.id)), f = friends.get(key);
-      if (!f) return;
-      friends.delete(key);
-      store.deleteFriend(f.a, f.b);
-      refresh(p.id, m.id);
-      return;
-    }
-    // Group chats: a name and some people, each keeping their own copy (like private threads), so a group
-    // lives on after people move house. Made from housemates; anyone in it can leave.
-    case 'group_new': {
-      const h = db.houses[p.house], name = cleanText(m.name, 30);
-      const ids = [...new Set([p.id, ...(Array.isArray(m.members) ? m.members : [])])].filter((id) => h.members.includes(id));
-      if (!name || ids.length < 2) return send(sockets.get(p.id), { t: 'error', text: 'Give the group a name and pick at least one person.' });
-      if (Object.keys(p.groups ?? {}).length >= 20) return send(sockets.get(p.id), { t: 'error', text: "You're in 20 groups already. Leave one first." });
-      const gid = crypto.randomBytes(6).toString('hex'), msg = { id: nextId++, from: '', by: '', text: `${p.name} made the group`, at: Date.now() };
-      for (const id of ids) { const q = db.players[id]; q.groups ??= {}; q.groups[gid] = { name, members: ids, msgs: [msg] }; }
-      store.addMessage(`g:${gid}`, msg);
-      break;
-    }
-    case 'gmsg': {
-      const g = p.groups?.[m.g], text = cleanText(m.text, 200), img = chatImg(p, m.img), now = Date.now();
-      if (!g || !(text || img)) return;
-      if (now - (lastDm.get(p.id) ?? 0) < 600) return send(sockets.get(p.id), { t: 'error', text: 'Slow down a little — that message was not sent.' });
-      lastDm.set(p.id, now);
-      const thread = `g:${m.g}`, reply = findMsg(thread, m.replyTo);
-      const msg = { id: nextId++, from: p.id, by: p.name, text, at: now, ...(img && { img }), ...(reply ? { replyTo: reply.id, replyBy: reply.by } : {}) };
-      store.addMessage(`g:${m.g}`, msg);
-      for (const id of g.members) {
-        const q = db.players[id], qg = q?.groups?.[m.g];
-        if (!qg) continue;
-        qg.msgs = [...qg.msgs, msg].slice(-50);
-        if (id !== p.id && !sockets.has(id) && !threadMuted(q, `g:${m.g}`)) push(q, { title: g.name, body: `${p.name}: ${text || attachLabel(img)}`, tag: `g-${m.g}` }, 'dm');
-      }
-      for (const code of new Set(g.members.map((id) => db.players[id]?.house))) if (code && code !== p.house) broadcastHouse(code);
-      break;
-    }
-    case 'group_leave': {
-      const g = p.groups?.[m.g];
-      if (!g) return;
-      const msg = { id: nextId++, from: '', by: '', text: `${p.name} left the group`, at: Date.now() };
-      store.addMessage(`g:${m.g}`, msg);
-      for (const id of g.members) {
-        const qg = db.players[id]?.groups?.[m.g];
-        if (!qg || id === p.id) continue;
-        qg.members = qg.members.filter((x) => x !== p.id);
-        qg.msgs = [...qg.msgs, msg].slice(-50);
-      }
-      delete p.groups[m.g];
-      for (const code of new Set(g.members.map((id) => db.players[id]?.house))) if (code && code !== p.house) broadcastHouse(code);
-      break;
-    }
-case 'chat': {
-      const h = db.houses[p.house];
-      const text = cleanText(m.text, 200), img = chatImg(p, m.img);
-      const now = Date.now();
-      if (!text && !img) return;
-      if (now - (lastChat.get(p.id) ?? 0) < 600) return send(sockets.get(p.id), { t: 'error', text: 'Slow down a little — that message was not sent.' });
-      lastChat.set(p.id, now);
-      const thread = `h:${h.code}`, reply = findMsg(thread, m.replyTo);
-      h.chat ??= [];
-      h.chat.push({ id: nextId++, from: p.id, by: p.name, text, at: now, ...(img && { img }), ...(reply ? { replyTo: reply.id, replyBy: reply.by } : {}) });
-      store.addMessage(`h:${h.code}`, h.chat.at(-1));
-      h.chat = h.chat.slice(-50);
-      // Handle @mentions: find @name patterns and notify those users
-      const mentionRegex = /@(\w+)/g;
-      const mentionedNames = [...text.matchAll(mentionRegex)].map((m) => m[1].toLowerCase());
-      const mentionedIds = new Set();
-      if (mentionedNames.length) {
-        for (const id of h.members) {
-          if (id !== p.id) {
-            const player = db.players[id];
-            if (mentionedNames.includes(player.name.toLowerCase())) {
-              mentionedIds.add(id);
-              inbox(player, 'chat', p, `mentioned you in house chat`);
-              if (!sockets.has(id) && !threadMuted(player, thread)) push(player, { title: `💬 @${p.name} mentioned you`, body: text || attachLabel(img), tag: `house-${h.code}` }, 'chat');
-            }
-          }
-        }
-      }
-      // Notify other members (not mentioned, not sender)
-      for (const id of h.members) if (id !== p.id && !mentionedIds.has(id) && !sockets.has(id) && !threadMuted(db.players[id], thread)) push(db.players[id], { title: `${p.name} · house chat`, body: text || attachLabel(img), tag: `house-${h.code}` }, 'house');
-      break;
-    }
-    case 'watch': { // /watch <link>: in house chat starts for the whole house, in a DM starts for just us two
-      const stop = String(m.url ?? '').trim().toLowerCase() === 'stop';
-      const src = stop ? null : parseVideo(String(m.url ?? '').slice(0, 600));
-      if (!stop && !src) return send(sockets.get(p.id), { t: 'error', text: "Can't play that link. Try YouTube, Vimeo, Twitch, Dailymotion or a direct .mp4/.webm link." });
-      if (m.to) {
-        const to = db.players[String(m.to)];
-        if (!to) return;
-        // Only allow private watch with someone you can DM (housemate or friend), in either house.
-        if (!(db.houses[p.house]?.members.includes(to.id) || isFriend(p.id, to.id))) return send(sockets.get(p.id), { t: 'error', text: 'You can only start a private watch party with a friend or housemate.' });
-        const key = pairKey(p.id, to.id), w = dmWatches.get(key);
-        if (stop) {
-          if (!w) return;
-          endDmWatch(key, p.id);
-          save();
-          return;
-        }
-        dmWatches.set(key, { src, by: p.id, byName: p.name, playing: true, pos: src.start, at: Date.now() });
-        const msg = { id: nextId++, from: p.id, by: p.name, text: 'started a watch party', at: Date.now() };
-        p.dm ??= {}; to.dm ??= {};
-        p.dm[to.id] = [...(p.dm[to.id] ?? []), msg].slice(-50);
-        to.dm[p.id] = [...(to.dm[p.id] ?? []), msg].slice(-50);
-        trimDmThreads(p.dm); trimDmThreads(to.dm);
-        store.addMessage(dmThread(p.id, to.id), msg);
-        if (!sockets.has(to.id)) push(to, { title: `${p.name} - watch party`, body: 'started a watch party with you', tag: `dm-watch-${p.id}` }, 'dm');
-        save();
-        refresh(p.id, to.id);
-        return;
-      }
-      const h = db.houses[p.house];
-      if (stop && !watches.has(p.house)) return;
-      if (stop) watches.delete(p.house);
-      else watches.set(p.house, { src, by: p.id, byName: p.name, playing: true, pos: src.start, at: Date.now() });
-      h.chat ??= [];
-      h.chat.push({ id: nextId++, from: p.id, by: p.name, text: stop ? '⏹ ended the watch party' : '🎬 started a watch party', at: Date.now() });
-      store.addMessage(`h:${h.code}`, h.chat.at(-1));
-      h.chat = h.chat.slice(-50);
-      break;
-    }
-    case 'watchCtl': { // someone pressed play/pause or seeked: everyone in that watch party follows
-      if (!Number.isFinite(m.pos) || m.pos < 0 || m.pos > 1e6) return;
-      if (m.scope === 'group' || m.g) {
-        const gid = m.g ? String(m.g) : (houseGroupWatch(p)?.[0] ?? null);
-        const w = gid ? groupWatches.get(gid) : null;
-        if (!gid || !w || !p.groups?.[gid]) return;
-        w.playing = !!m.playing;
-        w.pos = m.pos;
-        w.at = Date.now();
-        refresh(...(p.groups[gid].members ?? []));
-        return;
-      }
-      if (m.scope === 'dm' || m.to) {
-        const key = m.to ? pairKey(p.id, String(m.to)) : (houseDmWatch(p)?.[0] ?? null);
-        const w = key ? dmWatches.get(key) : null;
-        if (!key || !w) return;
-        w.playing = !!m.playing;
-        w.pos = m.pos;
-        w.at = Date.now();
-        refresh(...key.split('|'));
-        return;
-      }
-      const w = watches.get(p.house);
-      if (!w) return;
-      w.playing = !!m.playing;
-      w.pos = m.pos;
-      w.at = Date.now();
-      broadcastHouse(p.house);
-      return;
-    }
-    case 'typing': { // typing indicator: broadcast to thread participants
-      const thread = m.thread;
-      if (!thread) return;
-      // Broadcast to all members in the thread
-      if (thread.startsWith('h:')) {
-        const h = db.houses[thread.slice(2)];
-        if (h) for (const id of h.members) if (id !== p.id) send(sockets.get(id), { t: 'typing', thread, user: p.id, name: p.name, typing: m.typing });
-      } else if (thread.startsWith('g:')) {
-        const g = p.groups?.[thread.slice(2)];
-        if (g) for (const id of g.members) if (id !== p.id) send(sockets.get(id), { t: 'typing', thread, user: p.id, name: p.name, typing: m.typing });
-      } else { // dm
-        const other = db.players[thread];
-        if (other && other.id !== p.id) send(sockets.get(other.id), { t: 'typing', thread, user: p.id, name: p.name, typing: m.typing });
-      }
-      break;
-    }
-    case 'presence': { // user presence/status
-      const status = { status: m.status, custom: m.custom || '', until: Number(m.until) || 0, at: Date.now() };
-      p.presence = status;
-      const msg = { t: 'presence', id: p.id, ...status };
-      const houses = new Set();
-      if (p.house) houses.add(p.house);
-      for (const [key, f] of friends) if (f.status === 'friend' && (key.startsWith(p.id + '|') || key.endsWith('|' + p.id))) {
-        const otherId = key.startsWith(p.id + '|') ? key.split('|')[1] : key.split('|')[0];
-        const other = db.players[otherId];
-        if (other?.house) houses.add(other.house);
-        send(sockets.get(otherId), msg);
-      }
-      for (const code of houses) {
-        const h = db.houses[code];
-        if (h) for (const id of h.members) send(sockets.get(id), msg);
-      }
-      break;
-    }
-    case 'mute': { // mute/unmute thread: -1 back on, 0 forever, otherwise until a timestamp
-      const thread = m.thread, until = m.until;
-      if (typeof thread !== 'string' || !thread || thread.length > 40 || !Number.isFinite(until)) return;
-      if (until !== -1 && until !== 0 && (until < Date.now() || until > Date.now() + 30 * 86_400_000)) return; // at most a month ahead
-      p.mutedThreads ??= {};
-      if (until === -1) delete p.mutedThreads[thread];
-      else p.mutedThreads[thread] = until;
-      // Persist to store
-      if (store.setMuteThread) await store.setMuteThread(p.id, thread, until);
-      // Answer the asker with what was kept, so their bell settles on the truth (states already in flight may be older).
-      send(sockets.get(p.id), { t: 'mute', thread, until });
-      break;
-    }
-    case 'theme': { // chat theme color
-      const thread = m.thread, color = m.color;
-      p.chatThemes ??= {};
-      if (color) p.chatThemes[thread] = color;
-      else delete p.chatThemes[thread];
-      // Persist to store
-      if (store.setChatTheme) await store.setChatTheme(p.id, thread, color);
-      // Broadcast to thread participants
-      if (thread.startsWith('h:')) {
-        const h = db.houses[thread.slice(2)];
-        if (h) for (const id of h.members) if (id !== p.id) send(sockets.get(id), { t: 'theme', thread, color });
-      } else if (thread.startsWith('g:')) {
-        const g = p.groups?.[thread.slice(2)];
-        if (g) for (const id of g.members) if (id !== p.id) send(sockets.get(id), { t: 'theme', thread, color });
-      } else { // dm
-        const other = db.players[thread];
-        if (other && other.id !== p.id) send(sockets.get(other.id), { t: 'theme', thread, color });
-      }
-      break;
-    }
-    case 'read': { // read receipt
-      const thread = m.thread, id = m.id;
-      // Broadcast to sender
-      if (thread.startsWith('h:')) {
-        const h = db.houses[thread.slice(2)];
-        if (h) for (const memId of h.members) if (memId !== p.id) send(sockets.get(memId), { t: 'read', id, by: p.id, at: Date.now() });
-      } else if (thread.startsWith('g:')) {
-        const g = p.groups?.[thread.slice(2)];
-        if (g) for (const memId of g.members) if (memId !== p.id) send(sockets.get(memId), { t: 'read', id, by: p.id, at: Date.now() });
-      } else { // dm
-        const other = db.players[thread];
-        if (other && other.id !== p.id) send(sockets.get(other.id), { t: 'read', id, by: p.id, at: Date.now() });
-      }
-      break;
-    }
     default:
       return;
   }
@@ -1693,6 +1483,24 @@ async function api(req, res, route) {
   const body = await readJson(req);
   const ip = req.socket.remoteAddress ?? '?';
   if (route === 'logout') { await store.revokeToken(body.token); return reply(200, { ok: true }); }
+  if (route === 'delete') {
+    // The password is the proof: a stolen token can log out, but only the person can erase the account.
+    const acct = await store.findAccount(String(body.username ?? '').trim());
+    if (!acct || !checkPassword(String(body.password ?? ''), acct.pass)) return reply(401, { error: 'Wrong username or password.' });
+    const id = acct.player_id;
+    await store.deleteAccount(id);
+    const gone = db.players[id];
+    if (gone) {
+      for (const h of Object.values(db.houses)) h.members = h.members.filter((x) => x !== id);
+      for (const [code, h] of Object.entries(db.houses)) if (h.owner === id) delete db.houses[code];
+      sockets.get(id)?.close(1000, 'account deleted');
+      sockets.delete(id);
+      sessionCache.delete(id);
+      delete db.players[id];
+      save();
+    }
+    return reply(200, { ok: true });
+  }
   if (tooMany(ip, 20)) return reply(429, { error: 'Too many tries. Wait a few minutes and try again.' });
   const username = String(body.username ?? '').trim();
   const email = String(body.email ?? '').trim().toLowerCase();
@@ -1754,6 +1562,19 @@ const originOk = (origin) => !origin || !ALLOWED.length || ALLOWED.includes(orig
 // own public address every 10 minutes counts as a visitor. Uses ~744 of the 750 free hours a month: one service only.
 if (process.env.RENDER_EXTERNAL_URL) setInterval(() => fetch(`${process.env.RENDER_EXTERNAL_URL}/api/health`).catch(() => {}), 10 * 60_000).unref();
 
+// Readiness, not liveness: a process whose database is unreachable is not ready to take traffic, and
+// answering `ok` from a constant is how a host keeps sending requests to a server that cannot serve them.
+const HEALTH_TIMEOUT_MS = 2000;
+async function health(res) {
+  let timer;
+  const ok = await Promise.race([
+    Promise.resolve().then(() => store.ping?.()).catch(() => false),
+    new Promise((resolve) => { timer = setTimeout(() => resolve(false), HEALTH_TIMEOUT_MS); }),
+  ]).finally(() => clearTimeout(timer));
+  res.writeHead(ok ? 200 : 503, { 'content-type': 'application/json', 'cache-control': 'no-store' })
+    .end(JSON.stringify(ok ? { ok: true, storage: 'ok' } : { ok: false, storage: 'down' }));
+}
+
 const server = http.createServer((req, res) => {
   // "//" is not a URL against a base, and a bad escape is not decodable: answer 400 instead of throwing
   // out of the request listener, which would end the process for everyone.
@@ -1767,8 +1588,8 @@ const server = http.createServer((req, res) => {
     res.setHeader('access-control-allow-methods', 'GET, POST, OPTIONS');
   }
   if (req.method === 'OPTIONS') return res.writeHead(originOk(origin) ? 204 : 403).end();
-  if (path === '/api/health') return res.writeHead(200, { 'content-type': 'application/json' }).end('{"ok":true}');
-  const route = path.match(/^\/api\/(signup|login|logout|snapshots|chatimg)$/)?.[1];
+  if (path === '/api/health') return health(res);
+  const route = path.match(/^\/api\/(signup|login|logout|delete|snapshots|chatimg)$/)?.[1];
   if (route) api(req, res, route).catch((err) => { console.error(err); if (!res.headersSent) res.writeHead(500).end(); });
   else serveStatic(req, res);
 });
@@ -1779,6 +1600,8 @@ const wss = new WebSocketServer({ server, path: '/ws', maxPayload: 64 * 1024, ve
 wss.on('connection', (ws) => {
   let p = null;
   let checking = false;
+  ws.isAlive = true;
+  ws.on('pong', () => { ws.isAlive = true; });
   // A socket error (a broken frame, a client that vanished) is that connection's problem alone.
   ws.on('error', () => ws.close());
   // Nothing a client sends may take the process down: every message is parsed and handled inside
@@ -1797,9 +1620,21 @@ wss.on('connection', (ws) => {
     if (!p) {
       if (m.t !== 'hello' || checking) return;
       // The secret login token, not the public player id, says who you are.
+      // A known database outage is answered at once, so a reconnect loop does not hold the pool waiting.
+      if (store.unavailable?.()) { ws.close(1011, 'storage unavailable'); return; }
       checking = true;
-      const id = await Promise.resolve().then(() => store.playerForToken(m.token)).catch(() => null);
-      checking = false;
+      let id = null;
+      try {
+        id = await store.playerForToken(m.token);
+      } catch (err) {
+        // The token was never checked: storage is unreachable, not the login wrong. Closing with 1011
+        // (instead of `auth ok:false`) makes the client keep its token and retry, rather than sign out.
+        console.error('sign-in lookup failed', err);
+        ws.close(1011, 'storage unavailable');
+        return;
+      } finally {
+        checking = false;
+      }
       if (!id || !db.players[id]) { send(ws, { t: 'auth', ok: false }); ws.close(); return; }
       p = db.players[id];
       // Old saves: drop furniture types that no longer exist; the old cat decoration becomes a real pet.
@@ -1820,6 +1655,10 @@ wss.on('connection', (ws) => {
       p.pets = p.pets.filter((pet) => has(PETS, pet.kind)); // pet kinds that were retired
       ensureHome(p);
       if (!db.houses[p.house]?.members.includes(p.id)) goHome(p); // new player, or their house is gone
+      // Their conversations come from the archive, not from the row: two queries for the whole list.
+      try { await loadPlayerThreadsIn(p); } catch (err) { console.error('chat load failed', err); }
+      // Their study history too: the detail window and the days already rolled up.
+      try { await loadSessions(p); } catch (err) { console.error('sessions load failed', err); }
       sockets.get(p.id)?.close();
       sockets.set(p.id, ws);
       sentSessions.delete(p.id); // a new connection gets the full history once
@@ -1835,6 +1674,7 @@ wss.on('connection', (ws) => {
     try {
       if (p && sockets.get(p.id) === ws) {
         sockets.delete(p.id);
+        sessionCache.delete(p.id);
         broadcastHouse(p.house);
       }
     } catch (err) {
@@ -1843,6 +1683,18 @@ wss.on('connection', (ws) => {
   });
 });
 
+// A half-open connection (a phone that changed network) looks open to us forever, so its send buffer
+// and its place in the house would pile up. A ping every 30 s finds those sockets and ends them.
+const heartbeat = setInterval(() => {
+  for (const ws of wss.clients) {
+    if (ws.isAlive === false) { ws.terminate(); continue; }
+    ws.isAlive = false;
+    ws.ping();
+  }
+}, 30_000);
+heartbeat.unref();
+wss.on('close', () => clearInterval(heartbeat));
+
 // Malformed HTTP (bad headers, a half-sent request line) ends that one connection, never the process.
 server.on('clientError', (err, socket) => {
   if (socket.writable && !socket.destroyed) socket.end('HTTP/1.1 400 Bad Request\r\n\r\n');
@@ -1850,3 +1702,26 @@ server.on('clientError', (err, socket) => {
 });
 
 server.listen(PORT, () => console.log(`Auralis server on http://localhost:${PORT}`));
+
+// A restart (a deploy, a Render cycle) stops taking connections, closes the sockets, writes the save
+// that is still on its timer and closes the pool, then exits. Ten seconds is the cap: a host that
+// waits longer than that kills the process anyway, and a hung close should not hold the deploy.
+let stopping = false;
+async function shutdown(signal) {
+  if (stopping) return;
+  stopping = true;
+  console.log(`${signal}: shutting down`);
+  const done = (async () => {
+    server.close();
+    for (const ws of wss.clients) ws.close(1001, 'restarting');
+    wss.close();
+    await flushSeen(store).catch(() => {});
+    await Promise.resolve(store.saveAll?.()).catch(() => {});
+    await Promise.resolve(store.idle?.()).catch(() => {});
+    await Promise.resolve(store.close?.()).catch(() => {});
+  })();
+  await Promise.race([done, new Promise((resolve) => setTimeout(resolve, 10_000))]);
+  process.exit(0);
+}
+process.on('SIGTERM', () => void shutdown('SIGTERM'));
+process.on('SIGINT', () => void shutdown('SIGINT'));

@@ -61,6 +61,7 @@ export interface MeState {
   friends: Friend[];
   notify: Record<string, boolean>;
   mutedThreads?: Record<string, number>;
+  threadSeen?: Record<string, number>; // thread -> newest message id this member has read
   chatThemes?: Record<string, string>;
   pushKey?: string;
   watch?: WatchState | null; // private watch party (e.g. with one friend), if any
@@ -238,6 +239,7 @@ export interface Session {
   minutes: number;
   tag: string;
   early?: boolean;
+  n?: number; // set on a rolled-up day: how many sessions this entry stands for
 }
 
 // Inbox types

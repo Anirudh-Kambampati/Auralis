@@ -49,7 +49,7 @@ export function chart(sessions, range, anchor) {
     const tag = s.tag || 'Study';
     byTag[tag] = (byTag[tag] ?? 0) + s.minutes;
     total += s.minutes;
-    count++;
+    count += s.n ?? 1; // a rolled-up day stands for the sessions it folded in
   }
   const tags = Object.entries(byTag)
     .sort((a, b) => b[1] - a[1])

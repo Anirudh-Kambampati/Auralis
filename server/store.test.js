@@ -158,6 +158,39 @@ test('saves only write rows that changed', () => {
   again.close();
 });
 
+test('a database created before the shared schema is upgraded in place', () => {
+  const dir = tmp(), file = path.join(dir, 'old.db');
+  // The shape the store used before server/schema.js existed: no schema_migrations, no email/coins,
+  // no reply_to, and case-insensitive uniqueness coming from a column collation.
+  const old = new DatabaseSync(file);
+  old.exec(`
+    create table players (id text primary key, data text not null);
+    create table houses (code text primary key, data text not null);
+    create table accounts (player_id text primary key, username text not null collate nocase unique, pass text not null, created integer not null);
+    create table messages (id integer primary key, thread text not null, from_id text not null, by_name text not null, body text not null, img text, at integer not null);
+    insert into players values ('p1', '{"id":"p1","name":"Old","coins":3}');
+    insert into accounts (player_id, username, pass, created) values ('p1', 'Old', 'x:y', 1);
+    insert into messages (id, thread, from_id, by_name, body, at) values (7, 'h:AAAAA', 'p1', 'Old', 'hi', 7);
+  `);
+  old.close();
+
+  const s = openStore(file);
+  assert.equal(s.db.players.p1.name, 'Old', 'rows are kept');
+  assert.deepEqual(s.history('h:AAAAA', 1e15).map((m) => m.text), ['hi']);
+  s.close();
+
+  const raw = new DatabaseSync(file);
+  const columns = (table) => raw.prepare(`select name from pragma_table_info('${table}')`).all().map((c) => c.name);
+  assert.ok(columns('accounts').includes('email') && columns('accounts').includes('coins'), 'missing columns are added');
+  assert.ok(columns('messages').includes('reply_to'));
+  assert.deepEqual(raw.prepare('select version from schema_migrations').all().map((r) => r.version).sort(),
+    ['001-baseline', '002-indexes', '003-message-ids', '004-threads', '005-sessions', '006-retention'], 'every migration is recorded');
+  const again = openStore(file); // a second open applies nothing and keeps the rows
+  assert.equal(again.db.players.p1.coins, 3);
+  again.close();
+  raw.close();
+});
+
 test('the caffeine window is part of a player and survives a round trip', () => {
   const dir = tmp(), file = path.join(dir, 'caf.db');
   const s = openStore(file);

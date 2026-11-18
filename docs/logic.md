@@ -21,15 +21,19 @@ All rules live in `shared/game.js` and `shared/stats.js`, so the browser and the
 ## Focus and rewards
 
 - Allowed lengths: 15, 25, 45 and 60 minutes. The server stores `endsAt` and accepts `focus_done` only after it has passed (2 s grace).
-- Reward = minutes, plus 25% (rounded up) if another housemate is focusing or finished within the last 2 minutes.
+- Reward = minutes, plus 25% (rounded up) if another housemate is focusing or finished within the last 2 minutes, plus the streak bonus from the Stats section below, plus one coin per caffeinated minute.
+- Every finished session — and one ended early — is appended to the session log (`recordSession` in `server/index.js`). The row is the only copy: nothing reads a session history off a player row any more.
 - When a session starts, the client walks the character to a chair directly behind a desk (or any chair) and seats them facing the viewer.
 
 ## Stats (`shared/stats.js`)
 
-- Sessions are `{ at, minutes, tag }`, where `at` is when the session finished. Bucketing uses the viewer's local time.
+- A session is `{ at, minutes, tag }` (`at` is when it finished; `early: true` when it was cut short), and a **rolled-up day** is the same shape with `n` — how many sessions it stands for. Bucketing uses the viewer's local time.
+- Sessions are an append-only log in their own table (`sessions`), never part of a player row and never updated once written: each finished or ended-early session adds one row, and the player row keeps only `totalMinutes`.
+- Anything older than **90 days** is folded into `session_days` — one row per player, UTC day and subject, accumulating (`n` remembers the count) — once at boot and then every six hours. The panel and the leaderboard read both tables, so totals, streaks, subject splits and the year chart reach back forever while the per-session detail covers about a term.
+- A rolled-up day keeps the day and the subject but not the hour or the session, so **past the window the day chart has no per-hour bars** and a day shows its minutes on its date.
 - Day = 24 hourly bars, Week = Sun–Sat, Month = one bar per day, Year = Jan–Dec. Arrows move the range with `shift()`, which clamps month changes (Jan 31 + 1 month = Feb 1).
-- Streak = consecutive days with at least one session, counted back from today, or from yesterday if nothing is finished yet today.
-- Leaderboard = sum of minutes in the last 7 days (or all-time totals), for the house or every player.
+- Streak = consecutive days with at least one session, counted back from today, or from yesterday if nothing is finished yet today. A rolled-up day still counts, so a streak is never broken by the window. Finishing a session pays a streak bonus in coins (`streakBonus` in `shared/game.js`): +10% at 3 days, +25% at 7, +50% at 30.
+- Leaderboard = sum of minutes in the last 7 days (or all-time totals), for the house or every player, summed from the log and the roll-up rather than from a number kept on a row.
 
 ## Subjects
 
@@ -131,6 +135,12 @@ The coin gift sends `GIFT_COINS` (10) and is capped so coins cannot be shovelled
 - The house grid is every housemate's rooms in order: all of player 1's rooms, then player 2's, and so on, so a player's rooms sit next to each other.
 - Room-specific messages (`place`, `move`, `pickup`, `room`, `flip`, `restyle`, `shape`, `expand`) carry `r`, the room index (first room when missing). The server ignores an index the player doesn't own.
 - On startup the server moves old single-`room` saves into `rooms[0]`.
+
+## Chat: how fast, and how long
+
+- **One budget per connection.** A socket may send 40 messages in a burst and then 8 a second (a token bucket, capped at 40). Going over does not close the socket: the message is dropped and the client gets `{ t: 'error' }` saying it is sending too fast. The per-intent guards (0.6 s between chat lines, 1.5 s between pats, …) still apply on top, so this is only the backstop against a script, not a second gameplay rule.
+- **History is kept for two years.** Once a day the server deletes `messages` rows older than 730 days, so the archive cannot grow without bound; a thread’s list row stays (its newest message is younger by definition). Pages older than that are gone from `history`. The pictures and files those messages carried are read first and deleted from the bucket with them, so retention does not leave orphaned objects behind.
+- **Unread counts survive a reload.** `read` writes `threads.seen`, and the server sends the map it has loaded as `me.threadSeen` (thread → newest id read), so a fresh client can tell what it has missed without replaying the archive.
 
 ## Muting a chat
 
