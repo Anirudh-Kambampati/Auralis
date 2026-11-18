@@ -43,11 +43,49 @@ const DIST = path.join(root, 'dist');
 const PORT = Number(process.env.PORT) || 8787;
 // DATABASE_URL (e.g. Neon Postgres) in production; otherwise a local SQLite file for development.
 const legacy = path.join(root, 'data.json');
+// LAZY_PLAYERS=1 boots with a stub per player and reads the full row on demand (see
+// docs/superpowers/specs/2026-11-19-lazy-player-loading.md). Off by default until it has had a release.
+const LAZY_PLAYERS = process.env.LAZY_PLAYERS === '1';
 const store = process.env.DATABASE_URL
-  ? await openPgStore(process.env.DATABASE_URL, legacy)
-  : openStore(process.env.DB_FILE || path.join(root, 'auralis.db'), legacy);
-console.log(`Storage: ${process.env.DATABASE_URL ? 'Postgres (DATABASE_URL)' : 'local SQLite'}; files: ${files ? 'Neon Object Storage' : 'off'}`);
+  ? await openPgStore(process.env.DATABASE_URL, legacy, { lazy: LAZY_PLAYERS })
+  : openStore(process.env.DB_FILE || path.join(root, 'auralis.db'), legacy, { lazy: LAZY_PLAYERS });
+console.log(`Storage: ${process.env.DATABASE_URL ? 'Postgres (DATABASE_URL)' : 'local SQLite'}; files: ${files ? 'Neon Object Storage' : 'off'}${LAZY_PLAYERS ? '; players loaded on demand' : ''}`);
 const { db } = store;
+
+// A lazy boot keeps a stub per player (id, name, house, home) and reads the full row when it is needed.
+// Hydration replaces the stub in place, so every later `db.players[id]` finds the real row.
+async function hydrate(idOrPlayer) {
+  const id = typeof idOrPlayer === 'string' ? idOrPlayer : idOrPlayer?.id;
+  const current = id ? db.players[id] : null;
+  if (!current || !current.__stub) return current;
+  try {
+    const row = await Promise.resolve(store.player?.(id));
+    if (row) { db.players[id] = row; return row; }
+  } catch (err) { console.error('player load failed', id, err); }
+  return current; // keep the stub: a thin state beats none, and the next read tries again
+}
+// Everyone whose data a player's screen renders: themselves, their house, and their friends.
+async function hydrateFor(id) {
+  const stub = db.players[id];
+  await hydrate(id);
+  await Promise.all((db.houses[db.players[id]?.house ?? stub?.house]?.members ?? []).map((mid) => hydrate(mid)));
+  await Promise.all([...friends.values()].filter((f) => f.a === id || f.b === id)
+    .map((f) => hydrate(f.a === id ? f.b : f.a)));
+  return db.players[id];
+}
+
+// A lazy boot cannot migrate rows it has not read: the one-time moves (rooms, chat, sessions) need the
+// full JSON. If any row still carries pre-split data, load everything for this boot; the next is lazy.
+if (LAZY_PLAYERS) {
+  const legacyRows = await Promise.resolve(store.legacyRows?.()).catch(() => 0);
+  if (legacyRows) {
+    await Promise.all(Object.keys(db.players).map(async (id) => {
+      const row = await Promise.resolve(store.player?.(id)).catch(() => null);
+      if (row) db.players[id] = row;
+    }));
+    console.log(`Players: ${legacyRows} rows still carry pre-split data; loaded them all for the one-time move`);
+  }
+}
 
 // The chat cache (tails, thread list, mutes, and the state views) lives in chat-cache.js. index.js
 // keeps only the glue: it builds `refreshThread` from the live world and passes `store` to the cache
@@ -115,12 +153,13 @@ const isFriend = (x, y) => friends.get(pairKey(x, y))?.status === 'accepted';
 const visitAsks = new Set();
 const sentSessions = new Map(); // playerId -> how many sessions their client has
 // Players used to have one `room`; now they have `rooms`, the first being the original.
-for (const p of Object.values(db.players)) if (!p.rooms) { p.rooms = [p.room ?? newRoom()]; delete p.room; }
+for (const p of Object.values(db.players)) if (!p.__stub && !p.rooms) { p.rooms = [p.room ?? newRoom()]; delete p.room; }
 // Plants placed before watering existed start out freshly watered.
-for (const p of Object.values(db.players)) for (const r of p.rooms) for (const f of r.furniture) if (isPlant(f.item)) f.wateredAt ??= Date.now();
+for (const p of Object.values(db.players)) { if (p.__stub) continue; for (const r of p.rooms) for (const f of r.furniture) if (isPlant(f.item)) f.wateredAt ??= Date.now(); }
 // Already rotated old objects only face forward now (except for bed).
 let cleanedRot = false;
 for (const p of Object.values(db.players)) {
+  if (p.__stub) continue; // not loaded: nothing here to migrate, and a save never writes it back
   for (const r of p.rooms ?? []) {
     for (const f of r.furniture ?? []) {
       if (!canRotate(f.item) && f.rot !== undefined) {
@@ -134,6 +173,7 @@ if (cleanedRot) store.saveAll();
 // Skin is only ever one of the presets now, so a custom skin tint saved by an older build is dropped from every account.
 let cleanedSkin = false;
 for (const p of Object.values(db.players)) {
+  if (p.__stub) continue; // not loaded: nothing here to migrate, and a save never writes it back
   if (!p.look?.color || !('skin' in p.look.color)) continue;
   delete p.look.color.skin;
   if (!Object.keys(p.look.color).length) delete p.look.color;
@@ -143,6 +183,7 @@ if (cleanedSkin) store.saveAll();
 // The single accessory an older save stored becomes a list of one, and its single tint key goes with it.
 let cleanedAcc = false;
 for (const p of Object.values(db.players)) {
+  if (p.__stub) continue; // not loaded: nothing here to migrate, and a save never writes it back
   if (p.look?.color && 'acc' in p.look.color) {
     delete p.look.color.acc;
     if (!Object.keys(p.look.color).length) delete p.look.color;
@@ -173,6 +214,7 @@ const save = () => {
 for (const row of (await store.threadMutes?.()) ?? []) setMute({ id: row.playerId }, row.thread, row.until);
 let movedMutes = 0;
 for (const p of Object.values(db.players)) {
+  if (p.__stub) continue; // not loaded: nothing here to migrate, and a save never writes it back
   for (const [thread, until] of Object.entries(p.mutedThreads ?? {})) {
     const key = serverThread(p, thread); // rows from before the split name a DM by the person
     if (muting(p, key) !== undefined) continue;
@@ -196,6 +238,7 @@ for (const t of storedThemes) {
 }
 let movedThemes = 0;
 for (const p of Object.values(db.players)) {
+  if (p.__stub) continue; // not loaded: nothing here to migrate, and a save never writes it back
   for (const [thread, color] of Object.entries(p.chatThemes ?? {})) {
     if (themeKeys.has(`${p.id}|${thread}`)) continue;
     Promise.resolve(store.setChatTheme?.(p.id, thread, color)).catch((err) => console.error('theme move failed', err));
@@ -207,6 +250,7 @@ if (movedThemes) { save(); console.log(`Chat: ${movedThemes} themes moved into t
 let droppedChat = false;
 for (const h of Object.values(db.houses)) if ('chat' in h) { delete h.chat; droppedChat = true; }
 for (const p of Object.values(db.players)) {
+  if (p.__stub) continue; // not loaded: nothing here to migrate, and a save never writes it back
   if ('dm' in p) { delete p.dm; droppedChat = true; }
   for (const g of Object.values(p.groups ?? {})) if ('msgs' in g) { delete g.msgs; droppedChat = true; }
 }
@@ -217,6 +261,7 @@ if (droppedChat) { save(); console.log('Chat: conversations moved into the archi
 const movingSessions = [];
 let movedSessions = 0;
 for (const p of Object.values(db.players)) {
+  if (p.__stub) continue; // not loaded: nothing here to migrate, and a save never writes it back
   if (!Array.isArray(p.sessions)) continue;
   for (const s of p.sessions) {
     if (!Number.isFinite(s?.at) || !Number.isFinite(s?.minutes)) continue;
@@ -793,6 +838,8 @@ setInterval(async () => {
   const now = Date.now();
   let changed = false;
   for (const p of Object.values(db.players)) {
+    if (p.__stub) continue;
+  if (p.__stub) continue; // not loaded: nothing here to migrate, and a save never writes it back
     for (const x of (p.chatImgs ?? []).filter((x) => now - x.at > 3_600_000)) {
       try {
         if (!(await store.threadsWithImg(x.key)).length) await files.delete(x.key);
@@ -965,7 +1012,10 @@ wss.on('connection', (ws) => {
         checking = false;
       }
       if (!id || !db.players[id]) { send(ws, { t: 'auth', ok: false }); ws.close(); return; }
-      p = db.players[id];
+      // The full row, their house's and their friends': a lazy boot kept only a stub for each. If the
+      // read fails, storage is unreachable — same answer as a failed token lookup, so they retry.
+      p = await hydrateFor(id);
+      if (!p || p.__stub) { ws.close(1011, 'storage unavailable'); return; }
       // Old saves: drop furniture types that no longer exist; the old cat decoration becomes a real pet.
       const hadCat = p.rooms.some((r) => r.furniture.some((f) => f.item === 'cat')) || p.inventory.cat > 0;
       for (const r of p.rooms) {

@@ -50,6 +50,8 @@ export function fingerprint(json) {
 // world as strings for the length of a save.
 export function* changedRows(db, lastSaved) {
   for (const p of Object.values(db.players)) {
+    // A row that was never loaded is not a row that changed: writing a stub back would erase it.
+    if (p.__stub) continue;
     const json = JSON.stringify(p), fp = fingerprint(json);
     if (lastSaved.get(`p:${p.id}`) !== fp) yield [`p:${p.id}`, p, json, fp];
   }
@@ -95,7 +97,9 @@ export function threadRowsFromWorld(db) {
   return [...out.values()];
 }
 
-export function openStore(file, legacyJsonFile) {
+// `lazy` loads one stub per player (id, name, house, home) instead of parsing every row at boot; the
+// full row is read on demand by `player(id)`. See docs/superpowers/specs/2026-11-19-lazy-player-loading.md.
+export function openStore(file, legacyJsonFile, { lazy = false } = {}) {
   const sql = new DatabaseSync(file);
   sql.exec('pragma journal_mode = wal');
   // The shape lives in server/schema.js, shared with the Postgres store: same tables, same indexes,
@@ -119,7 +123,14 @@ export function openStore(file, legacyJsonFile) {
       sessions = session_days.sessions + excluded.sessions`);
 
   const db = { players: {}, houses: {} };
-  for (const r of sql.prepare('select id, data from players').all()) db.players[r.id] = JSON.parse(r.data);
+  if (lazy) {
+    for (const r of sql.prepare(`select id, json_extract(data, '$.name') as name, json_extract(data, '$.house') as house,
+      json_extract(data, '$.home') as home from players`).all()) {
+      db.players[r.id] = { __stub: true, id: r.id, name: r.name, house: r.house, home: r.home };
+    }
+  } else {
+    for (const r of sql.prepare('select id, data from players').all()) db.players[r.id] = JSON.parse(r.data);
+  }
   for (const r of sql.prepare('select code, data from houses').all()) db.houses[r.code] = JSON.parse(r.data);
   // Load muted threads
   for (const r of sql.prepare('select player_id, thread, until from muted_threads').all()) {
@@ -173,7 +184,8 @@ export function openStore(file, legacyJsonFile) {
     const changed = [];
     for (const r of readCoins.all()) {
       const p = db.players[r.player_id];
-      if (!p || r.coins === written[r.player_id]) continue;
+      // A stub has no game state to update; the column is read again when the player is hydrated.
+      if (!p || p.__stub || r.coins === written[r.player_id]) continue;
       p.coins = written[r.player_id] = r.coins;
       changed.push(p.id);
     }
@@ -206,6 +218,25 @@ export function openStore(file, legacyJsonFile) {
     addMessage,
     // The newest id in the archive: a restart resumes its message counter after it, never before it.
     lastMessageId: () => Number(sql.prepare('select max(id) as id from messages').get()?.id ?? 0),
+    // One full player row, for a lazy boot: null when there is no such row. Their coins column still
+    // wins over the copy in the JSON, the same as at boot.
+    player: (id) => {
+      const r = sql.prepare(`select data, (select coins from accounts where player_id = players.id) as coins
+        from players where id = ?`).get(String(id));
+      if (!r) return null;
+      const p = JSON.parse(r.data);
+      if (r.coins !== null && r.coins !== undefined) p.coins = r.coins;
+      return p;
+    },
+    // Rows from before chat and sessions moved out of them: those need one full pass, so a lazy boot
+    // loads everything once rather than leaving the move half done.
+    legacyRows: () => Number(sql.prepare(`select count(*) as n from players where
+      json_extract(data, '$.rooms') is null
+      or json_extract(data, '$.sessions') is not null
+      or json_extract(data, '$.mutedThreads') is not null
+      or json_extract(data, '$.chatThemes') is not null
+      or json_extract(data, '$.dm') is not null
+      or json_extract(data, '$.groups') like '%"msgs"%'`).get()?.n ?? 0),
     touchThreads,
     // My conversation list, newest first. History itself is in `messages`; this is the cheap index.
     threadsFor: (playerId) => sql.prepare('select * from threads where player_id = ? and last_id is not null order by last_at desc').all(playerId).map(threadRow),

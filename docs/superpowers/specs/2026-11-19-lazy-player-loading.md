@@ -71,6 +71,14 @@ a signal, not an error: reading a missing field yields `undefined`, as it always
 5. **A background pass never writes a stub**: after `syncCoins`, `rollUpSessions` and the prune, the
    database still has every player row.
 
+## Status
+
+Implemented behind `LAZY_PLAYERS=1` in both stores: `openStore`/`openPgStore` take `{ lazy }`, build stubs
+from `json_extract` / `data->>'…'`, and expose `player(id)` and `legacyRows()`. Boot loads everything when
+`legacyRows()` is non-zero, `hydrate`/`hydrateFor` run on `hello`, and `changedRows` plus `syncCoins` skip
+stubs. Tested by the two store tests (a save after a lazy boot writes nothing) and by both e2e harnesses
+with the flag on, on SQLite and Postgres.
+
 ## Rollout
 
 Ship behind `LAZY_PLAYERS=1` for one release: the boot path builds stubs, and every hydration point is

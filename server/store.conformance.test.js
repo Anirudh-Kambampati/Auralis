@@ -85,7 +85,8 @@ for (const impl of impls) {
         'sessionDaysFor', 'sessionTotals', 'rollUpSessions', 'friends', 'setFriend',
         'deleteFriend', 'usernames', 'renameAccount', 'playerByUsername', 'deleteHouse', 'findAccount', 'emailTaken',
         'hasAccount', 'createAccount', 'issueToken', 'playerForToken', 'revokeToken', 'close',
-        'ping', 'idle', 'chatThemes', 'setChatTheme', 'messageImages', 'pruneMessages', 'deleteAccount']) {
+        'ping', 'idle', 'chatThemes', 'setChatTheme', 'messageImages', 'pruneMessages', 'deleteAccount',
+        'player', 'legacyRows']) {
         assert.equal(typeof s[name], 'function', `store.${name} is missing`);
       }
       assert.equal(typeof s.db.players, 'object');

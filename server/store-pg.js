@@ -9,7 +9,9 @@ import { migratePg } from './schema.js';
 const TOKEN_DAYS = 30;
 const sha = (s) => crypto.createHash('sha256').update(s).digest('hex');
 
-export async function openPgStore(url, legacyJsonFile) {
+// `lazy` loads one stub per player (id, name, house, home) instead of parsing every row at boot; the
+// full row is read on demand by `player(id)`. See docs/superpowers/specs/2026-11-19-lazy-player-loading.md.
+export async function openPgStore(url, legacyJsonFile, { lazy = false } = {}) {
   // Neon URLs say sslmode=require; spell out verify-full (what pg does today) so certificates stay checked after pg v9.
   const pool = new pg.Pool({
     connectionString: url.replace(/sslmode=(require|prefer|verify-ca)/, 'sslmode=verify-full'),
@@ -31,7 +33,13 @@ export async function openPgStore(url, legacyJsonFile) {
   await migratePg(pool);
 
   const db = { players: {}, houses: {} };
-  for (const r of (await pool.query('select id, data from players')).rows) db.players[r.id] = r.data;
+  if (lazy) {
+    for (const r of (await pool.query(`select id, data->>'name' as name, data->>'house' as house, data->>'home' as home from players`)).rows) {
+      db.players[r.id] = { __stub: true, id: r.id, name: r.name, house: r.house, home: r.home };
+    }
+  } else {
+    for (const r of (await pool.query('select id, data from players')).rows) db.players[r.id] = r.data;
+  }
   for (const r of (await pool.query('select code, data from houses')).rows) db.houses[r.code] = r.data;
   // An account's coins live in their own column; it wins over the copy in the player's JSON.
   // written: the coins value last written per player, so a value that differs was edited in the database by hand.
@@ -132,7 +140,8 @@ export async function openPgStore(url, legacyJsonFile) {
       const changed = [];
       for (const r of (await pool.query(readCoins)).rows) {
         const p = db.players[r.player_id];
-        if (!p || r.coins === written[r.player_id]) continue;
+        // A stub has no game state to update; the column is read again when the player is hydrated.
+        if (!p || p.__stub || r.coins === written[r.player_id]) continue;
         p.coins = written[r.player_id] = r.coins;
         changed.push(p.id);
       }
@@ -182,6 +191,22 @@ export async function openPgStore(url, legacyJsonFile) {
     addMessage,
     // The newest id in the archive: a restart resumes its message counter after it, never before it.
     lastMessageId: async () => Number((await one('select max(id) as id from messages'))?.id ?? 0),
+    // One full player row, for a lazy boot: null when there is no such row. Their coins column still
+    // wins over the copy in the JSON, the same as at boot.
+    player: async (id) => {
+      const r = await one(`select p.data, (select coins from accounts a where a.player_id = p.id) as coins
+        from players p where p.id = $1`, [String(id)]);
+      if (!r) return null;
+      const p = r.data;
+      if (r.coins !== null && r.coins !== undefined) p.coins = r.coins;
+      return p;
+    },
+    // Rows from before chat and sessions moved out of them: those need one full pass, so a lazy boot
+    // loads everything once rather than leaving the move half done.
+    legacyRows: async () => Number((await one(`select count(*) as n from players where
+      data->'rooms' is null
+      or data ? 'sessions' or data ? 'mutedThreads' or data ? 'chatThemes' or data ? 'dm'
+      or (data->'groups')::text like '%"msgs"%'`))?.n ?? 0),
     touchThreads,
     threadsFor: async (playerId) => (await pool.query('select * from threads where player_id = $1 and last_id is not null order by last_at desc', [playerId])).rows.map(threadRow),
     // Fills in the conversations the list is missing, from the chat the rows still carry. Runs on every

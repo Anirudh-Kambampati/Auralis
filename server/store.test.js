@@ -224,3 +224,43 @@ test('a piece wait survives a round trip', () => {
   assert.deepEqual(back.db.players.p1.ready, { '0:3:easel': 1234 });
   back.close();
 });
+
+// Lazy boots (LAZY_PLAYERS=1) keep a stub per player and read the full row on demand. The dangerous
+// half of that is the save: a stub that is written back erases the row it stands for.
+test('a lazy boot keeps stubs, and a save never writes one back', () => {
+  const file = path.join(tmp(), 'lazy.db');
+  const full = openStore(file);
+  full.db.players.a = {
+    id: 'a', name: 'Ana', house: 'H1', home: 'H1', coins: 5,
+    rooms: [{ wallpaper: 'plaster', floor: 'oak', furniture: [{ item: 'desk', x: 1, y: 1 }] }],
+  };
+  full.saveAll();
+  full.close();
+
+  const lazy = openStore(file, null, { lazy: true });
+  assert.equal(lazy.db.players.a.__stub, true, 'the boot row is a stub');
+  assert.equal(lazy.db.players.a.name, 'Ana', 'a stub still carries what a list needs');
+  lazy.db.players.a.coins = 999; // a stray write to a stub must not reach the database
+  lazy.saveAll();
+  assert.equal(lazy.legacyRows(), 0, 'nothing pre-split is left to migrate');
+  lazy.close();
+
+  const back = openStore(file);
+  assert.deepEqual(back.db.players.a.rooms[0].furniture, [{ item: 'desk', x: 1, y: 1 }], 'the row survived a lazy boot');
+  assert.equal(back.db.players.a.coins, 5, 'and so did its coins');
+  back.close();
+});
+
+test('a lazy boot reads one full player on demand', () => {
+  const file = path.join(tmp(), 'lazy-one.db');
+  const full = openStore(file);
+  full.db.players.a = { id: 'a', name: 'Ana', rooms: [{ wallpaper: 'plaster', floor: 'oak', furniture: [{ item: 'bed', x: 2, y: 2 }] }] };
+  full.saveAll();
+  full.close();
+
+  const lazy = openStore(file, null, { lazy: true });
+  const one = lazy.player('a');
+  assert.equal(one.rooms[0].furniture[0].item, 'bed', 'the full row comes back');
+  assert.equal(lazy.player('nobody'), null, 'an id with no row is null');
+  lazy.close();
+});
