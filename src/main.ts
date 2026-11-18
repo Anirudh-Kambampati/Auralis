@@ -223,6 +223,9 @@ function onMessage(m: any) {
     houseEvents = m.house.events ?? [];
     houseAnnouncements = m.house.announcements ?? [];
     me = { ...m.me, sessions: m.me.sessions ?? me.sessions }; // study history only comes when it changed
+    // Initialize house chat read position from server
+    const houseThread = `h:${houseCode}`;
+    lastChatId = (m.me.threadSeen ?? {})[houseThread] ?? -1;
     // A mute I just changed is the truth for the rest of the session: state messages that were already in
     // flight when I clicked still carry the old value, and would flip the bell back.
     const myMutes = new Map([...mutedThreads].filter(([thread]) => muteChosen.has(thread)));
