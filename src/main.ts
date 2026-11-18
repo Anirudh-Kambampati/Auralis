@@ -95,6 +95,7 @@ const petCheerCount = new Map<string, number>(); // 👏 how many times each pet
 const petPlay = new Map<string, number>(); // key -> until timestamp (pets play together after high-five)
 const petNameAt = new Map<string, number>(); // key -> until: this pet's name tag is showing (names come and go)
 let hoverPet: { m: Member; slot: number } | null = null; // pet being hovered
+const petPaths = new Map<string, { x: number; y: number }[]>(); // key -> path to goal
 const petTrickAt = new Map<string, number>(); // key -> until: this pet is in the middle of a trick
 const petSaid = new Map<string, number>(); // key -> when I last said this pet came over to me
 const petGreetMe = new Map<string, number>(); // key -> when this pet came to greet me at the door (not my pet)
@@ -1629,11 +1630,30 @@ function render(t: number, dt: number) {
   for (const { m, p, slot, seed, pos, goal, act, run } of pets) {
     const key = `${m.id}:${slot}`, fx = petFx.get(key);
     let { x: px, y: py, moving, left, act: pact } = pos;
-    if (goal || fx) { // ease toward the goal (or back onto the wander) instead of jumping
-      const cur = fx ?? { x: px, y: py, left }, tx = goal?.x ?? px, ty = goal?.y ?? py;
+    if (goal || fx) {
+      const cur = fx ?? { x: px, y: py, left };
+      let tx = goal?.x ?? px, ty = goal?.y ?? py;
+      // If we have a goal but no path yet, compute one using petRoute (BFS around walls)
+      if (goal && !petPaths.has(key)) {
+        const path = petRoute({ x: Math.round(px), y: Math.round(py) }, { x: Math.round(goal.x), y: Math.round(goal.y) });
+        if (path && path.length > 1) petPaths.set(key, path.slice(1)); // skip current position
+      }
+      // No goal: clear any stored path
+      if (!goal) petPaths.delete(key);
+      const path = petPaths.get(key);
+      if (path && path.length) {
+        // Follow the path: move toward the next waypoint
+        const next = path[0];
+        tx = next.x; ty = next.y;
+        const dx = tx - cur.x, dy = ty - cur.y, d = Math.hypot(dx, dy);
+        if (d < 0.3) { // reached waypoint
+          path.shift();
+          if (!path.length) petPaths.delete(key);
+        }
+      }
       const dx = tx - cur.x, dy = ty - cur.y, d = Math.hypot(dx, dy), step = d ? Math.min(d, dt * 5) / d : 0;
       cur.x += dx * step; cur.y += dy * step;
-      if (!goal && d < 0.05) petFx.delete(key); else petFx.set(key, cur);
+      if (!goal && !path && d < 0.05) petFx.delete(key); else petFx.set(key, cur);
       px = cur.x; py = cur.y; moving = d > 0.05; pact = moving ? undefined : goal ? act : pact;
       // Face the way it last really walked: tiny steps toward a target that keeps moving mustn't flip it back and forth.
       if (Math.abs(dx) > 0.02) cur.left = dx < 0;
