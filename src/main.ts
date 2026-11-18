@@ -94,6 +94,7 @@ const petCheers = new Map<string, { text: string; at: number }>(); // 👏 float
 const petCheerCount = new Map<string, number>(); // 👏 how many times each pet cheered this session
 const petPlay = new Map<string, number>(); // key -> until timestamp (pets play together after high-five)
 const petNameAt = new Map<string, number>(); // key -> until: this pet's name tag is showing (names come and go)
+let hoverPet: { m: Member; slot: number } | null = null; // pet being hovered
 const petTrickAt = new Map<string, number>(); // key -> until: this pet is in the middle of a trick
 const petSaid = new Map<string, number>(); // key -> when I last said this pet came over to me
 const petGreetMe = new Map<string, number>(); // key -> when this pet came to greet me at the door (not my pet)
@@ -1182,21 +1183,24 @@ onKey((e) => {
 setZoom(zoom);
 
 // In Decorate the cursor shows what a click will do: a target while placing, a hand over your furniture,
-// a closed hand while dragging. Otherwise the normal arrow applies.
-canvas.addEventListener('pointermove', (e) => {
-  if (pan?.moved) return; // dragging the view: keep the closed hand, no labels
-  let c = '';
-  if (openPanel === 'decorate' && myRoom()) {
-    const { tx, ty } = tileAt(e), o = grid.origins[mySlot()];
-    c = drag?.moved ? 'var(--grabbing)' : placing ? 'var(--place)' : o && furnitureAt(myRoom()!, tx - o.x, ty - o.y) >= 0 ? 'var(--grab)' : '';
-  } else if (e.pointerType !== 'touch') { // a hand, and a label saying what a click does
-    const { tx, ty } = tileAt(e), label = clickLabel(tx, ty);
-    if (label) c = 'pointer';
-    showTip(label, e.clientX + 14, e.clientY + 16);
-  }
-  if (openPanel === 'decorate') showTip(null);
-  if (canvas.style.cursor !== c) canvas.style.cursor = c;
-});
+  // a closed hand while dragging. Otherwise the normal arrow applies.
+  canvas.addEventListener('pointermove', (e) => {
+    if (pan?.moved) return; // dragging the view: keep the closed hand, no labels
+    let c = '';
+    if (openPanel === 'decorate' && myRoom()) {
+      const { tx, ty } = tileAt(e), o = grid.origins[mySlot()];
+      c = drag?.moved ? 'var(--grabbing)' : placing ? 'var(--place)' : o && furnitureAt(myRoom()!, tx - o.x, ty - o.y) >= 0 ? 'var(--grab)' : '';
+    } else if (e.pointerType !== 'touch') { // a hand, and a label saying what a click does
+      const { tx, ty } = tileAt(e), label = clickLabel(tx, ty);
+      if (label) c = 'pointer';
+      showTip(label, e.clientX + 14, e.clientY + 16);
+      // Track hovered pet for name display
+      const pet = petHits.find((h) => Math.abs(h.x - tx) < 0.75 && Math.abs(h.y - ty) < 0.75);
+      hoverPet = pet ? { m: pet.m, slot: pet.slot } : null;
+    }
+    if (openPanel === 'decorate') showTip(null);
+    if (canvas.style.cursor !== c) canvas.style.cursor = c;
+  });
 
 canvas.addEventListener('pointermove', (e) => {
   if (!drag) return;
@@ -1643,7 +1647,8 @@ function render(t: number, dt: number) {
     if ((petTrickAt.get(key) ?? 0) > now) { pact = 'trick'; left = Math.floor(now / 160) % 2 === 0; }
     const guestA = m.id === myId ? undefined : meHere; // me, when this pet isn't mine
     const myLvl = guestBondLevel(p.myBond ?? 0);
-    if (p.name && (nameNow || moving || (now + seed * 37) % 27_000 < 3_600)) petLabels.push({ x: px, y: py - (pact === 'perch' ? 1 : 0), name: p.name });
+    const isHovered = hoverPet?.m.id === m.id && hoverPet?.slot === slot;
+    if (p.name && (nameNow || isHovered)) petLabels.push({ x: px, y: py - (pact === 'perch' ? 1 : 0), name: p.name });
     // The pet it likes has come over: say so, quietly and not every ten seconds.
     if (guestA && myLvl && Math.hypot(px - guestA.x, py - guestA.y) < 1.9 && now - (petSaid.get(key) ?? 0) > 120_000) {
       petSaid.set(key, now);
@@ -2895,7 +2900,7 @@ function showTip(text: string | null, x = 0, y = 0, ms = 0) {
   tip.style.top = `${y}px`;
   if (ms) tipTimer = window.setTimeout(() => { tip.hidden = true; }, ms);
 }
-canvas.addEventListener('pointerleave', () => showTip(null));
+canvas.addEventListener('pointerleave', () => { showTip(null); hoverPet = null; });
 
 const DAY_MS = 86_400_000;
 function daysTo(date: string) {
