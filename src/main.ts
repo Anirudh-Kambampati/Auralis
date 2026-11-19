@@ -3094,7 +3094,7 @@ function todoHTML(list: Todo[]) {
     ].join('');
     const from = t.byId && t.byId !== myId ? `<small>from ${esc(t.by)}</small>` : shared && t.by ? `<small>${esc(t.by)}</small>` : '';
     const mine = t.mine ? ' data-mine="1"' : '';
-    return `<li class="${t.done ? `done todo-done-item${doneOpen ? '' : ' hidden'}` : ''}">
+    return `<li class="${t.done ? 'done todo-done-item' : ''}"${t.done && !doneOpen ? ' hidden' : ''}>
       <button class="check${ticked && !t.done ? ' mine' : ''}" data-todo="toggle" data-id="${t.id}"${mine} aria-label="${ticked ? 'Untick' : 'Tick'}"${canTick ? '' : ' disabled title="Only the people it\'s for can tick it"'}>${ticked ? '✓' : ''}</button>
       <span class="todo-text">${esc(t.text)}${from}${pills ? `<span class="todo-meta">${pills}</span>` : ''}</span>
       ${t.byId === myId ? `<button class="del" data-todo="edit" data-id="${t.id}" aria-label="Edit" title="Edit">✎</button>` : ''}
