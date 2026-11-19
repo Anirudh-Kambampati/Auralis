@@ -728,8 +728,10 @@ function startBreak(ms: number, text: string) {
 }
 
 const TVS = new Set(['tv', 'retroTV', 'mediaConsole']);
+// All furniture that pets can sleep on (pet: 'sleep' in shared/game.js)
+const PET_SLEEP_FURNITURE = new Set(['petBed', 'doghouse', 'catTower', 'petTent', 'petSofa', 'petBasket', 'petHammock']);
 // Pieces a click does something special with, beyond act/use/light/sound (see tapAt).
-const CLICKABLE = new Set(['petBall', 'petSofa', 'petBed', 'deskCalendar', 'giftBox', 'whiteboard', 'clawMachine',
+const CLICKABLE = new Set(['petBall', ...PET_SLEEP_FURNITURE, 'deskCalendar', 'giftBox', 'whiteboard', 'clawMachine',
   'potteryWheel', 'easel', 'loom', 'craftTable', 'sewingTable']);
 const STARS = ['🌠 A shooting star! Make a wish.', "✨ You spotted Orion's belt.", '🪐 Is that Saturn? It is!', '🌌 The Milky Way is out tonight.', '🌙 The moon is so bright.'];
 // What some furniture does once you've walked up to it, on top of the little animation.
@@ -1176,7 +1178,7 @@ function tapAt(e: PointerEvent) {
   const fi = hit ? furnitureAt(hit.room, tx - grid.origins[si].x, ty - grid.origins[si].y) : -1;
   const clicked = fi >= 0 ? hit.room.furniture[fi] : undefined;
   if (clicked?.item === 'petBall') { send({ t: 'fetch', owner: hit.m.id, x: grid.origins[si].x + clicked.x, y: grid.origins[si].y + clicked.y }); return; }
-  if (clicked?.item === 'petSofa' || clicked?.item === 'petBed') {
+  if (clicked && PET_SLEEP_FURNITURE.has(clicked.item)) {
     const petOnFurniture = petHits.find((h) => Math.abs(h.x - (clicked.x + 0.5)) < 0.4 && Math.abs(h.y - (clicked.y + 0.5)) < 0.4);
     if (petOnFurniture) {
       send({ t: 'pat', owner: petOnFurniture.m.id, slot: petOnFurniture.slot });
@@ -1621,19 +1623,19 @@ function render(t: number, dt: number) {
     // A pet asleep on a chair, or dozing in a patch of sun, stays put: a click wakes either one early, and both get
     // up on their own when their spell runs out, so a pet in a house nobody clicks is never stuck there all session.
     const seat = petSeat.get(key), sunning = petSunAt.get(key);
-    // Pet sofa: a pet clicked onto a pet sofa naps there until patted twice in a row.
+    // Pet sleep furniture: a pet clicked onto a pet bed/sofa/hammock/etc. naps there until patted twice in a row.
     const sofa = p.sofa;
     const wasSofa = petSofaToasted.has(key);
     if (sofa) {
       const sRoom = slots[sofa.r];
       const sf = sRoom?.room?.furniture?.[sofa.index];
-      if (sf && (sf.item === 'petSofa' || sf.item === 'petBed')) {
+      if (sf && PET_SLEEP_FURNITURE.has(sf.item)) {
         petSeat.delete(key);
         x.goal = { x: sf.x + 0.5, y: sf.y + 0.5 };
         x.act = 'chair';
         if (!wasSofa) {
           petSofaToasted.add(key);
-          toast(`💤 ${petName(p)} is napping on the ${sf.item === 'petBed' ? 'pet bed' : 'pet sofa'}. Pat ${petName(p)} twice to wake it up.`);
+          toast(`💤 ${petName(p)} is napping on the ${ITEMS[sf.item as ItemKey].name.toLowerCase()}. Pat ${petName(p)} twice to wake it up.`);
         }
       } else {
         delete p.sofa;
@@ -2974,8 +2976,7 @@ function clickLabel(tx: number, ty: number): string | null {
   if (hit.m.id !== myId && it.table) return `Leave ${hit.m.name} a note`;
   if (LIGHTS.has(f.item) && members.some((m) => m.id === hit.m.id)) return f.off ? 'Lights on' : 'Lights off';
   if (f.item === 'giftBox') return 'Send a gift';
-  if (f.item === 'petSofa') return 'Put a pet to sleep';
-  if (f.item === 'petBed') return 'Put a pet to sleep';
+  if (PET_SLEEP_FURNITURE.has(f.item)) return 'Put a pet to sleep';
   if (f.item === 'whiteboard') return 'House to-dos';
   if (f.item === 'clawMachine') return myReady(f, hit.ri, fi) ? `Claw (ready ${fmt(myReady(f, hit.ri, fi) - Date.now())})` : `Play the claw · ${CLAW_COST} coins`;
   const craft = CRAFT[f.item as keyof typeof CRAFT];

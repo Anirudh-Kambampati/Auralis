@@ -229,10 +229,10 @@ export const world = {
   },
 
   async pet_sofa(ctx) {
-    const { db, p, m, save, guestBond } = ctx;
+    const { db, p, m, save, guestBond, ITEMS } = ctx;
     const owner = db.houses[p.house].members.includes(m.owner) ? db.players[m.owner] : null;
     const f = owner?.rooms?.[m.r ?? 0]?.furniture?.[m.index];
-    if (!f || !['petSofa', 'petBed'].includes(f.item)) return;
+    if (!f || ITEMS[f.item]?.pet !== 'sleep') return;
     const mine = p.id === owner?.id;
     const candidates = (owner.pets ?? []).filter((x) => !x.away && !x.sofa && (mine || guestBond(x, p.id) > 0));
     if (!candidates.length) return;
