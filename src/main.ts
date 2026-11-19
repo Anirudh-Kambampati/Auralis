@@ -1164,6 +1164,32 @@ function tapAt(e: PointerEvent) {
     return;
   }
   if (e.pointerType === 'touch') showTip(clickLabel(tx, ty), e.clientX, e.clientY - 40, 1200); // fingers can't hover
+  // Clicking a window in one of your rooms opens or closes its curtains, for everyone.
+  const wi = windowAt(tx, ty);
+  if (wi >= 0) {
+    const { m, ri, room } = slots[wi];
+    if (m.id === myId) send({ t: 'curtains', r: ri });
+    else { myCurtains[`${m.id}:${ri}`] = !curtainsOf(m, ri, room); localStorage.setItem('auralis.curtains', JSON.stringify(myCurtains)); }
+    return;
+  }
+  const si = grid.owner[ty * grid.w + tx], hit = slots[si];
+  const fi = hit ? furnitureAt(hit.room, tx - grid.origins[si].x, ty - grid.origins[si].y) : -1;
+  const clicked = fi >= 0 ? hit.room.furniture[fi] : undefined;
+  if (clicked?.item === 'petBall') { send({ t: 'fetch', owner: hit.m.id, x: grid.origins[si].x + clicked.x, y: grid.origins[si].y + clicked.y }); return; }
+  if (clicked?.item === 'petSofa' || clicked?.item === 'petBed') {
+    const petOnFurniture = petHits.find((h) => Math.abs(h.x - (clicked.x + 0.5)) < 0.4 && Math.abs(h.y - (clicked.y + 0.5)) < 0.4);
+    if (petOnFurniture) {
+      send({ t: 'pat', owner: petOnFurniture.m.id, slot: petOnFurniture.slot });
+      const p = petOnFurniture.m.pets[petOnFurniture.slot];
+      if (petOnFurniture.m.id === myId && !mine?.focus) {
+        send({ t: 'pet_style', slot: petOnFurniture.slot, follow: !p.follow });
+        toast(p.follow ? `🐾 ${petName(p)} went back to wandering.` : `🐾 ${petName(p)} is following you!`);
+      }
+    } else {
+      send({ t: 'pet_sofa', owner: hit.m.id, r: hit.ri, index: fi });
+    }
+    return;
+  }
   // A housemate: cheer them on while they study. Idle while I study: invite them along. Both idle: a high five.
   // A pet: pat it (everyone sees the hearts). My own also starts or stops following me, if I'm not studying.
   const pet = petHits.find((h) => Math.abs(h.x - tx) < 0.75 && Math.abs(h.y - ty) < 0.75);
@@ -1183,19 +1209,6 @@ function tapAt(e: PointerEvent) {
     else send({ t: focus ? 'invite' : 'highfive', to: friend.id });
     return;
   }
-  // Clicking a window in one of your rooms opens or closes its curtains, for everyone.
-  const wi = windowAt(tx, ty);
-  if (wi >= 0) { // mine: for everyone; someone else's: only on my screen
-    const { m, ri, room } = slots[wi];
-    if (m.id === myId) send({ t: 'curtains', r: ri });
-    else { myCurtains[`${m.id}:${ri}`] = !curtainsOf(m, ri, room); localStorage.setItem('auralis.curtains', JSON.stringify(myCurtains)); }
-    return;
-  }
-  const si = grid.owner[ty * grid.w + tx], hit = slots[si];
-  const fi = hit ? furnitureAt(hit.room, tx - grid.origins[si].x, ty - grid.origins[si].y) : -1;
-  const clicked = fi >= 0 ? hit.room.furniture[fi] : undefined;
-  if (clicked?.item === 'petBall') { send({ t: 'fetch', owner: hit.m.id, x: grid.origins[si].x + clicked.x, y: grid.origins[si].y + clicked.y }); return; }
-  if (clicked?.item === 'petSofa' || clicked?.item === 'petBed') { send({ t: 'pet_sofa', owner: hit.m.id, r: hit.ri, index: fi }); return; }
   // Clicking something that makes a sound (record player, fireplace, clocks) in any room you can see toggles it, just for you.
   if (clicked && soundName(clicked.item)) {
     const what = soundName(clicked.item);
