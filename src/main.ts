@@ -728,7 +728,7 @@ function startBreak(ms: number, text: string) {
 
 const TVS = new Set(['tv', 'retroTV', 'mediaConsole']);
 // Pieces a click does something special with, beyond act/use/light/sound (see tapAt).
-const CLICKABLE = new Set(['petBall', 'deskCalendar', 'giftBox', 'whiteboard', 'clawMachine',
+const CLICKABLE = new Set(['petBall', 'petSofa', 'deskCalendar', 'giftBox', 'whiteboard', 'clawMachine',
   'potteryWheel', 'easel', 'loom', 'craftTable', 'sewingTable']);
 const STARS = ['🌠 A shooting star! Make a wish.', "✨ You spotted Orion's belt.", '🪐 Is that Saturn? It is!', '🌌 The Milky Way is out tonight.', '🌙 The moon is so bright.'];
 // What some furniture does once you've walked up to it, on top of the little animation.
@@ -2949,6 +2949,7 @@ function clickLabel(tx: number, ty: number): string | null {
   if (hit.m.id !== myId && it.table) return `Leave ${hit.m.name} a note`;
   if (LIGHTS.has(f.item) && members.some((m) => m.id === hit.m.id)) return f.off ? 'Lights on' : 'Lights off';
   if (f.item === 'giftBox') return 'Send a gift';
+  if (f.item === 'petSofa') return 'Put a pet to sleep';
   if (f.item === 'whiteboard') return 'House to-dos';
   if (f.item === 'clawMachine') return myReady(f, hit.ri, fi) ? `Claw (ready ${fmt(myReady(f, hit.ri, fi) - Date.now())})` : `Play the claw · ${CLAW_COST} coins`;
   const craft = CRAFT[f.item as keyof typeof CRAFT];
