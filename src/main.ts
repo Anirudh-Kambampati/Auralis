@@ -728,7 +728,7 @@ function startBreak(ms: number, text: string) {
 
 const TVS = new Set(['tv', 'retroTV', 'mediaConsole']);
 // Pieces a click does something special with, beyond act/use/light/sound (see tapAt).
-const CLICKABLE = new Set(['petBall', 'petSofa', 'deskCalendar', 'giftBox', 'whiteboard', 'clawMachine',
+const CLICKABLE = new Set(['petBall', 'petSofa', 'petBed', 'deskCalendar', 'giftBox', 'whiteboard', 'clawMachine',
   'potteryWheel', 'easel', 'loom', 'craftTable', 'sewingTable']);
 const STARS = ['🌠 A shooting star! Make a wish.', "✨ You spotted Orion's belt.", '🪐 Is that Saturn? It is!', '🌌 The Milky Way is out tonight.', '🌙 The moon is so bright.'];
 // What some furniture does once you've walked up to it, on top of the little animation.
@@ -1194,7 +1194,7 @@ function tapAt(e: PointerEvent) {
   const fi = hit ? furnitureAt(hit.room, tx - grid.origins[si].x, ty - grid.origins[si].y) : -1;
   const clicked = fi >= 0 ? hit.room.furniture[fi] : undefined;
   if (clicked?.item === 'petBall') { send({ t: 'fetch', owner: hit.m.id, x: grid.origins[si].x + clicked.x, y: grid.origins[si].y + clicked.y }); return; }
-  if (clicked?.item === 'petSofa') { send({ t: 'pet_sofa', owner: hit.m.id, r: hit.ri, index: fi }); return; }
+  if (clicked?.item === 'petSofa' || clicked?.item === 'petBed') { send({ t: 'pet_sofa', owner: hit.m.id, r: hit.ri, index: fi }); return; }
   // Clicking something that makes a sound (record player, fireplace, clocks) in any room you can see toggles it, just for you.
   if (clicked && soundName(clicked.item)) {
     const what = soundName(clicked.item);
@@ -1612,7 +1612,7 @@ function render(t: number, dt: number) {
     if (sofa) {
       const sRoom = slots[sofa.r];
       const sf = sRoom?.room?.furniture?.[sofa.index];
-      if (sf && sf.item === 'petSofa') {
+      if (sf && (sf.item === 'petSofa' || sf.item === 'petBed')) {
         petSeat.delete(key);
         x.goal = { x: sf.x + 0.5, y: sf.y + 0.5 };
         x.act = 'chair';
@@ -2950,6 +2950,7 @@ function clickLabel(tx: number, ty: number): string | null {
   if (LIGHTS.has(f.item) && members.some((m) => m.id === hit.m.id)) return f.off ? 'Lights on' : 'Lights off';
   if (f.item === 'giftBox') return 'Send a gift';
   if (f.item === 'petSofa') return 'Put a pet to sleep';
+  if (f.item === 'petBed') return 'Put a pet to sleep';
   if (f.item === 'whiteboard') return 'House to-dos';
   if (f.item === 'clawMachine') return myReady(f, hit.ri, fi) ? `Claw (ready ${fmt(myReady(f, hit.ri, fi) - Date.now())})` : `Play the claw · ${CLAW_COST} coins`;
   const craft = CRAFT[f.item as keyof typeof CRAFT];

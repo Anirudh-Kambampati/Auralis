@@ -229,14 +229,14 @@ export const world = {
     const { db, p, m, save, guestBond } = ctx;
     const owner = db.houses[p.house].members.includes(m.owner) ? db.players[m.owner] : null;
     const f = owner?.rooms?.[m.r ?? 0]?.furniture?.[m.index];
-    if (!f || f.item !== 'petSofa') return;
+    if (!f || !['petSofa', 'petBed'].includes(f.item)) return;
     const mine = p.id === owner?.id;
     const candidates = (owner.pets ?? []).filter((x) => !x.away && !x.sofa && (mine || guestBond(x, p.id) > 0));
     if (!candidates.length) return;
     // The pet this guest is most bonded with answers first; the owner's own pets all count.
     candidates.sort((a, b) => (mine ? 0 : guestBond(b, p.id)) - (mine ? 0 : guestBond(a, p.id)));
     const pet = candidates[0];
-    // One pet per sofa: nothing can already be napping on it.
+    // One pet per bed/sofa: nothing can already be napping on it.
     const taken = (owner.pets ?? []).some((x) => x.sofa && x.sofa.r === m.r && x.sofa.index === m.index);
     if (taken) return;
     pet.sofa = { r: m.r ?? 0, index: m.index, pats: 0 };
