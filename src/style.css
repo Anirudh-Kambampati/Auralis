@@ -621,6 +621,42 @@ li.done .check { background: #6fcf8a; color: #fff; }
   #dock img { width: 28px; height: 28px; }
   .rail-btn { min-width: 58px; height: 58px; padding: 4px 6px; font-size: 11px; }
 }
+
+/* ---------- mobile optimization: compact top bar and bottom dock ---------- */
+@media (max-width: 600px) {
+  /* Top HUD: tighter padding and smaller chips so it takes less vertical space */
+  #hud { padding: calc(10px + env(safe-area-inset-top, 0)) 12px 0; gap: 6px; }
+  .chip { font-size: 17px; padding: 4px 10px; border-radius: 10px; }
+  .chip.house { font-size: 14px; letter-spacing: 1px; }
+  .chip.vol { padding: 4px 8px; }
+  #zoom > button { width: 34px; height: 34px; font-size: 20px; border-radius: 10px; }
+  .bar { width: 70px; }
+  #hud .coin { width: 18px; height: 18px; }
+
+  /* Bottom dock: smaller buttons, labels underneath (native tab bar style) */
+  #dock { gap: 5px; padding: 6px; border-radius: 12px; }
+  #dock button { width: 44px; height: 44px; padding: 0; border-radius: 10px; }
+  #dock img { width: 26px; height: 26px; }
+  #dock .dock-label {
+    display: block;
+    font-size: 9px;
+    line-height: 1;
+    text-align: center;
+    margin-top: 3px;
+    color: var(--ink);
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 44px;
+  }
+}
+
+@media (max-width: 380px) {
+  #dock button { width: 38px; height: 38px; }
+  #dock img { width: 22px; height: 22px; }
+  #dock .dock-label { font-size: 8px; max-width: 38px; }
+}
 /* Phones and tablets: the shop categories are one swipeable strip, so the items stay in view. */
 @media (max-width: 899px) {
   .rail { position: relative; flex-wrap: nowrap; overflow-x: auto; touch-action: pan-x; scrollbar-width: none; padding: 2px 2px 8px; margin: 0 -2px; }
