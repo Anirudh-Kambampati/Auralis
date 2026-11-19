@@ -362,7 +362,7 @@ function onMessage(m: any) {
     });
     // Pets and their naps belong to housemates: forget the state of pets whose owner has left the house.
     const live = new Set(slots.map(({ m }) => `${m.id}:`));
-    for (const map of [petFx, petNameAt, petTrickAt, petSaid, petSeat, petSunAt, petGreetMe, petActAt]) for (const k of map.keys()) if (!live.has(k.slice(0, k.indexOf(':') + 1))) map.delete(k);
+    for (const map of [petFx, petNameAt, petTrickAt, petSaid, petSeat, petSunAt, petGreetMe, petActAt, petSofaToasted]) for (const k of map.keys()) if (!live.has(k.slice(0, k.indexOf(':') + 1))) map.delete(k);
     // The floor under each window is a patch of sun: the tiles a pet lies in when it sunbathes.
     petSun = slots.map((_, i) => {
       const o = grid.origins[i], s = grid.sizes[i], out: { x: number; y: number; act: string }[] = [];
@@ -1625,6 +1625,8 @@ function render(t: number, dt: number) {
         delete p.sofa;
         petSofaToasted.delete(key);
       }
+    } else {
+      petSofaToasted.delete(key); // pet woke up: clear so the next nap shows the toast again
     }
     if (sunning && sunning.until <= now) petSunAt.delete(key);
     if (seat && seat.until <= now) petSeat.delete(key);
