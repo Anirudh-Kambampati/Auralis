@@ -292,11 +292,11 @@ export function petPos(seed: number, now: number, areas: Area[], home = 0, near:
   if ((movingRooms || a.x !== b.x || a.y !== b.y) && route) {
     const path = route(a, b);
     if (path && path.length >= 2) {
-      const dur = movingRooms ? 1 : 0.45;
+      const dur = movingRooms ? 1 : 0.54;
       const m = movingRooms ? f : Math.min(1, f / dur);
       const e = m * m * (3 - 2 * m);
       if (!movingRooms && m === 1 && b.act === 'chase') {
-        const w = now / 350, r = Math.sin((Math.PI * (f - 0.45)) / 0.55);
+        const w = now / 350, r = Math.sin((Math.PI * (f - 0.54)) / 0.46);
         return { x: b.x + Math.sin(w) * 0.6 * r, y: b.y + Math.cos(w) * 0.3 * r, moving: true, left: Math.cos(w) < 0, act: b.act };
       }
       const t = e * (path.length - 1), i = Math.min(path.length - 2, Math.floor(t)), p = path[i], q = path[i + 1];
@@ -305,10 +305,10 @@ export function petPos(seed: number, now: number, areas: Area[], home = 0, near:
     }
     if (movingRooms) return { x: a.x, y: a.y, moving: false, left: b.x < a.x, act: undefined }; // no way through: wait
   }
-  const m = Math.min(1, f / 0.45);
+  const m = Math.min(1, f / 0.54);
   const e = m * m * (3 - 2 * m);
   if (m === 1 && b.act === 'chase') {
-    const w = now / 350, r = Math.sin((Math.PI * (f - 0.45)) / 0.55);
+    const w = now / 350, r = Math.sin((Math.PI * (f - 0.54)) / 0.46);
     return { x: b.x + Math.sin(w) * 0.6 * r, y: b.y + Math.cos(w) * 0.3 * r, moving: true, left: Math.cos(w) < 0, act: b.act };
   }
   return { x: a.x + (b.x - a.x) * e, y: a.y + (b.y - a.y) * e, moving: m < 1, left: b.x < a.x, act: m === 1 ? b.act : undefined };
