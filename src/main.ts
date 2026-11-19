@@ -1610,6 +1610,7 @@ function render(t: number, dt: number) {
     const seat = petSeat.get(key), sunning = petSunAt.get(key);
     // Pet sofa: a pet clicked onto a pet sofa naps there until patted twice in a row.
     const sofa = p.sofa;
+    const wasSofa = petSofaToasted.has(key);
     if (sofa) {
       const sRoom = slots[sofa.r];
       const sf = sRoom?.room?.furniture?.[sofa.index];
@@ -1617,16 +1618,17 @@ function render(t: number, dt: number) {
         petSeat.delete(key);
         x.goal = { x: sf.x + 0.5, y: sf.y + 0.5 };
         x.act = 'chair';
-        if (!petSofaToasted.has(key)) {
+        if (!wasSofa) {
           petSofaToasted.add(key);
-          toast(`💤 ${petName(p)} is napping on the ${sf.item === 'petBed' ? 'pet bed' : 'pet sofa'}. Pat it twice to wake it up.`);
+          toast(`💤 ${petName(p)} is napping on the ${sf.item === 'petBed' ? 'pet bed' : 'pet sofa'}. Pat ${petName(p)} twice to wake it up.`);
         }
       } else {
         delete p.sofa;
         petSofaToasted.delete(key);
       }
-    } else {
-      petSofaToasted.delete(key); // pet woke up: clear so the next nap shows the toast again
+    } else if (wasSofa) {
+      petSofaToasted.delete(key);
+      toast(`🐾 ${petName(p)} got up from its nap.`);
     }
     if (sunning && sunning.until <= now) petSunAt.delete(key);
     if (seat && seat.until <= now) petSeat.delete(key);
