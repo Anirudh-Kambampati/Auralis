@@ -275,7 +275,7 @@ export const singPetAct = (seed: number, now: number) => (hash(seed + 0.9, Math.
 type Spot = { x: number; y: number; act?: string };
 type Area = { spots: Spot[]; toys: Spot[]; laps?: Spot[] }; // laps: anyone sitting in that room
 export function petPos(seed: number, now: number, areas: Area[], home = 0, near: number[] = [], route?: (a: Spot, b: Spot) => Spot[] | null) {
-  const period = 5000, stay = 12; // periods per room choice
+  const period = 8000, stay = 12; // periods per room choice
   const k = Math.floor(now / period) + (seed % 7);
   const f = (now % period) / period;
   const roomAt = (n: number) => {

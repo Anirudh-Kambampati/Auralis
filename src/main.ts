@@ -22,7 +22,7 @@ type Furniture = { item: string; x: number; y: number; v?: number; s?: number; f
 type Room = { wallpaper: string; floor: string; pattern?: string; floorStyle?: string; level?: number; curtains?: boolean; wallColor?: string; floorColor?: string; furniture: Furniture[] };
 type Member = {
   id: string; name: string; look: Look; rooms: Room[]; focus: Focus | null;
-  totalMinutes: number; online: boolean; pos: { x: number; y: number } | null; pets: { kind: string; name?: string; coat?: number; acc?: string; away?: boolean; follow?: boolean; bond?: number; myBond?: number; fav?: string | null }[]; fedAt?: number;
+  totalMinutes: number; online: boolean; pos: { x: number; y: number } | null; pets: { kind: string; name?: string; coat?: number; acc?: string; away?: boolean; follow?: boolean; bond?: number; myBond?: number; fav?: string | null; sofa?: { r: number; index: number; pats: number } }[]; fedAt?: number;
   exams?: { subject: string; date: string }[]; // YYYY-MM-DD, soonest first
   caffeineSince?: number; caffeineUntil?: number; tipsyUntil?: number; // the caffeine window rides on the member, so housemates see the flame
   presence?: Presence;
@@ -101,6 +101,7 @@ const petSaid = new Map<string, number>(); // key -> when I last said this pet c
 const petGreetMe = new Map<string, number>(); // key -> when this pet came to greet me at the door (not my pet)
 const petSeat = new Map<string, { x: number; y: number; until: number }>(); // key -> the chair this pet is curled up on, and when it gives up on its own
 const petSunAt = new Map<string, { x: number; y: number; until: number }>(); // key -> the sunny patch it is dozing in, until then
+const petActAt = new Map<string, { act: string; at: number }>(); // key -> a line-driven act the pet is performing right now
 let logonGreeted = false; // my pets have already come to say hello since I signed in
 let me: Me = { id: myId, coins: 0, inventory: {}, sessions: [], subjects: [], hiddenSubjects: [], todos: [], dm: {} };
 let statsTab = 'mine';
@@ -360,7 +361,7 @@ function onMessage(m: any) {
     });
     // Pets and their naps belong to housemates: forget the state of pets whose owner has left the house.
     const live = new Set(slots.map(({ m }) => `${m.id}:`));
-    for (const map of [petFx, petNameAt, petTrickAt, petSaid, petSeat, petSunAt, petGreetMe]) for (const k of map.keys()) if (!live.has(k.slice(0, k.indexOf(':') + 1))) map.delete(k);
+    for (const map of [petFx, petNameAt, petTrickAt, petSaid, petSeat, petSunAt, petGreetMe, petActAt]) for (const k of map.keys()) if (!live.has(k.slice(0, k.indexOf(':') + 1))) map.delete(k);
     // The floor under each window is a patch of sun: the tiles a pet lies in when it sunbathes.
     petSun = slots.map((_, i) => {
       const o = grid.origins[i], s = grid.sizes[i], out: { x: number; y: number; act: string }[] = [];
@@ -467,10 +468,14 @@ function onMessage(m: any) {
   } else if (m.t === 'pat') {
     patAt.set(`${m.owner}:${m.slot}`, Date.now());
     petNameAt.set(`${m.owner}:${m.slot}`, Date.now() + 6000); // fussing over a pet shows its name for a moment
-    petSeat.delete(`${m.owner}:${m.slot}`); // a pat wakes the pet: it gets off the chair or out of the sun
-    petSunAt.delete(`${m.owner}:${m.slot}`);
-    const pet = m.owner === myId && m.by !== myId ? myMember()?.pets[m.slot] : undefined;
+    const pet = m.owner === myId ? myMember()?.pets[m.slot] : members.find((o) => o.id === m.owner)?.pets[m.slot];
     if (pet) toast(`💕 <b>${esc(m.name)}</b> petted ${petName(pet)}.`);
+    // A pet napping on a pet sofa stays put until patted twice in a row: the server clears sofa then.
+    if (!pet?.sofa) {
+      petSeat.delete(`${m.owner}:${m.slot}`); // a pat wakes the pet: it gets off the chair or out of the sun
+      petSunAt.delete(`${m.owner}:${m.slot}`);
+    }
+    if (m.act) petActAt.set(`${m.owner}:${m.slot}`, { act: m.act, at: Date.now() });
   } else if (m.t === 'fetch') { // the thrower's pets run for the ball, or the room owner's if they have none
     const who = [m.by, m.owner].map((id) => members.find((o) => o.id === id)).find((o) => o?.pets.some((p) => !p.away));
     who?.pets.forEach((p, slot) => { if (!p.away) fetches.set(`${who.id}:${slot}`, { x: m.x, y: m.y, by: m.by, at: Date.now() }); });
@@ -1189,6 +1194,7 @@ function tapAt(e: PointerEvent) {
   const fi = hit ? furnitureAt(hit.room, tx - grid.origins[si].x, ty - grid.origins[si].y) : -1;
   const clicked = fi >= 0 ? hit.room.furniture[fi] : undefined;
   if (clicked?.item === 'petBall') { send({ t: 'fetch', owner: hit.m.id, x: grid.origins[si].x + clicked.x, y: grid.origins[si].y + clicked.y }); return; }
+  if (clicked?.item === 'petSofa') { send({ t: 'pet_sofa', owner: hit.m.id, r: hit.ri, index: fi }); return; }
   // Clicking something that makes a sound (record player, fireplace, clocks) in any room you can see toggles it, just for you.
   if (clicked && soundName(clicked.item)) {
     const what = soundName(clicked.item);
@@ -1601,25 +1607,36 @@ function render(t: number, dt: number) {
     // A pet asleep on a chair, or dozing in a patch of sun, stays put: a click wakes either one early, and both get
     // up on their own when their spell runs out, so a pet in a house nobody clicks is never stuck there all session.
     const seat = petSeat.get(key), sunning = petSunAt.get(key);
+    // Pet sofa: a pet clicked onto a pet sofa naps there until patted twice in a row.
+    const sofa = p.sofa;
+    if (sofa) {
+      const sRoom = slots[sofa.r];
+      const sf = sRoom?.room?.furniture?.[sofa.index];
+      if (sf && sf.item === 'petSofa') {
+        petSeat.delete(key);
+        x.goal = { x: sf.x + 0.5, y: sf.y + 0.5 };
+        x.act = 'chair';
+      } else delete p.sofa;
+    }
     if (sunning && sunning.until <= now) petSunAt.delete(key);
     if (seat && seat.until <= now) petSeat.delete(key);
-    if (seat && seat.until > now) { x.goal = { x: seat.x, y: seat.y }; x.act = 'chair'; }
-    else if (sunning && sunning.until > now) { x.goal = { x: sunning.x, y: sunning.y }; x.act = 'sun'; }
-    else if (fe && fa < 4500) x.goal = fa < 2000 || !by ? fe : { x: by.x + side, y: by.y + back };
-    else if (here && m.focus && !p.follow) { x.goal = { x: here.x + side, y: here.y + back }; x.act = 'sleep'; }
+    if (!x.goal && seat && seat.until > now) { x.goal = { x: seat.x, y: seat.y }; x.act = 'chair'; }
+    else if (!x.goal && sunning && sunning.until > now) { x.goal = { x: sunning.x, y: sunning.y }; x.act = 'sun'; }
+    else if (!x.goal && fe && fa < 4500) x.goal = fa < 2000 || !by ? fe : { x: by.x + side, y: by.y + back };
+    else if (!x.goal && here && m.focus && !p.follow) { x.goal = { x: here.x + side, y: here.y + back }; x.act = 'sleep'; }
     // Pet cheers owner during focus (like a supportive housemate): twice per session, that's it
     if (here && m.focus && !p.follow && x.act === 'sleep' && (petCheerCount.get(key) ?? 0) < 2 && Math.random() < 0.001 * dt * 60) {
       petCheers.set(key, { text: '👏', at: now });
       petCheerCount.set(key, (petCheerCount.get(key) ?? 0) + 1);
     }
-    else if (now - (petDone.get(m.id) ?? 0) < 3000 || (now - (patAt.get(key) ?? 0) < 1200 && bondLevel(p.bond) >= 2)) x.run = true;
-    else if (here && p.follow && !m.focus && tr && now - tr.movedAt < 600) x.goal = trailPoint(tr.pts, gap);
-    else if (here && now - (petGreet.get(m.id) ?? 0) < 5000) { // greeting: run up, but stop a little way off
+    else if (!x.goal && now - (petDone.get(m.id) ?? 0) < 3000 || (now - (patAt.get(key) ?? 0) < 1200 && bondLevel(p.bond) >= 2)) x.run = true;
+    else if (!x.goal && here && p.follow && !m.focus && tr && now - tr.movedAt < 600) x.goal = trailPoint(tr.pts, gap);
+    else if (!x.goal && here && now - (petGreet.get(m.id) ?? 0) < 5000) { // greeting: run up, but stop a little way off
       const dx = x.pos.x - here.x, dy = x.pos.y - here.y, d = Math.hypot(dx, dy) || 1;
       if (d > gap) x.goal = { x: here.x + (dx / d) * gap, y: here.y + (dy / d) * gap };
     }
     // The same hello from a pet that likes me best, when its owner isn't the one who just walked in.
-    else if (guestA && now - (petGreetMe.get(key) ?? 0) < 5000 && roomAtPoint(guestA.x, guestA.y) === roomAtPoint(x.pos.x, x.pos.y)) {
+    else if (!x.goal && guestA && now - (petGreetMe.get(key) ?? 0) < 5000 && roomAtPoint(guestA.x, guestA.y) === roomAtPoint(x.pos.x, x.pos.y)) {
       const dx = x.pos.x - guestA.x, dy = x.pos.y - guestA.y, d = Math.hypot(dx, dy) || 1;
       if (d > gap) x.goal = { x: guestA.x + (dx / d) * gap, y: guestA.y + (dy / d) * gap };
     }
@@ -1711,6 +1728,9 @@ function render(t: number, dt: number) {
     // over or does a trick, and now and then while it idles (a per-pet offset, so they never all flicker at once).
     const nameNow = (petNameAt.get(key) ?? 0) > now;
     if ((petTrickAt.get(key) ?? 0) > now) { pact = 'trick'; left = Math.floor(now / 160) % 2 === 0; }
+    const temp = petActAt.get(key);
+    if (temp && now - temp.at < 1500) pact = temp.act;
+    else if (temp) petActAt.delete(key);
     const guestA = m.id === myId ? undefined : meHere; // me, when this pet isn't mine
     const myLvl = guestBondLevel(p.myBond ?? 0);
     const isHovered = hoverPet?.m.id === m.id && hoverPet?.slot === slot;

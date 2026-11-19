@@ -7,7 +7,7 @@
 //
 // server/handlers.test.js checks that list against every method and against index.js.
 
-export const ctxKeys = ["CLAW_COOLDOWN_MS","CLAW_COST","CRAFT","CRAFT_COOLDOWN_MS","DRINKS","EXPAND_COST","FLOORS","FLOOR_STYLES","GIFTS_PER_DAY","GIFT_COINS","GUEST_BOND_STEP","ITEMS","LIGHTS","MAX_PETS","MAX_ROOMS","PETS","PET_ACCS","ROOM_COST","WALLPAPERS","WALL_PATTERNS","addGuestBond","broadcastHouse","canPlace","canRotate","cheerCount","clawPrize","cleanText","colorsFor","craftColour","craftItem","craftedPrice","db","discounted","has","inbox","isPlant","lastCheer","lastInvite","m","newRoom","nextRot","p","petLine","petWord","pick","pieceReadyAt","placeSwaps","readyKey","room","save","sellPrice","send","setPieceReady","sockets"];
+export const ctxKeys = ["CLAW_COOLDOWN_MS","CLAW_COST","CRAFT","CRAFT_COOLDOWN_MS","DRINKS","EXPAND_COST","FLOORS","FLOOR_STYLES","GIFTS_PER_DAY","GIFT_COINS","GUEST_BOND_STEP","ITEMS","LIGHTS","MAX_PETS","MAX_ROOMS","PETS","PET_ACCS","ROOM_COST","WALLPAPERS","WALL_PATTERNS","addGuestBond","guestBond","broadcastHouse","canPlace","canRotate","cheerCount","clawPrize","cleanText","colorsFor","craftColour","craftItem","craftedPrice","db","discounted","has","inbox","isPlant","lastCheer","lastInvite","m","newRoom","nextRot","p","petLine","petWord","pick","pieceReadyAt","placeSwaps","readyKey","room","save","sellPrice","send","setPieceReady","sockets"];
 
 export const world = {
   async buy(ctx) {
@@ -201,14 +201,46 @@ export const world = {
           if (!owner?.pets?.[m.slot] || Date.now() - (lastCheer.get(p.id) ?? 0) < 1500) return;
           lastCheer.set(p.id, Date.now());
           const pet = owner.pets[m.slot];
+          let act;
           if (owner.id !== p.id) {
             const bond = addGuestBond(pet, p.id, GUEST_BOND_STEP.pat);
             inbox(owner, 'pet', p, `petted ${petWord(pet)}`);
-            send(sockets.get(p.id), { t: 'info', text: petLine(pet, bond) });
-          } else pet.bond = (pet.bond ?? 0) + 1; // your own pet warms to you too, slowly
-          for (const id of h.members) send(sockets.get(id), { t: 'pat', owner: owner.id, slot: m.slot, by: p.id, name: p.name });
+            const { text, act: lineAct } = petLine(pet, bond);
+            send(sockets.get(p.id), { t: 'info', text: text });
+            act = lineAct;
+          } else {
+            pet.bond = (pet.bond ?? 0) + 1; // your own pet warms to you too, slowly
+            const { act: lineAct } = petLine(pet, pet.bond ?? 0);
+            act = lineAct;
+          }
+          // A pet napping on a pet sofa stays put until patted twice in a row.
+          if (pet.sofa) {
+            pet.sofa.pats = (pet.sofa.pats ?? 0) + 1;
+            if (pet.sofa.pats >= 2) pet.sofa = undefined;
+          }
+          const patMsg = { t: 'pat', owner: owner.id, slot: m.slot, by: p.id, name: p.name };
+          if (act) patMsg.act = act;
+          for (const id of h.members) send(sockets.get(id), patMsg);
           save(); return; // bond is private to the pet row; every member already got the pat message
         }
+  },
+
+  async pet_sofa(ctx) {
+    const { db, p, m, save, guestBond } = ctx;
+    const owner = db.houses[p.house].members.includes(m.owner) ? db.players[m.owner] : null;
+    const f = owner?.rooms?.[m.r ?? 0]?.furniture?.[m.index];
+    if (!f || f.item !== 'petSofa') return;
+    const mine = p.id === owner?.id;
+    const candidates = (owner.pets ?? []).filter((x) => !x.away && !x.sofa && (mine || guestBond(x, p.id) > 0));
+    if (!candidates.length) return;
+    // The pet this guest is most bonded with answers first; the owner's own pets all count.
+    candidates.sort((a, b) => (mine ? 0 : guestBond(b, p.id)) - (mine ? 0 : guestBond(a, p.id)));
+    const pet = candidates[0];
+    // One pet per sofa: nothing can already be napping on it.
+    const taken = (owner.pets ?? []).some((x) => x.sofa && x.sofa.r === m.r && x.sofa.index === m.index);
+    if (taken) return;
+    pet.sofa = { r: m.r ?? 0, index: m.index, pats: 0 };
+    return true;
   },
 
   async fetch(ctx) {

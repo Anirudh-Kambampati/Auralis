@@ -504,10 +504,48 @@ const cleanText = (s, max) => String(s ?? '').replace(/[\u0000-\u001f]/g, '').tr
 const cleanName = (s) => String(s ?? '').replace(/[^\p{L}\p{N} _.-]/gu, '').trim().slice(0, 16) || 'Studier';
 
 // How a pet answers being fussed over, read from its bond with you. The words change with the bond; the number
-// itself never appears anywhere.
-const PET_LINES = ['looks up at you, curious', 'is happy to see you', 'leans into your hand', 'trots over and does a little spin', 'flops against your legs, delighted'];
+// itself never appears anywhere. Each bond level has several lines, some of which the pet actually acts out:
+// a little hop, a spin, a flop down to sleep, a dance — chosen at random on every pat.
+const PET_LINES = [
+  [
+    { text: 'looks up at you, curious' },
+    { text: 'tilts its head at you' },
+    { text: 'blinks at you, sleepy', act: 'sleep' },
+    { text: 'sniffs your fingers, cautious' },
+    { text: 'twitches its nose at you' },
+    { text: 'peers up from under a paw' },
+  ],
+  [
+    { text: 'is happy to see you' },
+    { text: 'wags at you' },
+    { text: 'nudges your hand' },
+    { text: 'prances up to you' },
+    { text: 'does a little bounce', act: 'dance' },
+    { text: 'chirps a hello' },
+  ],
+  [
+    { text: 'leans into your hand' },
+    { text: 'purrs under your palm' },
+    { text: 'does a little hop for you', act: 'trick' },
+    { text: 'curls against your leg', act: 'sleep' },
+    { text: 'rests its chin on your knee' },
+    { text: 'nudges your palm for more' },
+  ],
+  [
+    { text: 'trots over and does a little spin', act: 'trick' },
+    { text: 'flops against your legs, delighted', act: 'sleep' },
+    { text: 'brings you its favourite toy' },
+    { text: 'barks a happy hello' },
+    { text: 'does a tiny bow for you' },
+    { text: 'shows off a happy wiggle', act: 'dance' },
+  ],
+];
 const petWord = (pet) => pet?.name ?? `the ${PETS[pet?.kind]?.name?.toLowerCase() ?? 'pet'}`;
-const petLine = (pet, bond) => `🐾 ${petWord(pet)} ${PET_LINES[Math.min(PET_LINES.length - 1, guestBondLevel(bond))]}.`;
+const petLine = (pet, bond) => {
+  const lines = PET_LINES[Math.min(3, guestBondLevel(bond))];
+  const line = lines[Math.floor(Math.random() * lines.length)];
+  return { text: `🐾 ${petWord(pet)} ${line.text}.`, act: line.act };
+};
 
 function publicPlayer(p, viewer = null) {
   for (const r of p.rooms ?? []) for (const f of r.furniture ?? []) if (!canRotate(f.item) && f.rot !== undefined) delete f.rot;
@@ -645,7 +683,7 @@ async function handle(p, m) {
   if (['place', 'move', 'pickup', 'room', 'flip', 'restyle', 'shape', 'expand', 'curtains', 'turn'].includes(m.t) && !room) return;
   // Furniture is addressed by position. Anything but a real integer fetches a built-in
   // (`furniture['toString']`) or nothing, so those messages only run for real indices.
-  if (['move', 'pickup', 'turn', 'flip', 'restyle', 'shape', 'light', 'paint', 'water', 'brew', 'claw', 'craft'].includes(m.t) && !Number.isInteger(m.index)) return;
+  if (['move', 'pickup', 'turn', 'flip', 'restyle', 'shape', 'light', 'paint', 'water', 'brew', 'claw', 'craft', 'pet_sofa'].includes(m.t) && !Number.isInteger(m.index)) return;
   if (m.t === 'water' && !Number.isInteger(m.r)) return;
   // Focus and chat live in handlers.js. Each domain is a plain object of methods with the same cases
   // the switch had, called with one context object; the switch keeps its guards, its default and its
@@ -665,7 +703,7 @@ async function handle(p, m) {
     NOTIFY, OUTFITS, PETS, PET_ACCS,
     ROOM_COST, SCAR_COLOURS, SCAR_KEYS, SHIRTS,
     SIZES, SKINS, STYLES, USES,
-    WALLPAPERS, WALL_PATTERNS, addGuestBond, attachLabel,
+    WALLPAPERS, WALL_PATTERNS, addGuestBond, guestBond, attachLabel,
     boardMinutes, bondLevel, broadcastHouse, buddiesOf,
     caffeineMinutes, caffeineOverlap, canPlace, canRotate,
     canSee, chatImg, cheerCount, clawPrize,
