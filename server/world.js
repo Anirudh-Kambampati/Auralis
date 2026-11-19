@@ -195,7 +195,7 @@ export const world = {
   },
 
   async pat(ctx) {
-    const { db, p, m, lastCheer, addGuestBond, GUEST_BOND_STEP, inbox, petWord, send, sockets, petLine, save } = ctx;
+    const { db, p, m, lastCheer, addGuestBond, GUEST_BOND_STEP, inbox, petWord, send, sockets, petLine, save, broadcastHouse } = ctx;
     { // pet anyone's pet in the house: hearts the whole house sees
           const h = db.houses[p.house], owner = h.members.includes(m.owner) ? db.players[m.owner] : null;
           if (!owner?.pets?.[m.slot] || Date.now() - (lastCheer.get(p.id) ?? 0) < 1500) return;
@@ -216,7 +216,10 @@ export const world = {
           // A pet napping on a pet sofa stays put until patted twice in a row.
           if (pet.sofa) {
             pet.sofa.pats = (pet.sofa.pats ?? 0) + 1;
-            if (pet.sofa.pats >= 2) pet.sofa = undefined;
+            if (pet.sofa.pats >= 2) {
+              pet.sofa = undefined;
+              broadcastHouse(p.house); // tell every client the pet woke up
+            }
           }
           const patMsg = { t: 'pat', owner: owner.id, slot: m.slot, by: p.id, name: p.name };
           if (act) patMsg.act = act;
