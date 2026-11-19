@@ -37,6 +37,8 @@ client                         server                                    house m
 
 A chat line is the exception: it is written to `messages` (and one `threads` row per member), the last 50 lines in memory are updated, and the same `state` is broadcast. The rows themselves are not touched, so saying something no longer rewrites a player row.
 
+If the socket is down when the client writes, the message waits in the client's outbox instead of vanishing: it is sent in order once the next `state` arrives, because a fresh socket has to say `hello` before the server will hear anything else. The client announces the outage once (`Connection lost — reconnecting…`) and nothing more, so an action taken during a reconnect still happens without a toast per tap.
+
 | Intent | Server checks |
 | --- | --- |
 | `pos {x,y}` | Relays to housemates only. Not saved; no full broadcast. |

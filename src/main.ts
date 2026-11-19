@@ -175,6 +175,11 @@ let hintTimer = 0;
 let reconnectAttempts = 0;
 const maxReconnectAttempts = 10;
 const baseReconnectDelay = 1500;
+let reconnectTimer = 0; // the pending retry, so coming back to the tab can go now instead of waiting it out
+let reconnecting = false; // true from a drop until the next state arrives: one message per outage, not one per tap
+// Intents made while the socket is between lives. The server has not met us until it answers with `state`,
+// so these go out when that lands, in the order they were made.
+const outbox: object[] = [];
 function showLoading(on: boolean) {
   $('#loading').hidden = !on;
   clearTimeout(hintTimer);
@@ -183,26 +188,65 @@ function showLoading(on: boolean) {
 }
 
 function connect() {
+  // One socket at a time: two of them make the server close the first, and the pair then take turns.
+  if (ws?.readyState === 0 || ws?.readyState === 1) return;
   if (!houseCode) showLoading(true);
-  ws = new WebSocket(serverUrl);
-  ws.onopen = () => {
+  const sock = new WebSocket(serverUrl);
+  ws = sock;
+  sock.onopen = () => {
+    if (sock !== ws) return; // a newer connection has taken over
     reconnectAttempts = 0; // Reset on successful connection
-    send({ t: 'hello', token });
+    sock.send(JSON.stringify({ t: 'hello', token })); // a fresh socket introduces itself before anything else
   };
-  ws.onclose = (e) => {
+  sock.onclose = (e) => {
+    if (sock !== ws) return; // replaced: this close says nothing about the socket that is live now
     if (!token) return; // Don't reconnect if logged out
     if (e.code === 1000) return; // Normal closure, don't reconnect
     const delay = Math.min(baseReconnectDelay * Math.pow(1.5, reconnectAttempts), 30000); // Exponential backoff, max 30s
     reconnectAttempts = Math.min(reconnectAttempts + 1, maxReconnectAttempts);
     console.log(`WebSocket disconnected (code: ${e.code}). Reconnecting in ${delay}ms... (attempt ${reconnectAttempts}/${maxReconnectAttempts})`);
-    setTimeout(connect, delay);
+    scheduleReconnect(delay);
   };
-  ws.onerror = (err) => {
+  sock.onerror = (err) => {
     console.error('WebSocket error:', err);
   };
-  ws.onmessage = (e) => onMessage(JSON.parse(e.data));
+  sock.onmessage = (e) => { if (sock === ws) onMessage(JSON.parse(e.data)); };
 }
-const send = (m: object) => { if (ws?.readyState === 1) { ws.send(JSON.stringify(m)); return true; } toast('Not connected — try again in a moment.', 'error'); return false; };
+
+function scheduleReconnect(delay: number) {
+  clearTimeout(reconnectTimer);
+  reconnectTimer = window.setTimeout(() => { reconnectTimer = 0; connect(); }, delay);
+}
+// Back in a way the backoff cannot see — a tab that was asleep, a phone that changed network: retry now.
+function retryNow() {
+  if (!token || ws?.readyState === 0 || ws?.readyState === 1) return;
+  clearTimeout(reconnectTimer);
+  reconnectTimer = 0;
+  connect();
+}
+addEventListener('online', retryNow);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) retryNow(); });
+
+// Everything made while the socket was down, once the server has met us again.
+function flushOutbox() {
+  if (ws?.readyState !== 1) return;
+  for (const m of outbox.splice(0)) ws.send(JSON.stringify(m));
+}
+
+// A dropped socket is usually a blink (a sleeping laptop, a host restarting) and it comes back on its own.
+// Hold the intent for it rather than throwing the action away, and say what happened once per outage: toasting
+// on every tap made a reconnect in progress look like the game itself being broken.
+const send = (m: object) => {
+  if (ws?.readyState === 1) { ws.send(JSON.stringify(m)); return true; }
+  if (token) {
+    outbox.push(m);
+    if (outbox.length > 100) outbox.shift(); // a long outage is not worth replaying minutes of movement
+    if (!reconnecting) { reconnecting = true; toast('Connection lost — reconnecting…', '', { ms: 4000 }); }
+    return true;
+  }
+  toast('Not connected — try again in a moment.', 'error');
+  return false;
+};
 
 function onMessage(m: any) {
   if (m.t === 'auth') {
@@ -212,6 +256,8 @@ function onMessage(m: any) {
   if (m.t === 'state') {
     if (!houseCode) { showLoading(false); setTimeout(welcome, 800); }
     myId = m.me.id;
+    reconnecting = false; // back: what was written during the gap can go now
+    flushOutbox();
     // Moved house: start in my own room, drop any walk or seat that pointed at the old house's tiles,
     // and treat its chat history as already seen.
     if (m.house.code !== houseCode) { lastChatId = -1; avatars.delete(myId); path = []; seat = null; useNext = null; arrive = null; endBreak(); stopAllSounds(); }
@@ -3027,9 +3073,12 @@ $<HTMLButtonElement>('#help').addEventListener('click', () => setPanel(openPanel
 // ---------- shared to-dos, private to-dos and chat ----------
 // "Everyone" to-dos show my own tick, and are crossed off only once the whole house has ticked them.
 const fmtDue = (at: number) => new Date(at).toLocaleString([], { weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' });
+// Finished to-dos fold away under one header, so the card reads as what is left to do and still says how much
+// is behind the fold. The fold is remembered for the session: a rebuild of the list leaves it as it was.
+let doneOpen = false;
 function todoHTML(list: Todo[]) {
   if (!list.length) return '<li class="empty">Nothing to do yet ✨</li>';
-  return list.map((t) => {
+  const row = (t: Todo) => {
     const shared = !t.mine && !t.all && !t.to; // older house to-dos: one tick for everyone
     const who = t.all ? members : members.filter((m) => t.to?.includes(m.id));
     const ticked = t.mine || shared ? t.done : !!t.ticks?.includes(myId);
@@ -3045,12 +3094,16 @@ function todoHTML(list: Todo[]) {
     ].join('');
     const from = t.byId && t.byId !== myId ? `<small>from ${esc(t.by)}</small>` : shared && t.by ? `<small>${esc(t.by)}</small>` : '';
     const mine = t.mine ? ' data-mine="1"' : '';
-    return `<li class="${t.done ? 'done' : ''}">
+    return `<li class="${t.done ? `done todo-done-item${doneOpen ? '' : ' hidden'}` : ''}">
       <button class="check${ticked && !t.done ? ' mine' : ''}" data-todo="toggle" data-id="${t.id}"${mine} aria-label="${ticked ? 'Untick' : 'Tick'}"${canTick ? '' : ' disabled title="Only the people it\'s for can tick it"'}>${ticked ? '✓' : ''}</button>
       <span class="todo-text">${esc(t.text)}${from}${pills ? `<span class="todo-meta">${pills}</span>` : ''}</span>
       ${t.byId === myId ? `<button class="del" data-todo="edit" data-id="${t.id}" aria-label="Edit" title="Edit">✎</button>` : ''}
       ${t.mine || !t.byId || t.byId === myId ? `<button class="del" data-todo="del" data-id="${t.id}"${mine} aria-label="Delete">✕</button>` : ''}</li>`;
-  }).join('');
+  };
+  const open = list.filter((t) => !t.done), done = list.filter((t) => t.done);
+  const fold = !done.length ? '' : `<li class="todo-done-head"><button type="button" class="todo-fold" data-todo-group="done" aria-expanded="${doneOpen}" aria-label="${doneOpen ? 'Hide' : 'Show'} completed tasks"><span class="chev">${doneOpen ? '▾' : '▸'}</span>Completed tasks <b>${done.length}</b></button></li>`;
+  return (open.length ? open.map(row).join('') : done.length ? '<li class="empty">Nothing left to do ✨</li>' : '')
+    + fold + done.map(row).join('');
 }
 
 // Private threads: unread counts per housemate, and the highest message id seen.
@@ -3726,6 +3779,8 @@ async function upload(file: File): Promise<string> {
 // To-dos: one list of what I can see (assigned to me, made by me, or for everyone) plus my older private ones.
 $('#todoList').addEventListener('click', (e) => {
   const target = e.target as HTMLElement;
+  const group = target.closest<HTMLButtonElement>('button[data-todo-group]');
+  if (group) { doneOpen = !doneOpen; todoSig = ''; renderSide(); return; } // open or close the finished ones
   const b = target.closest<HTMLButtonElement>('button[data-todo]');
   if (b?.dataset.todo === 'edit') return openTodoModal(todos.find((t) => t.id === Number(b.dataset.id)));
   if (b) send({ t: `${b.dataset.mine ? 'ptodo' : 'todo'}_${b.dataset.todo}`, id: Number(b.dataset.id) });

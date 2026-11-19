@@ -547,6 +547,13 @@ body[data-side="todos"] #side .side-card.chat, body[data-side="chat"] #side .sid
 #todoList { list-style: none; margin: 0; padding: var(--gap); overflow-y: auto; display: grid; gap: var(--gap); align-content: start; flex: 1; }
 #todoList li { display: flex; align-items: center; gap: var(--gap); padding: 6px 8px; background: #fff; border: 2px solid var(--ink); border-radius: var(--r); }
 #todoList li.done .todo-text { text-decoration: line-through; color: var(--muted); }
+/* Finished to-dos fold away under one header: what is left stays on top, and the count says how much is behind it. */
+#todoList li.todo-done-head { border: 0; background: none; padding: 2px 0 0; }
+.todo-fold { width: 100%; padding: 4px 2px; background: none; border: 0; box-shadow: none; color: var(--muted); font-size: 13px; font-weight: 600; text-align: left; }
+.todo-fold:hover { color: var(--ink); }
+.todo-fold:active { transform: none; box-shadow: none; }
+.todo-fold .chev { width: 12px; text-align: center; }
+.todo-fold b { font-size: 12px; padding: 0 6px; color: var(--ink); background: var(--paper); border: 2px solid var(--ink); border-radius: 999px; }
 #todoList li.empty, #chatLog .empty { border: none; background: none; color: var(--muted); font-size: 14px; }
 .todo-text { flex: 1; min-width: 0; overflow-wrap: anywhere; font-weight: 500; }
 .todo-text small { display: block; font-size: 11px; color: var(--muted); }

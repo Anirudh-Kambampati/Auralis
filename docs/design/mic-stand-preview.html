@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Auralis — mic stand preview</title>
+<style>
+  body { margin: 0; padding: 14px 18px 20px; background: #efe6da; color: #2b2530; font-family: "Trebuchet MS", system-ui, sans-serif; }
+  h1 { font-size: 18px; margin: 0 0 2px; }
+  p.lede { margin: 0 0 12px; font-size: 12px; color: #6b6478; }
+  h2 { font-size: 13px; margin: 16px 0 8px; text-transform: uppercase; letter-spacing: 0.06em; color: #6b6478; }
+  .row { display: flex; flex-wrap: wrap; gap: 14px; align-items: flex-end; }
+  figure { margin: 0; background: #fffaf3; border: 2px solid #2b2530; border-radius: 10px; padding: 8px; }
+  canvas { display: block; image-rendering: pixelated; }
+  figcaption { font-size: 12px; margin-top: 6px; max-width: 240px; line-height: 1.35; }
+  figcaption b { color: #2b2530; }
+  figcaption span { color: #6b6478; }
+</style>
+</head>
+<body>
+<h1>Mic stand, as the room draws it</h1>
+<p class="lede">Real output from <code>src/draw.ts</code>. Top row: one stand on each floor at 10× so the pixels show. Bottom row: solo and duet at 3×, the size you actually see in a room.</p>
+
+<h2>One stand, on the floors</h2>
+<div class="row" id="close"></div>
+
+<h2>In the room</h2>
+<div class="row" id="scene"></div>
+
+<script type="module">
+  import { drawFloor, drawFurniture, drawUsing, drawSingSpotlight, T } from '/src/draw.ts';
+  import { FLOORS } from '/shared/game.js';
+
+  const look = { skin: '#ffe0c8', hair: '#5a3a4a', shirt: '#b89af0', style: 'bob', face: 'happy', outfit: 'sweater', size: 'regular' };
+  const floors = FLOORS.slice(0, 4);
+
+  function scene(cols, rows, floor, paint, scale) {
+    const canvas = document.createElement('canvas');
+    canvas.width = cols * T * scale;
+    canvas.height = rows * T * scale;
+    const g = canvas.getContext('2d');
+    g.imageSmoothingEnabled = false;
+    g.scale(scale, scale);
+    for (let y = 0; y < rows; y++) for (let x = 0; x < cols; x++) drawFloor(g, x * T, y * T, floor, x, y, 'planks');
+    paint(g);
+    return canvas;
+  }
+
+  function panel(parent, canvas, title, note) {
+    const fig = document.createElement('figure');
+    fig.append(canvas);
+    const cap = document.createElement('figcaption');
+    cap.innerHTML = `<b>${title}</b> <span>${note}</span>`;
+    fig.append(cap);
+    parent.append(fig);
+  }
+
+  floors.forEach((floor) => {
+    panel(document.querySelector('#close'), scene(2, 2, floor, (g) => {
+      drawFurniture(g, 'microphone', T, T, 900, undefined, false, 1, 0, 0, 0, 1);
+    }, 10), 'Mic stand', `— on ${floor}`);
+  });
+
+  floors.forEach((floor, i) => {
+    panel(document.querySelector('#scene'), scene(8, 5, floor, (g) => {
+      const x = 3 * T, y = 3 * T;
+      if (i % 2) {
+        drawSingSpotlight(g, x, y, 1400, true);
+        drawFurniture(g, 'microphone', x, y - T, 900, undefined, false, 1, 0, 0, 0, 1);
+        drawFurniture(g, 'microphone', x - T, y, 900, undefined, false, 1, 0, 0, 0, 1);
+        drawUsing(g, look, 'sing', x, y, 1400, true);
+      } else {
+        drawSingSpotlight(g, x, y, 1400, false);
+        drawFurniture(g, 'microphone', x, y - T, 900, undefined, false, 1, 0, 0, 0, 1);
+        drawUsing(g, look, 'sing', x, y, 1400, false);
+      }
+    }, 3), i % 2 ? 'Duet' : 'Solo', '— stand, singer and spotlight at room scale');
+  });
+</script>
+</body>
+</html>
