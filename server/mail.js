@@ -44,8 +44,6 @@ const from = String(process.env.MAIL_FROM ?? '').trim();
 // to end without a provider account and without mailing anybody.
 const dryRun = process.env.MAIL_DRY_RUN === '1';
 
-export const mailConfigured = () => dryRun || !!(impl && key && from);
-
 // What a reset mail says. The link carries the token in the fragment, which the browser never sends to
 // the server, so it stays out of access logs and Referer headers.
 export function resetMail(link, minutes) {

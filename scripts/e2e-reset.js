@@ -67,6 +67,13 @@ const api = (route, body, headers = {}) => fetch(`${base}/api/${route}`, {
   method: 'POST', headers: { 'content-type': 'application/json', ...headers }, body: JSON.stringify(body),
 }).then(async (r) => ({ status: r.status, body: await r.json().catch(() => ({})) }));
 
+// An account whose address nobody reads, for a case that only needs its mail.
+async function account(tag) {
+  const username = `${tag}_${crypto.randomBytes(3).toString('hex')}`;
+  await api('signup', { username, password: oldPass, email: `${username}@example.test` });
+  return `${username}@example.test`;
+}
+
 async function until(fn, ms = 5000) {
   const t0 = Date.now();
   while (Date.now() - t0 < ms) { if (fn()) return true; await sleep(50); }
@@ -100,24 +107,25 @@ ok('the mail goes to the account’s address', mail?.to === email, mail?.to);
 ok('it is the reset message', /reset your auralis password/i.test(mail?.subject ?? ''), mail?.subject);
 const token = /#reset\?token=([A-Za-z0-9_-]{20,})/.exec(mail?.text ?? '')?.[1];
 ok('the link carries a token after the #, not in the path', !!token, mail?.text);
+// Node's fetch sends no Origin header, which is the same shape as a request from a browser host
+// that is not on the list: the link has to fall back to SITE_URL.
+ok('a request with no Origin gets the SITE_URL link', (mail?.text ?? '').includes(`${base}/#reset?token=`), mail?.text);
 
 await api('forgot', { email });
 await sleep(400);
 ok('asking again straight away sends no second mail', mails.length === sent + 1, `${mails.length - sent} mail(s)`);
 
 // The link opens the site the request came from, when that site is one the server allows...
-const second = `rstb_${crypto.randomBytes(3).toString('hex')}`;
-await api('signup', { username: second, password: oldPass, email: `${second}@example.test` });
+const secondEmail = await account('rstb');
 const fromTwo = mails.length;
-await api('forgot', { email: `${second}@example.test` }, { origin: 'https://two.test' });
+await api('forgot', { email: secondEmail }, { origin: 'https://two.test' });
 await until(() => mails.length > fromTwo, 4000);
 ok('the link opens the site the request came from', (mails.at(-1)?.text ?? '').includes('https://two.test/#reset?token='), mails.at(-1)?.text);
 
 // ...and SITE_URL when it is not, so a link can never be pointed at somebody else's address.
-const third = `rstc_${crypto.randomBytes(3).toString('hex')}`;
-await api('signup', { username: third, password: oldPass, email: `${third}@example.test` });
+const thirdEmail = await account('rstc');
 const fromStranger = mails.length;
-await api('forgot', { email: `${third}@example.test` }, { origin: 'https://not-ours.test' });
+await api('forgot', { email: thirdEmail }, { origin: 'https://not-ours.test' });
 await until(() => mails.length > fromStranger, 4000);
 ok('a domain we do not serve gets the SITE_URL link', (mails.at(-1)?.text ?? '').includes(`${base}/#reset?token=`), mails.at(-1)?.text);
 

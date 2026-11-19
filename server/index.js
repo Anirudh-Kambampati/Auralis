@@ -907,8 +907,7 @@ async function api(req, res, route) {
     let playerId = null;
     try { playerId = await store.resetPassword(String(body.token ?? ''), password); } catch (err) { console.error('reset failed', err); }
     if (!playerId) return reply(400, { error: 'That link has expired. Ask for a new one.' });
-    // The old password is gone, so is every session it could have opened.
-    await store.revokeAllTokens(playerId);
+    // The reset itself replaced the password and ended every session; this one is the fresh start.
     return reply(200, { token: await store.issueToken(playerId) });
   }
   const username = String(body.username ?? '').trim();
@@ -971,12 +970,9 @@ const SITE_URL = (process.env.SITE_URL ?? '').trim().replace(/\/+$/, '');
 const siteUrl = () => SITE_URL || ALLOWED[0] || `http://localhost:${process.env.PORT ?? 8787}`;
 // A reset link opens the site the person is actually using. Several domains can serve the same game
 // (say Vercel and Netlify), and a link that jumps from one to the other is a link they may not trust.
-// Only an origin we already allow is trusted as a base; anything else falls back to SITE_URL, so this
-// can never be pointed at somebody else's address.
-const siteFor = (req) => {
-  const origin = String(req.headers.origin ?? '').trim().replace(/\/+$/, '');
-  return ALLOWED.includes(origin) ? origin : siteUrl();
-};
+// Only an origin we already allow is trusted as a base; a missing or foreign one (and includes() is
+// false for undefined) falls back to SITE_URL, so a link can never be aimed somewhere we do not serve.
+const siteFor = (req) => (ALLOWED.includes(req.headers.origin) ? req.headers.origin : siteUrl());
 const originOk = (origin) => !origin || !ALLOWED.length || ALLOWED.includes(origin);
 
 // Render's free plan sleeps after 15 minutes without a visitor, and waking takes about a minute. A request to our

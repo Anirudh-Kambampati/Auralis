@@ -4273,16 +4273,15 @@ async function subscribePush() {
 
 // Sign-up asks for a username and an email; log-in takes either one in the first box. Forgot and reset
 // are reached from the log-in hint and from the link in the mail, not from the sign-up/log-in switch.
-const backToLogin = '<button type="button" class="linkish" data-mode="login">Back to log in</button>';
 const AUTH_MODES: Record<AuthMode, { title: string; submit: string; user: string; hint: string }> = {
   signup: { title: 'Move into the house 🏠', submit: 'Create my room', user: 'Username',
     hint: 'Already studying with us? <button type="button" class="linkish" data-mode="login">Switch to Log in</button>.' },
   login: { title: 'Welcome back! 👋', submit: 'Log in', user: 'Username or email',
     hint: 'New here? <button type="button" class="linkish" data-mode="signup">Switch to Sign up</button>. <button type="button" class="linkish" data-mode="forgot">Forgot password?</button>' },
   forgot: { title: 'Forgot your password? 🔑', submit: 'Email me a link', user: 'Email',
-    hint: `The address on your account. The link works once, for an hour. ${backToLogin}` },
+    hint: 'The address on your account. The link works once, for an hour.' },
   reset: { title: 'Choose a new password 🔒', submit: 'Save and log in', user: 'Username',
-    hint: `Pick something new, at least 8 characters. ${backToLogin}` },
+    hint: 'Pick something new, at least 8 characters.' },
 };
 function setAuthMode(mode: AuthMode) {
   authMode = mode;
@@ -4298,9 +4297,12 @@ function setAuthMode(mode: AuthMode) {
   $('#authPassLabel').hidden = mode === 'forgot';
   $('#authConfirmLabel').hidden = mode !== 'signup' && mode !== 'reset';
   $<HTMLInputElement>('#authPass').autocomplete = mode === 'login' ? 'current-password' : 'new-password';
-  $('#authHint').className = 'hint'; // back to plain helper text if a notice was showing
   $('#authHint').innerHTML = m.hint;
   $('#authError').hidden = true;
+  $('#authNote').hidden = true; // a notice belongs to the attempt that made it, not to this screen
+  // The way back out of forgot/reset is a button of its own: the helper text underneath is where the
+  // "we have emailed you" notice used to live, and a way out must not disappear with it.
+  $('#authCancel').hidden = !fromLink;
 }
 // One listener on the form: the switch and the hints are replaced as the mode changes, so a listener
 // bound to each button would keep pointing at markup that is no longer on the page.
@@ -4322,11 +4324,12 @@ $('#authForm').addEventListener('submit', async (e) => {
     const problem = emailProblem(email);
     if (problem) { err.textContent = problem; err.hidden = false; return; }
     btn.disabled = true;
+    $('#authNote').hidden = true;
     try {
       await fetch(`${apiBase}/api/forgot`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email }) });
       $<HTMLInputElement>('#authEmail').value = '';
-      $('#authHint').className = 'auth-note';
-      $('#authHint').textContent = 'If that address has an account, a reset link is on its way. It works once, for an hour.';
+      $('#authNote').textContent = 'If that address has an account, a reset link is on its way. It works once, for an hour.';
+      $('#authNote').hidden = false;
     } catch {
       err.textContent = "Can't reach the server. Check your connection.";
       err.hidden = false;

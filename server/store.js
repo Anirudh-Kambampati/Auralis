@@ -153,6 +153,7 @@ export function openStore(file, legacyJsonFile, { lazy = false } = {}) {
   }
 
   sql.prepare('delete from auth where expires < ?').run(Date.now()); // expired sign-ins
+  sql.prepare('delete from reset_tokens where expires < ?').run(Date.now()); // and expired reset links
   const upsertPlayer = sql.prepare('insert into players (id, data) values (?, ?) on conflict(id) do update set data = excluded.data');
   const upsertHouse = sql.prepare('insert into houses (code, data) values (?, ?) on conflict(code) do update set data = excluded.data');
   // Only overwrite coins nobody edited by hand since our last write; syncCoins picks those edits up instead.
@@ -382,31 +383,29 @@ export function openStore(file, legacyJsonFile, { lazy = false } = {}) {
       const row = sql.prepare('select player_id, expires from auth where token = ?').get(sha(token));
       return row && row.expires > Date.now() ? row.player_id : null;
     },
-    setPassword: (playerId, password) =>
-      sql.prepare('update accounts set pass = ? where player_id = ?').run(hashPassword(password), playerId).changes > 0,
     // A reset token is a bearer secret for an hour, so only its hash is stored, exactly like a login
     // token: a leaked database cannot be used to take an account over. Asking again replaces the old one,
-    // so there is never more than one live link per account.
+    // so there is never more than one live link per account. (Expired rows go at boot, with the sign-ins.)
     createResetToken(playerId) {
-      const token = crypto.randomBytes(32).toString('base64url'), now = Date.now();
-      sql.prepare('delete from reset_tokens where player_id = ? or expires < ?').run(playerId, now);
+      const token = crypto.randomBytes(32).toString('base64url');
+      sql.prepare('delete from reset_tokens where player_id = ?').run(playerId);
       sql.prepare('insert into reset_tokens (player_id, token, expires) values (?, ?, ?)')
-        .run(playerId, sha(token), now + RESET_MINUTES * 60_000);
+        .run(playerId, sha(token), Date.now() + RESET_MINUTES * 60_000);
       return token;
     },
-    // The player a live token belongs to, with their password already changed; null when the token is
-    // unknown, expired or spent. Single use: one successful reset clears every token of theirs.
+    // One call for one operation: the token is spent, the password changed, and every session ended — so
+    // whoever knew the old password is signed out and a caller cannot reset one while leaving a stolen
+    // session alive. Null when the token is unknown, expired or already used.
     resetPassword(token, password) {
       if (typeof token !== 'string' || token.length > 100) return null;
       const row = sql.prepare('select player_id, expires from reset_tokens where token = ?').get(sha(token));
       if (!row || Number(row.expires) < Date.now()) return null;
       const ok = sql.prepare('update accounts set pass = ? where player_id = ?').run(hashPassword(password), row.player_id).changes > 0;
       sql.prepare('delete from reset_tokens where player_id = ?').run(row.player_id);
+      sql.prepare('delete from auth where player_id = ?').run(row.player_id);
       return ok ? row.player_id : null;
     },
-    // A reset ends every session: whoever knew the old password must not stay signed in.
-    revokeAllTokens: (playerId) => sql.prepare('delete from auth where player_id = ?').run(playerId).changes,
-      revokeToken: (token) => sql.prepare('delete from auth where token = ?').run(sha(String(token))),
+    revokeToken: (token) => sql.prepare('delete from auth where token = ?').run(sha(String(token))),
       // Chat theme per user
       setChatTheme: (playerId, thread, color) => {
         if (!color) {

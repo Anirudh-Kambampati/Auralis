@@ -10,7 +10,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import pg from 'pg';
-import { openStore } from './store.js';
+import { openStore, checkPassword } from './store.js';
 import { openPgStore } from './store-pg.js';
 
 const run = crypto.randomBytes(4).toString('hex');
@@ -84,8 +84,8 @@ for (const impl of impls) {
       for (const name of ['saveAll', 'syncCoins', 'addMessage', 'history', 'threadsWithImg', 'addSession', 'sessionsFor',
         'sessionDaysFor', 'sessionTotals', 'rollUpSessions', 'friends', 'setFriend',
         'deleteFriend', 'usernames', 'renameAccount', 'playerByUsername', 'playerByEmail', 'deleteHouse', 'findAccount', 'emailTaken',
-        'hasAccount', 'createAccount', 'issueToken', 'playerForToken', 'revokeToken', 'revokeAllTokens',
-        'setPassword', 'createResetToken', 'resetPassword', 'close',
+        'hasAccount', 'createAccount', 'issueToken', 'playerForToken', 'revokeToken',
+        'createResetToken', 'resetPassword', 'close',
         'ping', 'idle', 'chatThemes', 'setChatTheme', 'messageImages', 'pruneMessages', 'deleteAccount',
         'player', 'legacyRows']) {
         assert.equal(typeof s[name], 'function', `store.${name} is missing`);
@@ -202,22 +202,28 @@ for (const impl of impls) {
       assert.equal(await s.resetPassword(token, 'new-password-2'), null, 'the superseded link is dead');
       assert.equal(await s.resetPassword('not-a-token', 'new-password-2'), null);
 
-      // A login token from before the reset, to prove a reset ends every session.
+      // A login token from before the reset, to prove a reset ends every session as part of itself.
       const session = await s.issueToken(a);
       assert.equal(await s.resetPassword(second, 'new-password-2'), a);
-      assert.ok(await s.revokeAllTokens(a) >= 1, 'the sessions go with it');
       assert.equal(await s.playerForToken(session), null, 'a stolen session stops working');
 
-      // Single use, and a token for someone with no account row resets nobody.
+      // Single use, a token for someone with no account row resets nobody, and the password is the new one.
       assert.equal(await s.resetPassword(second, 'third-password-3'), null, 'a spent token is dead');
       assert.equal(await s.resetPassword(await s.createResetToken(b), 'new-password-2'), null, 'an account with no row resets nobody');
-    });
-    // The password itself, the way a sign-in checks it.
-    await withStore(async (s) => {
-      const { checkPassword } = await import('./store.js');
       const acct = await s.findAccount(name);
       assert.equal(checkPassword('new-password-2', acct.pass), true, 'the new password is the one that works');
       assert.equal(checkPassword('old-password-1', acct.pass), false, 'the old password is gone');
+    });
+  });
+
+  t('expired reset links are dropped when the store opens', async () => {
+    const p = id('rst-exp'), stale = `${p}-old`;
+    await withStore(async () => {
+      await impl.raw(`insert into reset_tokens (player_id, token, expires) values ('${p}', '${stale}', ${Date.now() - 1000})`);
+      assert.equal((await impl.raw(`select 1 from reset_tokens where token = '${stale}'`)).length, 1, 'the row is there');
+    });
+    await withStore(async () => {
+      assert.equal((await impl.raw(`select 1 from reset_tokens where token = '${stale}'`)).length, 0, 'the expired row went at boot');
     });
   });
 

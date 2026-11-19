@@ -88,7 +88,9 @@
             <label id="authPassLabel">Password <input id="authPass" type="password" autocomplete="new-password" required minlength="8" maxlength="200" /></label>
             <label id="authConfirmLabel">Confirm password <input id="authConfirm" type="password" autocomplete="new-password" required minlength="8" maxlength="200" /></label>
             <p class="auth-error" id="authError" role="alert" hidden></p>
+            <p class="auth-note" id="authNote" role="status" hidden></p>
             <button type="submit" id="authSubmit">Create my room</button>
+            <button type="button" id="authCancel" data-mode="login" hidden>Cancel and log in</button>
             <p class="hint" id="authHint">Already studying with us? Switch to Log in.</p>
             <p class="hint"><a href="/privacy.html" target="_blank" rel="noopener">Privacy policy</a></p>
           </form>
