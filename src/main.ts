@@ -102,6 +102,7 @@ const petGreetMe = new Map<string, number>(); // key -> when this pet came to gr
 const petSeat = new Map<string, { x: number; y: number; until: number }>(); // key -> the chair this pet is curled up on, and when it gives up on its own
 const petSunAt = new Map<string, { x: number; y: number; until: number }>(); // key -> the sunny patch it is dozing in, until then
 const petActAt = new Map<string, { act: string; at: number }>(); // key -> a line-driven act the pet is performing right now
+const petSofaToasted = new Set<string>(); // keys whose sofa-put-to-sleep toast has already been shown
 let logonGreeted = false; // my pets have already come to say hello since I signed in
 let me: Me = { id: myId, coins: 0, inventory: {}, sessions: [], subjects: [], hiddenSubjects: [], todos: [], dm: {} };
 let statsTab = 'mine';
@@ -1616,7 +1617,14 @@ function render(t: number, dt: number) {
         petSeat.delete(key);
         x.goal = { x: sf.x + 0.5, y: sf.y + 0.5 };
         x.act = 'chair';
-      } else delete p.sofa;
+        if (!petSofaToasted.has(key)) {
+          petSofaToasted.add(key);
+          toast(`💤 ${petName(p)} is napping on the ${sf.item === 'petBed' ? 'pet bed' : 'pet sofa'}. Pat it twice to wake it up.`);
+        }
+      } else {
+        delete p.sofa;
+        petSofaToasted.delete(key);
+      }
     }
     if (sunning && sunning.until <= now) petSunAt.delete(key);
     if (seat && seat.until <= now) petSeat.delete(key);
