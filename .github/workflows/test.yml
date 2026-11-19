@@ -50,3 +50,5 @@ jobs:
         run: node scripts/e2e-domains.js
       - name: study log end to end
         run: node scripts/e2e-sessions.js
+      - name: password reset end to end
+        run: node scripts/e2e-reset.js

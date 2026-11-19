@@ -83,8 +83,9 @@ for (const impl of impls) {
     await withStore(async (s) => {
       for (const name of ['saveAll', 'syncCoins', 'addMessage', 'history', 'threadsWithImg', 'addSession', 'sessionsFor',
         'sessionDaysFor', 'sessionTotals', 'rollUpSessions', 'friends', 'setFriend',
-        'deleteFriend', 'usernames', 'renameAccount', 'playerByUsername', 'deleteHouse', 'findAccount', 'emailTaken',
-        'hasAccount', 'createAccount', 'issueToken', 'playerForToken', 'revokeToken', 'close',
+        'deleteFriend', 'usernames', 'renameAccount', 'playerByUsername', 'playerByEmail', 'deleteHouse', 'findAccount', 'emailTaken',
+        'hasAccount', 'createAccount', 'issueToken', 'playerForToken', 'revokeToken', 'revokeAllTokens',
+        'setPassword', 'createResetToken', 'resetPassword', 'close',
         'ping', 'idle', 'chatThemes', 'setChatTheme', 'messageImages', 'pruneMessages', 'deleteAccount',
         'player', 'legacyRows']) {
         assert.equal(typeof s[name], 'function', `store.${name} is missing`);
@@ -179,6 +180,44 @@ for (const impl of impls) {
       assert.equal(await s.playerForToken(12345), null, 'a non-string token is never looked up');
       await s.revokeToken(token);
       assert.equal(await s.playerForToken(token), null, 'a revoked token signs nobody in');
+    });
+  });
+
+  t('a reset token changes the password once, and only for its own account', async () => {
+    const a = id('rst1'), b = id('rst2'), name = id('Reset'), email = `${a}@EXAMPLE.test`;
+    await withStore(async (s) => {
+      await s.createAccount(a, name, 'old-password-1', email);
+      assert.equal(await s.playerByEmail(email.toLowerCase()), a, 'an address finds its account');
+      assert.equal(await s.playerByEmail(id('nobody')), null);
+
+      const token = await s.createResetToken(a);
+      assert.ok(token.length >= 32);
+      // Only the hash is stored: a leaked reset_tokens row must not be a usable link.
+      const rows = await impl.raw(`select token from reset_tokens where player_id = '${a}'`);
+      assert.equal(rows.length, 1);
+      assert.notEqual(rows[0].token, token);
+
+      // Asking again replaces the older link rather than leaving two live ones.
+      const second = await s.createResetToken(a);
+      assert.equal(await s.resetPassword(token, 'new-password-2'), null, 'the superseded link is dead');
+      assert.equal(await s.resetPassword('not-a-token', 'new-password-2'), null);
+
+      // A login token from before the reset, to prove a reset ends every session.
+      const session = await s.issueToken(a);
+      assert.equal(await s.resetPassword(second, 'new-password-2'), a);
+      assert.ok(await s.revokeAllTokens(a) >= 1, 'the sessions go with it');
+      assert.equal(await s.playerForToken(session), null, 'a stolen session stops working');
+
+      // Single use, and a token for someone with no account row resets nobody.
+      assert.equal(await s.resetPassword(second, 'third-password-3'), null, 'a spent token is dead');
+      assert.equal(await s.resetPassword(await s.createResetToken(b), 'new-password-2'), null, 'an account with no row resets nobody');
+    });
+    // The password itself, the way a sign-in checks it.
+    await withStore(async (s) => {
+      const { checkPassword } = await import('./store.js');
+      const acct = await s.findAccount(name);
+      assert.equal(checkPassword('new-password-2', acct.pass), true, 'the new password is the one that works');
+      assert.equal(checkPassword('old-password-1', acct.pass), false, 'the old password is gone');
     });
   });
 

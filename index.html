@@ -79,13 +79,13 @@
           <form class="auth" id="authForm" novalidate>
             <div class="sticker">free &amp; cozy</div>
             <h2 id="authTitle">Move into the house 🏠</h2>
-            <div class="seg">
+            <div class="seg" id="authSeg">
               <button type="button" class="on" data-mode="signup">Sign up</button>
               <button type="button" class="off" data-mode="login">Log in</button>
             </div>
             <label id="authUserLabel"><span id="authUserText">Username</span> <input id="authUser" autocomplete="username" required minlength="3" maxlength="254" /></label>
             <label id="authEmailLabel">Email <input id="authEmail" type="email" autocomplete="email" required maxlength="254" /></label>
-            <label>Password <input id="authPass" type="password" autocomplete="new-password" required minlength="8" maxlength="200" /></label>
+            <label id="authPassLabel">Password <input id="authPass" type="password" autocomplete="new-password" required minlength="8" maxlength="200" /></label>
             <label id="authConfirmLabel">Confirm password <input id="authConfirm" type="password" autocomplete="new-password" required minlength="8" maxlength="200" /></label>
             <p class="auth-error" id="authError" role="alert" hidden></p>
             <button type="submit" id="authSubmit">Create my room</button>

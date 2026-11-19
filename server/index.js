@@ -5,7 +5,8 @@ import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { WebSocketServer } from 'ws';
 import webpush from 'web-push';
-import { openStore, checkPassword, dmThread } from './store.js';
+import { openStore, checkPassword, dmThread, RESET_MINUTES } from './store.js';
+import { sendMail, resetMail } from './mail.js';
 import { openPgStore } from './store-pg.js';
 import { files, isPng, isJpeg } from './files.js';
 import { focus as focusHandlers, chat as chatHandlers } from './handlers.js';
@@ -705,6 +706,9 @@ function newPlayer(id, name) {
 
 // ---------- accounts (HTTP JSON API) ----------
 const attempts = new Map(); // ip -> { n, since }: slows down password guessing
+// When each address was last mailed a reset link, so a form that can be clicked again and again is not
+// a way to send somebody a hundred mails.
+const resetSentAt = new Map();
 function tooMany(ip, limit) {
   const now = Date.now();
   const a = attempts.get(ip);
@@ -878,6 +882,35 @@ async function api(req, res, route) {
     return reply(200, { ok: true });
   }
   if (tooMany(ip, 20)) return reply(429, { error: 'Too many tries. Wait a few minutes and try again.' });
+  // Forgot password: always the same answer, whether or not that address has an account. Anything else
+  // ("no such email", a timing difference, a second message) is a way to find out who is here.
+  if (route === 'forgot') {
+    const email = String(body.email ?? '').trim().toLowerCase();
+    const now = Date.now();
+    if (!emailProblem(email) && now - (resetSentAt.get(email) ?? 0) > 5 * 60_000) {
+      resetSentAt.set(email, now);
+      if (resetSentAt.size > 5000) for (const [key, at] of resetSentAt) if (now - at > 3_600_000) resetSentAt.delete(key);
+      let playerId = null;
+      try { playerId = await store.playerByEmail(email); } catch (err) { console.error('reset lookup failed', err); }
+      if (playerId) {
+        const token = await store.createResetToken(playerId);
+        await sendMail({ to: email, ...resetMail(`${siteFor(req)}/#reset?token=${token}`, RESET_MINUTES) });
+      }
+    }
+    return reply(200, { ok: true });
+  }
+  // The other half of it: a live token, a new password, and a session to show for it.
+  if (route === 'reset') {
+    const password = String(body.password ?? '');
+    const problem = passwordProblem(password);
+    if (problem) return reply(400, { error: problem });
+    let playerId = null;
+    try { playerId = await store.resetPassword(String(body.token ?? ''), password); } catch (err) { console.error('reset failed', err); }
+    if (!playerId) return reply(400, { error: 'That link has expired. Ask for a new one.' });
+    // The old password is gone, so is every session it could have opened.
+    await store.revokeAllTokens(playerId);
+    return reply(200, { token: await store.issueToken(playerId) });
+  }
   const username = String(body.username ?? '').trim();
   const email = String(body.email ?? '').trim().toLowerCase();
   const password = String(body.password ?? '');
@@ -932,6 +965,18 @@ function serveStatic(req, res) {
 // When the frontend lives on another domain (e.g. Vercel), list it in ALLOWED_ORIGINS (comma-separated).
 // Unset means same-origin only for browsers, which is how local dev and a single-host deploy work.
 const ALLOWED = (process.env.ALLOWED_ORIGINS ?? '').split(',').map((s) => s.trim().replace(/\/$/, '')).filter(Boolean);
+// Where a reset link points: the website, which can be a different host from this server. Spelled out by
+// SITE_URL; otherwise the first allowed origin; otherwise this machine, which is right in development.
+const SITE_URL = (process.env.SITE_URL ?? '').trim().replace(/\/+$/, '');
+const siteUrl = () => SITE_URL || ALLOWED[0] || `http://localhost:${process.env.PORT ?? 8787}`;
+// A reset link opens the site the person is actually using. Several domains can serve the same game
+// (say Vercel and Netlify), and a link that jumps from one to the other is a link they may not trust.
+// Only an origin we already allow is trusted as a base; anything else falls back to SITE_URL, so this
+// can never be pointed at somebody else's address.
+const siteFor = (req) => {
+  const origin = String(req.headers.origin ?? '').trim().replace(/\/+$/, '');
+  return ALLOWED.includes(origin) ? origin : siteUrl();
+};
 const originOk = (origin) => !origin || !ALLOWED.length || ALLOWED.includes(origin);
 
 // Render's free plan sleeps after 15 minutes without a visitor, and waking takes about a minute. A request to our
@@ -965,7 +1010,7 @@ const server = http.createServer((req, res) => {
   }
   if (req.method === 'OPTIONS') return res.writeHead(originOk(origin) ? 204 : 403).end();
   if (path === '/api/health') return health(res);
-  const route = path.match(/^\/api\/(signup|login|logout|delete|snapshots|chatimg)$/)?.[1];
+  const route = path.match(/^\/api\/(signup|login|logout|delete|forgot|reset|snapshots|chatimg)$/)?.[1];
   if (route) api(req, res, route).catch((err) => { console.error(err); if (!res.headersSent) res.writeHead(500).end(); });
   else serveStatic(req, res);
 });

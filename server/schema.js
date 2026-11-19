@@ -110,7 +110,8 @@ export const TABLES = [
     columns: [['player_id', 'text', { notNull: true }], ['thread', 'text', { notNull: true }], ['color', 'text', { notNull: true }]],
     pk: ['player_id', 'thread'],
   },
-  // Reserved for the password-reset flow (declared, not built): the table is empty everywhere.
+  // Password reset: one live token per player, stored as sha(token) so a leaked database signs nobody
+  // in. `expires` is a timestamp; a used or superseded token is deleted, never kept.
   {
     name: 'reset_tokens',
     columns: [['player_id', 'text', { notNull: true }], ['token', 'text', { pk: true }], ['expires', 'bigint', { notNull: true }]],

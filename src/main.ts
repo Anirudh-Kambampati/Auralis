@@ -4123,8 +4123,11 @@ async function saveSnapshot() {
 }
 
 // ---------- landing page + accounts ----------
-type AuthMode = 'signup' | 'login';
+type AuthMode = 'signup' | 'login' | 'forgot' | 'reset';
 let authMode: AuthMode = 'signup';
+// The token from a reset link in the URL fragment. It is never sent as part of a page request, so it
+// stays out of access logs and Referer headers; it goes to /api/reset once and is then dropped.
+let resetToken: string | null = null;
 let pendingLook: Look | null = null; // buddy picked on the landing page, applied once the game state arrives
 // The landing and login page can be zoomed like any web page (for reading); the game itself can't, so pinches
 // zoom the room instead of the whole page.
@@ -4268,30 +4271,102 @@ async function subscribePush() {
   } catch { pushAsked = false; }
 }
 
-// Sign-up asks for a username and an email; log-in takes either one in the first box.
-const AUTH_MODES = {
-  signup: { title: 'Move into the house 🏠', submit: 'Create my room', user: 'Username', hint: 'Already studying with us? Switch to Log in.' },
-  login: { title: 'Welcome back! 👋', submit: 'Log in', user: 'Username or email', hint: 'New here? Switch to Sign up.' },
+// Sign-up asks for a username and an email; log-in takes either one in the first box. Forgot and reset
+// are reached from the log-in hint and from the link in the mail, not from the sign-up/log-in switch.
+const backToLogin = '<button type="button" class="linkish" data-mode="login">Back to log in</button>';
+const AUTH_MODES: Record<AuthMode, { title: string; submit: string; user: string; hint: string }> = {
+  signup: { title: 'Move into the house 🏠', submit: 'Create my room', user: 'Username',
+    hint: 'Already studying with us? <button type="button" class="linkish" data-mode="login">Switch to Log in</button>.' },
+  login: { title: 'Welcome back! 👋', submit: 'Log in', user: 'Username or email',
+    hint: 'New here? <button type="button" class="linkish" data-mode="signup">Switch to Sign up</button>. <button type="button" class="linkish" data-mode="forgot">Forgot password?</button>' },
+  forgot: { title: 'Forgot your password? 🔑', submit: 'Email me a link', user: 'Email',
+    hint: `The address on your account. The link works once, for an hour. ${backToLogin}` },
+  reset: { title: 'Choose a new password 🔒', submit: 'Save and log in', user: 'Username',
+    hint: `Pick something new, at least 8 characters. ${backToLogin}` },
 };
 function setAuthMode(mode: AuthMode) {
   authMode = mode;
   const m = AUTH_MODES[mode];
-  ui.querySelectorAll<HTMLButtonElement>('#authForm [data-mode]').forEach((x) => x.className = x.dataset.mode === mode ? 'on' : 'off');
+  const fromLink = mode === 'forgot' || mode === 'reset'; // reached from elsewhere, not from the switch
+  $('#authSeg').hidden = fromLink;
+  ui.querySelectorAll<HTMLButtonElement>('#authSeg [data-mode]').forEach((x) => x.className = x.dataset.mode === mode ? 'on' : 'off');
   $('#authSubmit').textContent = m.submit;
   $('#authTitle').textContent = m.title;
+  $('#authUserLabel').hidden = fromLink;
   $('#authUserText').textContent = m.user;
+  $('#authEmailLabel').hidden = mode !== 'signup' && mode !== 'forgot';
+  $('#authPassLabel').hidden = mode === 'forgot';
+  $('#authConfirmLabel').hidden = mode !== 'signup' && mode !== 'reset';
   $<HTMLInputElement>('#authPass').autocomplete = mode === 'login' ? 'current-password' : 'new-password';
-  for (const f of ['Email', 'Confirm']) $(`#auth${f}Label`).hidden = mode === 'login';
   $('#authHint').className = 'hint'; // back to plain helper text if a notice was showing
-  $('#authHint').textContent = m.hint;
+  $('#authHint').innerHTML = m.hint;
   $('#authError').hidden = true;
 }
-ui.querySelectorAll<HTMLButtonElement>('#authForm [data-mode]').forEach((b) => b.addEventListener('click', () => setAuthMode(b.dataset.mode as AuthMode)));
+// One listener on the form: the switch and the hints are replaced as the mode changes, so a listener
+// bound to each button would keep pointing at markup that is no longer on the page.
+$('#authForm').addEventListener('click', (e) => {
+  const mode = (e.target as HTMLElement).closest<HTMLElement>('[data-mode]')?.dataset.mode as AuthMode | undefined;
+  if (!mode) return;
+  e.preventDefault();
+  setAuthMode(mode);
+});
 
 $('#authForm').addEventListener('submit', async (e) => {
   e.preventDefault();
   const err = $('#authError');
   const btn = $<HTMLButtonElement>('#authSubmit');
+  // Forgot: ask for a link. Nothing here says whether that address has an account; the page repeats
+  // the server's one answer either way.
+  if (authMode === 'forgot') {
+    const email = $<HTMLInputElement>('#authEmail').value.trim();
+    const problem = emailProblem(email);
+    if (problem) { err.textContent = problem; err.hidden = false; return; }
+    btn.disabled = true;
+    try {
+      await fetch(`${apiBase}/api/forgot`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email }) });
+      $<HTMLInputElement>('#authEmail').value = '';
+      $('#authHint').className = 'auth-note';
+      $('#authHint').textContent = 'If that address has an account, a reset link is on its way. It works once, for an hour.';
+    } catch {
+      err.textContent = "Can't reach the server. Check your connection.";
+      err.hidden = false;
+    } finally {
+      btn.disabled = false;
+    }
+    return;
+  }
+  // Reset: the token from the link plus a new password, and the session that comes back with it.
+  if (authMode === 'reset') {
+    const pass = $<HTMLInputElement>('#authPass').value;
+    const problem = passwordProblem(pass)
+      ?? (pass !== $<HTMLInputElement>('#authConfirm').value ? "The two passwords don't match." : null)
+      ?? (!resetToken ? 'That link is missing its token. Ask for a new one.' : null);
+    if (problem) { err.textContent = problem; err.hidden = false; return; }
+    btn.disabled = true;
+    ui.body.classList.add('busy');
+    try {
+      const res = await fetch(`${apiBase}/api/reset`, {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ token: resetToken, password: pass }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) { err.textContent = data.error ?? 'Something went wrong. Try again.'; err.hidden = false; return; }
+      resetToken = null;
+      token = data.token;
+      localStorage.setItem('auralis.token', data.token);
+      $<HTMLInputElement>('#authPass').value = '';
+      $<HTMLInputElement>('#authConfirm').value = '';
+      showLanding(false);
+      connect();
+    } catch {
+      err.textContent = "Can't reach the server. Check your connection.";
+      err.hidden = false;
+    } finally {
+      btn.disabled = false;
+      ui.body.classList.remove('busy');
+    }
+    return;
+  }
   // Say exactly what's wrong before asking the server (which checks the same things again).
   const user = $<HTMLInputElement>('#authUser').value.trim(), pass = $<HTMLInputElement>('#authPass').value;
   const problem = authMode === 'signup'
@@ -4473,8 +4548,18 @@ $('#shuffleBuddy').addEventListener('click', () => {
 });
 drawBuddy();
 
+// A reset link carries its token in the fragment (`#reset?token=…`). Taking it out of the address bar
+// after reading it keeps it out of history too.
+const resetLink = /^#reset\?token=([A-Za-z0-9_-]{20,})$/.exec(location.hash);
+if (resetLink) {
+  resetToken = resetLink[1];
+  history.replaceState(null, '', `${location.pathname}${location.search}`);
+  token = null;
+  localStorage.removeItem('auralis.token'); // the link proves the address; it ends in a fresh session
+}
 if (token) connect();
 else showLanding(true);
+if (resetToken) setAuthMode('reset');
 // Sent back here because the server no longer accepts our session: start on Log in and say why.
 if (sessionStorage.getItem('auralis.sessionEnded')) {
   sessionStorage.removeItem('auralis.sessionEnded');

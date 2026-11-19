@@ -30,6 +30,8 @@ The code is on the `launch` branch.
    - `AWS_ENDPOINT_URL_S3`
    - `AWS_REGION`
    - `ALLOWED_ORIGINS`: leave it **empty for now** (you'll fill it in at step 3).
+   - `SITE_URL`: leave it empty for now too; it is your website's address, from step 2. Until it is set, reset links fall back to the first `ALLOWED_ORIGINS` entry.
+   - `MAIL_PROVIDER` = `brevo`, `MAIL_FROM`, `MAIL_API_KEY`: see step 5. Leave them empty if you don't want password reset yet; nothing else breaks.
 4. Click **Apply** and wait for the deploy to show **Live**.
 5. Copy the service address shown at the top, e.g. `https://auralis-server.onrender.com`. Your exact name may differ.
 6. Check it: open `https://<your-render-address>/api/health`. You should see `{"ok":true}`.
@@ -46,7 +48,7 @@ The code is on the `launch` branch.
 ## 3. Let the website talk to the server
 
 1. In Render, open **auralis-server** → **Environment**.
-2. Set `ALLOWED_ORIGINS` to your Vercel address, exactly, with no trailing slash, e.g. `https://auralis-abc.vercel.app`. To allow more than one address (say a custom domain later), separate them with commas.
+2. Set `ALLOWED_ORIGINS` to every address the website is served from, exactly, with no trailing slashes, separated by commas — for example `https://auralis-abc.vercel.app,https://auralis-one.netlify.app`. Each one is a front end people can log in from, and a reset link opens the one the request came from, so each keeps its own domain. An address missing here cannot talk to the server at all.
 3. Click **Save changes**. Render redeploys by itself.
 
 If sending a picture or document says **"Failed to fetch"**, the browser blocked the request: check that `ALLOWED_ORIGINS` matches the website's address exactly. If it says **"…file storage, which is not set up"**, the four `AWS_*` values are missing on Render.
@@ -56,6 +58,29 @@ If sending a picture or document says **"Failed to fetch"**, the browser blocked
 1. Open your Vercel address, sign up, and start a focus session.
 2. On a second device or browser, sign up with another account.
 3. On the first device, open **House**, copy the code, and join it from the second device. Your rooms should open into each other, and chat should work both ways.
+
+## 5. Password reset mail
+
+Render's free plan cannot open an SMTP connection, so the server sends mail through an HTTP API. **Brevo** is the default because it needs no domain: one address you verify, and mail from it.
+
+1. Sign up at https://www.brevo.com (free: 300 emails a day, no card).
+2. Open your account menu at the bottom left → **Settings** → **Senders, Domains, IPs** → **Senders** → **Add a sender**, and enter the code they mail to that address. Your own inbox is fine: it is the address people will see in the From line. (In the current dashboard the old top-level "Senders, Domains & Dedicated IPs" tab is gone; senders, domains and IPs live together under Settings.)
+3. Open **Settings** → **SMTP & API** → **API Keys & MCP** → **Generate a new API key**, and copy it once (the key is shown a single time; generating one asks for a code sent to your device).
+4. The mail arrives with the From line rewritten to `<you>@<account-id>.brevosend.com`, not your own address: Brevo sends from its shared domain when the account has no authenticated domain. The display name (Auralis) stays, replies still reach your inbox, and the address is only cosmetic — but a domain, or a provider that sends the verified address unchanged, is the only way to change it.
+5. A new account may show *"You'll need to verify your phone before sending your first campaign or messages"*: **Verify now** takes a mobile number and an SMS code, and transactional sending needs it too. If a send still comes back `450` / "transactional platform not activated", the sending platform needs activating for that account: open a support ticket from inside Brevo and ask for transactional email. `[mail] brevo refused ...` in the server log is where that shows up.
+6. Locally, add to `.env.local`:
+
+   ```bash
+   MAIL_PROVIDER=brevo
+   MAIL_FROM=you@example.com
+   MAIL_API_KEY=the-key-brevo-gave-you
+   SITE_URL=http://localhost:5173
+   ```
+
+7. On Render, set the same three `MAIL_*` values, plus `SITE_URL` = your Vercel address, exactly as in step 3 (no trailing slash).
+8. Test it: sign out, **Forgot password?**, your own address. The link expires in an hour and works once. To try the flow without sending anything, set `MAIL_DRY_RUN=1` and read the message in the Render log instead.
+
+If nothing arrives, the log says why: `[mail] not configured` means a value is missing, and `[mail] brevo refused 401/403` means the key or the verified sender is wrong.
 
 ## Good to know
 

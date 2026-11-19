@@ -884,6 +884,10 @@ body.signed-out #deck, body.signed-out #game, body.signed-out #zoom { display: n
 .auth-error { margin: 0; padding: 8px 12px; background: #fde4df; border: 2px solid var(--coral); border-radius: 10px; font-weight: 600; }
 /* A notice rather than an error ("your session ended"): same shape, warm cream instead of coral. */
 .auth-note { margin: 0; padding: 8px 12px; background: #fff3d1; border: 2px solid var(--ink); border-radius: 10px; font-weight: 600; }
+/* The sign-up/log-in switch is `display: flex`, which would keep it on screen despite [hidden]. */
+.auth .seg[hidden] { display: none; }
+/* A link inside the helper text under the form: reads as a link, behaves as a button. */
+.auth .hint .linkish { background: none; border: 0; box-shadow: none; padding: 0; margin: 0; font: inherit; color: inherit; text-decoration: underline; cursor: pointer; }
 
 .features { list-style: none; padding: 0; margin: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; }
 .features li {

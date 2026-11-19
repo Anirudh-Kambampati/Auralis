@@ -6,6 +6,9 @@ import fs from 'node:fs';
 import { migrateSqlite } from './schema.js';
 
 const TOKEN_DAYS = 30;
+// How long a password-reset link works. Short enough that a forwarded mail goes stale, long enough to
+// come back to after reading it.
+export const RESET_MINUTES = 60;
 const sha = (s) => crypto.createHash('sha256').update(s).digest('hex');
 
 export function hashPassword(password) {
@@ -359,6 +362,8 @@ export function openStore(file, legacyJsonFile, { lazy = false } = {}) {
       try { return sql.prepare('update accounts set username = ? where player_id = ?').run(String(name), playerId).changes > 0; } catch { return false; }
     },
     playerByUsername: (name) => sql.prepare('select player_id from accounts where lower(username) = lower(?)').get(String(name))?.player_id ?? null,
+    // The account a reset mail goes to. Null when nobody owns that address.
+    playerByEmail: (email) => sql.prepare('select player_id from accounts where lower(email) = lower(?)').get(String(email))?.player_id ?? null,
     deleteHouse: (code) => sql.prepare('delete from houses where code = ?').run(code),
     // Log in with either the username or the email.
     findAccount: (login) => sql.prepare('select player_id, username, pass from accounts where lower(username) = lower(?) or lower(email) = lower(?)').get(login, login),
@@ -377,26 +382,30 @@ export function openStore(file, legacyJsonFile, { lazy = false } = {}) {
       const row = sql.prepare('select player_id, expires from auth where token = ?').get(sha(token));
       return row && row.expires > Date.now() ? row.player_id : null;
     },
-    setPassword: (playerId, password) => {
-        const hashed = hashPassword(password);
-        return sql.prepare('update accounts set pass = ? where player_id = ?').run(hashed, playerId).changes > 0;
-      },
-// Create a password reset token (valid for 1 hour)
-      createResetToken: (playerId, token, expires) => {
-        return sql.prepare('insert or replace into reset_tokens (player_id, token, expires) values (?, ?, ?)').run(playerId, token, expires).changes > 0;
-      },
-      // Reset password using a valid token
-      resetPassword: (token, newPassword) => {
-        const row = sql.prepare('select player_id, expires from reset_tokens where token = ?').get(token);
-        if (!row || row.expires < Date.now()) return false;
-        const ok = sql.prepare('update accounts set pass = ? where player_id = ?').run(hashPassword(newPassword), row.player_id).changes > 0;
-        if (ok) sql.prepare('delete from reset_tokens where token = ?').run(token);
-        return ok;
-      },
-      setPassword: (playerId, password) => {
-        const hashed = hashPassword(password);
-        return sql.prepare('update accounts set pass = ? where player_id = ?').run(hashed, playerId).changes > 0;
-      },
+    setPassword: (playerId, password) =>
+      sql.prepare('update accounts set pass = ? where player_id = ?').run(hashPassword(password), playerId).changes > 0,
+    // A reset token is a bearer secret for an hour, so only its hash is stored, exactly like a login
+    // token: a leaked database cannot be used to take an account over. Asking again replaces the old one,
+    // so there is never more than one live link per account.
+    createResetToken(playerId) {
+      const token = crypto.randomBytes(32).toString('base64url'), now = Date.now();
+      sql.prepare('delete from reset_tokens where player_id = ? or expires < ?').run(playerId, now);
+      sql.prepare('insert into reset_tokens (player_id, token, expires) values (?, ?, ?)')
+        .run(playerId, sha(token), now + RESET_MINUTES * 60_000);
+      return token;
+    },
+    // The player a live token belongs to, with their password already changed; null when the token is
+    // unknown, expired or spent. Single use: one successful reset clears every token of theirs.
+    resetPassword(token, password) {
+      if (typeof token !== 'string' || token.length > 100) return null;
+      const row = sql.prepare('select player_id, expires from reset_tokens where token = ?').get(sha(token));
+      if (!row || Number(row.expires) < Date.now()) return null;
+      const ok = sql.prepare('update accounts set pass = ? where player_id = ?').run(hashPassword(password), row.player_id).changes > 0;
+      sql.prepare('delete from reset_tokens where player_id = ?').run(row.player_id);
+      return ok ? row.player_id : null;
+    },
+    // A reset ends every session: whoever knew the old password must not stay signed in.
+    revokeAllTokens: (playerId) => sql.prepare('delete from auth where player_id = ?').run(playerId).changes,
       revokeToken: (token) => sql.prepare('delete from auth where token = ?').run(sha(String(token))),
       // Chat theme per user
       setChatTheme: (playerId, thread, color) => {

@@ -3,7 +3,7 @@
 import pg from 'pg';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
-import { hashPassword, savedMessages, rowMessage, sessionRow, changedRows, threadRow, threadRowsFromWorld } from './store.js';
+import { hashPassword, savedMessages, rowMessage, sessionRow, changedRows, threadRow, threadRowsFromWorld, RESET_MINUTES } from './store.js';
 import { migratePg } from './schema.js';
 
 const TOKEN_DAYS = 30;
@@ -277,6 +277,8 @@ export async function openPgStore(url, legacyJsonFile, { lazy = false } = {}) {
     renameAccount: (playerId, name) => pool.query('update accounts set username = $1 where player_id = $2', [String(name), playerId])
       .then((r) => r.rowCount > 0, () => false), // unique clash: someone else has it
     playerByUsername: async (name) => (await one('select player_id from accounts where lower(username) = lower($1)', [String(name)]))?.player_id ?? null,
+    // The account a reset mail goes to. Null when nobody owns that address.
+    playerByEmail: async (email) => (await one('select player_id from accounts where lower(email) = lower($1)', [String(email)]))?.player_id ?? null,
     deleteHouse: (code) => pool.query('delete from houses where code = $1', [code]),
     // Log in with either the username or the email.
     findAccount: (login) => one('select player_id, username, pass from accounts where lower(username) = lower($1) or lower(email) = lower($1)', [login]),
@@ -295,6 +297,30 @@ export async function openPgStore(url, legacyJsonFile, { lazy = false } = {}) {
       return row && Number(row.expires) > Date.now() ? row.player_id : null;
     },
     revokeToken: (token) => pool.query('delete from auth where token = $1', [sha(String(token))]),
+    // A reset ends every session: whoever knew the old password must not stay signed in.
+    revokeAllTokens: (playerId) => pool.query('delete from auth where player_id = $1', [playerId]).then((r) => r.rowCount),
+    setPassword: (playerId, password) =>
+      pool.query('update accounts set pass = $1 where player_id = $2', [hashPassword(password), playerId]).then((r) => r.rowCount > 0),
+    // A reset token is a bearer secret for an hour, so only its hash is stored, exactly like a login
+    // token: a leaked database cannot be used to take an account over. Asking again replaces the old one,
+    // so there is never more than one live link per account.
+    async createResetToken(playerId) {
+      const token = crypto.randomBytes(32).toString('base64url'), now = Date.now();
+      await pool.query('delete from reset_tokens where player_id = $1 or expires < $2', [playerId, now]);
+      await pool.query('insert into reset_tokens (player_id, token, expires) values ($1, $2, $3)',
+        [playerId, sha(token), now + RESET_MINUTES * 60_000]);
+      return token;
+    },
+    // The player a live token belongs to, with their password already changed; null when the token is
+    // unknown, expired or spent. Single use: one successful reset clears every token of theirs.
+    async resetPassword(token, password) {
+      if (typeof token !== 'string' || token.length > 100) return null;
+      const row = await one('select player_id, expires from reset_tokens where token = $1', [sha(token)]);
+      if (!row || Number(row.expires) < Date.now()) return null;
+      const ok = (await pool.query('update accounts set pass = $1 where player_id = $2', [hashPassword(password), row.player_id])).rowCount > 0;
+      await pool.query('delete from reset_tokens where player_id = $1', [row.player_id]);
+      return ok ? row.player_id : null;
+    },
     // Readiness: the cheapest query that proves the database answers at all.
     ping: async () => !!(await one('select 1 as ok'))?.ok,
     // Resolves once every queued save has landed: what a shutdown waits for.

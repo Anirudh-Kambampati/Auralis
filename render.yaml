@@ -30,3 +30,11 @@ services:
         sync: false # e.g. mailto:you@example.com
       - key: ALLOWED_ORIGINS
         sync: false # e.g. https://auralis.vercel.app
+      - key: SITE_URL
+        sync: false # the website's address, used to build reset links (no trailing slash)
+      - key: MAIL_PROVIDER
+        value: brevo # brevo sends from a verified address, no domain needed
+      - key: MAIL_FROM
+        sync: false # the address verified in Brevo
+      - key: MAIL_API_KEY
+        sync: false
