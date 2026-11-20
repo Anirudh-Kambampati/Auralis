@@ -24,8 +24,9 @@ export const ITEMS = {
   bookshelf: { name: 'Bookshelf', w: 2, h: 1, price: 30, solid: true, colors: 'wood', looks: ['Classic', 'Ladder', 'Cubbies', 'Glass cabinet', 'Arch'] , use: 'read' },
   coffeeTable: { name: 'Coffee table', w: 2, h: 1, price: 30, solid: true, colors: 'wood', looks: ['Wood', 'Glass', 'Round'] , use: 'tea' },
   armchair: { name: 'Armchair', w: 1, h: 1, price: 35, solid: true, colors: 'pastel', act: 'sit', looks: ['Classic', 'Wingback', 'Egg chair'] },
-  plush: { name: 'Plush bear', w: 1, h: 1, price: 40, solid: true, colors: 'pastel', use: 'hug' },
-  plushHead: { name: 'Plush head', w: 1, h: 1, price: 40, solid: true, colors: 'pastel', use: 'hug' },
+  plush: { name: 'Plush bear', w: 1, h: 1, price: 40, solid: false, top: true, colors: 'pastel', use: 'hug' },
+  plushHead: { name: 'Plush head', w: 1, h: 1, price: 40, solid: false, top: true, colors: 'pastel', use: 'hug' },
+  sharkPlushSmall: { name: 'Small shark plush', w: 1, h: 1, price: 22, solid: false, top: true, colors: 'pastel', use: 'hug', shelf: 'decor' },
   mirror: { name: 'Mirror', w: 1, h: 1, price: 40, solid: true, colors: 'wood', use: 'primp' },
   recordPlayer: { name: 'Record player', w: 1, h: 1, price: 40, solid: true, colors: 'wood', use: 'dance' },
   bed: { name: 'Bed', w: 2, h: 3, price: 45, solid: true, colors: 'pastel', act: 'sleep', looks: ['Classic', 'Canopy', 'Futon', 'Four-poster', 'Brass frame', 'Buttoned four-poster'] },
@@ -306,7 +307,7 @@ export const ITEMS = {
   hotCrossBuns: { name: 'Hot cross buns', w: 1, h: 1, price: 8, solid: false, top: true, shelf: 'seasonal' },
   lotusLamp: { name: 'Lotus lamp', w: 1, h: 1, price: 11, solid: false, top: true, shelf: 'seasonal' },
   deskCalendar: { name: 'Desk calendar', w: 1, h: 1, price: 9, solid: false, top: true, shelf: 'decor' },
-  sharkPlush: { name: 'Big shark plush', w: 2, h: 1, price: 45, solid: true, use: 'hug', shelf: 'decor' },
+  sharkPlush: { name: 'Big shark plush', w: 2, h: 1, price: 45, solid: false, top: true, use: 'hug', shelf: 'decor' },
 };
 // Shop shelves in order. Items list their shelf; items with no shelf (the starter desk and chair, retired bathroom pieces) aren't sold.
 export const SHELVES = [
@@ -329,7 +330,7 @@ const FIRST_ITEMS = {
   living: ['tv', 'fireplace', 'coffeeTable', 'sideTable', 'bookshelf', 'standingFan', 'grandClock'],
   kitchen: ['counter', 'stove', 'sink', 'fridge', 'diningTable', 'microwave', 'teapot', 'fruitBowl', 'cake'],
   plants: ['cactus', 'plant', 'sunflower', 'bonsai', 'palm', 'tulips', 'fig', 'terrarium', 'succulent'],
-  decor: ['books', 'lamp', 'globe', 'rug', 'roundRug', 'plush', 'plushHead', 'easel'],
+  decor: ['books', 'lamp', 'globe', 'rug', 'roundRug', 'plush', 'plushHead', 'sharkPlushSmall', 'easel'],
   work: ['gamingDesk', 'pcDesk', 'workTable', 'gamingChair', 'officeChair', 'miniFridge', 'coffee', 'energyCan', 'soda', 'wine'],
   fun: ['recordPlayer', 'guitar', 'piano', 'synth', 'drumKit', 'djDeck', 'speaker', 'aquarium', 'telescope'],
   games: ['arcade', 'gameConsole', 'poolTable', 'foosball', 'trampoline'],

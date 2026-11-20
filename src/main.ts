@@ -1662,7 +1662,7 @@ function render(t: number, dt: number) {
       if (!it || (it.chair && occupied.has(tileKey(o.x + f.x, o.y + f.y)))) return;
       if (!onScreen(o.x + f.x, o.y + f.y, Math.max(it.w, it.h), Math.max(it.w, it.h))) return;
       const dragged = drag?.moved && m.id === myId && ri === editRoom && drag.index === idx;
-      // Drinks and toys stand on top of whatever table they were put on.
+      // Drinks, toys and plushes stand on top of whatever table or bed they were put on.
       const under = it.top ? room.furniture.find((g) => {
         const gi = ITEMS[g.item as ItemKey], gd = gi && footprint(g);
         return gi?.solid && f.x >= g.x && f.x < g.x + gd.w && f.y >= g.y && f.y < g.y + gd.h;
@@ -1683,7 +1683,9 @@ function render(t: number, dt: number) {
         if (played && now - played < 5000) drawClaw(ctx, (o.x + f.x) * T, (o.y + f.y) * T - lift, now, played);
         if (thirsty) drawDroplet(ctx, (o.x + f.x) * T + T / 2, (o.y + f.y) * T - lift - 6 + Math.round(Math.sin(t / 300)));
       };
-      if (it.top) sprites.push({ y: o.y + f.y + 0.6, draw });
+      // A thing on a piece draws just in front of the piece itself, not back at its own tile's place in the queue.
+      const ud = under && footprint(under);
+      if (it.top) sprites.push({ y: under && ud ? o.y + under.y + ud.h - 0.5 + 0.02 : o.y + f.y + 0.6, draw });
       else if (!it.solid) draw();
       else sprites.push({ y: o.y + f.y + fp.h - 0.5, draw });
     });

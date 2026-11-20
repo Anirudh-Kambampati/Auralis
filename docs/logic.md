@@ -89,7 +89,7 @@ A trick is a hop with a side-to-side spin and three gold sparkles (`act: 'trick'
 - Items with an `act` (chairs, sofa, armchair, beanbag, gym ball, dumbbells, punching bag, exercise bike, treadmill) can be stood on. When a character stops on one, everyone draws them using it (sitting, bouncing, lifting, punching, cycling, running). Nothing extra is synced: the pose comes from the tile they're on.
 - When idle, your character either walks to a random reachable tile (55%: an unused piece of furniture next to a reachable tile instead), with only a short pause between walks. Lounging lasts 8–15 s, workouts 5–10 s.
 - Tapping your own character flips it between wandering and staying put (`staying` in the client). While it is staying it finishes the step it is on, drops whatever walk or piece it was heading for, and holds that tile — no wandering at all — until you tap it again. Explicit moves still work: clicking furniture, a bed or a desk walks it there, and the arrow/WASD keys steer it; it simply stays where that leaves it.
-- `top` items (drinks, pet bed, pet ball) only collide with each other, so they can stand on tables and rugs. On a table they're drawn lifted onto its surface.
+- `top` items (drinks, plushes, pet bed, pet ball) only collide with each other, so they can stand on tables, beds and rugs. On a table they're drawn lifted onto its top (`SURFACE` in `draw.ts`); beds need no lift, since their art fills every tile of the footprint, so a plush put down on one already lands on the mattress. Either way the thing is sorted just in front of the piece itself, so it never hides behind the bed it sits on.
 
 ## Pet toys
 

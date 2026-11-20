@@ -1232,7 +1232,10 @@ export const OVERHANG: Record<string, number> = {
   projectorScreen: 10,
 };
 // How far a tabletop item is lifted when it stands on one of these.
-export const SURFACE: Record<string, number> = { desk: 9, workTable: 9, pcDesk: 9, gamingDesk: 9, coffeeTable: 7, miniFridge: 19, counter: 10, sideTable: 7, diningTable: 9, nightstand: 10, dresser: 10, island: 13, consoleTable: 11, standingDesk: 13 };
+// How far a tabletop item is lifted when it stands on one of these. Beds need no entry: their art fills every tile
+// of their footprint, so a thing put down on one already lands on the mattress.
+export const SURFACE: Record<string, number> = { desk: 9, workTable: 9, pcDesk: 9, gamingDesk: 9, coffeeTable: 7, miniFridge: 19, counter: 10, sideTable: 7, diningTable: 9, nightstand: 10, dresser: 10, island: 13, consoleTable: 11, standingDesk: 13,
+  sewingTable: 9, craftTable: 7, chessTable: 3, puzzleTable: 3, makeupTable: 15, draftingTable: 3, poolTable: 2, foosball: 1, pingPong: 3, airHockey: 3 };
 
 // col is the owner's chosen colour (undefined = the item's own default).
 // bare: tiles of a desk with something placed on them (bit 1 = left, 2 = right); its built-in clutter there isn't drawn.
@@ -1752,6 +1755,22 @@ const DRAW: Record<string, Draw> = {
     r(c, x + 7, Y + 12, 2, 1, OUT);
     r(c, x + 3, Y + 11, 2, 1, '#f7a0a8');
     r(c, x + 11, Y + 11, 2, 1, '#f7a0a8');
+  },
+  // The big shark plush at a quarter of its size, for a single tile: the same periwinkle body, white belly band,
+  // pink mouth and one eye, with a tail fin out to the left and a dorsal fin on top so it still reads as a shark.
+  sharkPlushSmall(c, x, y, _t, col = '#86a2d4') {
+    const dark = shade(col, -0.14);
+    box(c, x, y + 5, 3, 2, OUT); box(c, x, y + 9, 3, 3, OUT);
+    r(c, x + 1, y + 5, 2, 2, col); r(c, x + 1, y + 9, 2, 2, dark);
+    box(c, x + 6, y + 2, 1, 3, OUT); box(c, x + 7, y + 1, 1, 4, OUT); box(c, x + 8, y + 3, 1, 2, OUT);
+    r(c, x + 7, y + 2, 1, 3, col); r(c, x + 8, y + 4, 1, 1, dark);
+    box(c, x + 4, y + 4, 9, 4, OUT); box(c, x + 2, y + 6, 13, 6, OUT); box(c, x + 5, y + 10, 8, 4, OUT);
+    box(c, x + 5, y + 5, 7, 2, col); box(c, x + 3, y + 7, 11, 4, col); box(c, x + 6, y + 11, 6, 2, col);
+    box(c, x + 6, y + 9, 5, 2, '#fff8f0');
+    r(c, x + 12, y + 9, 2, 1, '#d01868');
+    r(c, x + 11, y + 6, 2, 2, '#2b2530'); r(c, x + 11, y + 6, 1, 1, '#ffffff');
+    r(c, x + 9, y + 7, 1, 3, dark);
+    r(c, x + 5, y + 12, 3, 1, dark);
   },
   mirror(c, x, y, t, col = '#d9a06a') {
     const Y = y - 14;
