@@ -635,6 +635,9 @@ let useNext: string | null = null; // what to do once the walk ends in front of 
 let restUntil = 0; // pause before wandering on: short after a walk, longer while using furniture
 let quietUntil = 0; // longer pause after you click or steer, so the sprite obeys you
 let staying = false; // I tapped myself: stay on this tile and don't wander until I tap myself again
+// A pet's happy spin and its trick are a mirror flip of the sprite, so the cadence is what makes them read as
+// turning rather than as a fit: one side every SPIN_FLIP_MS. A flip every 150 ms looked like a pet flickering.
+const SPIN_FLIP_MS = 400;
 let arrive: (() => void) | null = null; // what to do once I reach furniture I clicked (water it, nap...)
 let stayMs = 0; // how long to stay on furniture I picked myself, instead of a random little while
 
@@ -1341,15 +1344,50 @@ canvas.addEventListener('pointerup', () => {
 });
 
 // Decorate shortcuts for the selected piece: arrows nudge it a tile, R rotates, F flips, Delete puts it away, Esc is done.
+// A held arrow key repeats about thirty times a second, and each repeat is a save plus a house broadcast, so a nudge
+// goes out at most once per NUDGE_MS. A press inside that window is not thrown away: the last one waits for the
+// window to expire and is sent then, so a quick second tap still lands instead of being swallowed.
+const NUDGE_MS = 150;
+let lastNudge = 0, pendingNudge: [number, number] | null = null, nudgeTimer = 0;
+// The last nudge we asked for: the piece it was for, the spot it stepped from and the spot it stepped to. Only ever
+// used while the piece still stands where that nudge started, so a stale record can never send a wrong tile.
+let nudged: { index: number; from: { x: number; y: number }; to: { x: number; y: number } } | null = null;
+function sendNudge(dir: [number, number]) {
+  lastNudge = Date.now();
+  if (moving === null) return;
+  const room = myRoom(), f = room?.furniture[moving];
+  if (!room || !f) return;
+  // The piece still stands where it was while the server's answer for the last nudge is in flight, so step from the
+  // spot we last asked for: a queued press then moves on from there instead of being refused as already occupied.
+  const inFlight = nudged && nudged.index === moving && f.x === nudged.from.x && f.y === nudged.from.y ? nudged.to : null;
+  const base = inFlight ?? f;
+  const x = base.x + dir[0], y = base.y + dir[1];
+  if (!canPlace(without(room, moving), f.item, x, y, f.rot)) { nudged = null; return; }
+  nudged = { index: moving, from: { x: f.x, y: f.y }, to: { x, y } };
+  send({ t: 'move', r: editRoom, index: moving, x, y });
+}
+function nudge(dir: [number, number]) {
+  const wait = NUDGE_MS - (Date.now() - lastNudge);
+  if (wait > 0) { // inside the window: keep the latest press and let the timer send it
+    pendingNudge = dir;
+    clearTimeout(nudgeTimer);
+    nudgeTimer = window.setTimeout(() => {
+      const next = pendingNudge;
+      pendingNudge = null;
+      if (next) sendNudge(next);
+    }, wait);
+    return;
+  }
+  sendNudge(dir);
+}
 onKey((e) => {
   if (openPanel !== 'decorate' || moving === null || (e.target as HTMLElement).closest('input, textarea, select')) return;
   const f = myRoom()?.furniture[moving];
   if (!f) return;
   const step = ({ ArrowUp: [0, -1], ArrowDown: [0, 1], ArrowLeft: [-1, 0], ArrowRight: [1, 0] } as Record<string, number[]>)[e.key];
   const act = { ...(canRotate(f.item) ? { r: 'rotate' } : {}), f: 'flip', Delete: 'putaway', Backspace: 'putaway', Escape: 'deselect' }[e.key.length === 1 ? e.key.toLowerCase() : e.key];
-  if (step) {
-    if (canPlace(without(myRoom()!, moving), f.item, f.x + step[0], f.y + step[1], f.rot)) send({ t: 'move', r: editRoom, index: moving, x: f.x + step[0], y: f.y + step[1] });
-  } else if (act) panel.querySelector<HTMLButtonElement>(`button[data-act="${act}"]`)?.click(); // same as pressing the button
+  if (step) nudge(step as [number, number]);
+  else if (act) panel.querySelector<HTMLButtonElement>(`button[data-act="${act}"]`)?.click(); // same as pressing the button
   else return;
   e.preventDefault();
   e.stopImmediatePropagation(); // the arrows move the piece, not the avatar
@@ -1460,11 +1498,14 @@ function render(t: number, dt: number) {
   // Characters and redrawn furniture have AV times the detail, so keep the scale a multiple of AV: crisp half-pixels.
   const scale = Math.min(5 * AV, Math.max(AV, (Math.floor(fit / AV) + zoom) * AV));
   const vw = aw / scale, vh = ah / scale;
-  // Centre the whole room when it fits on screen; otherwise follow the player.
+  // Centre the whole room when it fits on screen; otherwise follow the player. Decorate is the exception: it always
+  // centres the room it is decorating, even zoomed in past fitting, instead of following me out of it.
+  const decorating = openPanel === 'decorate' && mySlot() >= 0;
   const fits = roomW <= vw && roomH <= vh;
   // When following the player, stop at the house edges so the view never shows empty paper beyond them.
   const follow = (p: number, view: number, size: number) => (size + T <= view ? size / 2 : Math.max(view / 2 - T / 2, Math.min(size - view / 2 + T / 2, p)));
-  const bx = fits ? (o.x - 1) * T + roomW / 2 : me_.x * T + 8, by = fits ? (o.y - WALL_H) * T + roomH / 2 : me_.y * T + 8;
+  const centred = fits || decorating;
+  const bx = centred ? (o.x - 1) * T + roomW / 2 : me_.x * T + 8, by = centred ? (o.y - WALL_H) * T + roomH / 2 : me_.y * T + 8;
   const tx = follow(bx + camPan.x, vw, grid.w * T), ty = follow(by + camPan.y, vh, grid.h * T);
   camPan.x = tx - bx; camPan.y = ty - by; // dragging past the edge of the house doesn't pile up
   if (!cam || cam.scale !== scale) cam = { x: tx, y: ty, scale };
@@ -1754,7 +1795,7 @@ function render(t: number, dt: number) {
       } else if (here && Math.random() < 0.0015 * (1 + bondLevel(p.bond)) * dt * 60) x.goal = spotNear(here, 1.6); // the owner, now and then
     }
     // A pet that likes you enough shows off: a little spin and a hop, close by.
-    if (!x.goal && myLvl >= 2 && guestA && Math.random() < 0.008 * dt * 60
+    if (!x.goal && myLvl >= 2 && guestA && (petTrickAt.get(key) ?? 0) < now && Math.random() < 0.008 * dt * 60
       && Math.hypot(guestA.x - x.pos.x, guestA.y - x.pos.y) < 3) { petTrickAt.set(key, now + 1600); petNameAt.set(key, now + 5500); }
     // A pet near someone singing stops to watch, or bounces along on the beat. Which one is a pure function
     // of the pet's seed and the clock; a second microphone nearby makes pets prefer the quiet watch.
@@ -1822,12 +1863,12 @@ function render(t: number, dt: number) {
       if (d && Math.abs(dx) > 0.02) cur.left = dx < 0;
       left = cur.left ?? left;
     }
-    if (run) { moving = true; if (!goal) left = Math.floor(now / 150) % 2 === 0; } // spin: flip side to side
+    if (run) { moving = true; if (!goal) left = Math.floor(now / SPIN_FLIP_MS) % 2 === 0; } // spin: flip side to side
     petHits.push({ m, slot, x: px, y: py });
     // Names are not always on screen: a pet wears its name while it trots about, for a moment after it is fussed
     // over or does a trick, and now and then while it idles (a per-pet offset, so they never all flicker at once).
     const nameNow = (petNameAt.get(key) ?? 0) > now;
-    if ((petTrickAt.get(key) ?? 0) > now) { pact = 'trick'; left = Math.floor(now / 160) % 2 === 0; }
+    if ((petTrickAt.get(key) ?? 0) > now) { pact = 'trick'; left = Math.floor(now / SPIN_FLIP_MS) % 2 === 0; }
     const temp = petActAt.get(key);
     if (temp && now - temp.at < 1500) pact = temp.act;
     else if (temp) petActAt.delete(key);
@@ -2354,9 +2395,9 @@ function pickColor(start: string, onPick: (hex: string) => void) {
   const input = ui.createElement('input') as HTMLInputElement;
   input.type = 'color'; input.value = start; input.className = 'colorpick';
   const done = () => { input.remove(); if (colorPick === input) colorPick = null; };
-  const picked = () => { if (input.value) onPick(input.value); };
-  input.addEventListener('input', picked);
-  input.addEventListener('change', () => { picked(); done(); });
+  // One message per pick, sent on `change`: while the dialog is being dragged `input` fires for every colour
+  // the pointer passes over, and each of those is a save plus a house broadcast on the connection's budget.
+  input.addEventListener('change', () => { if (input.value) onPick(input.value); done(); });
   input.addEventListener('cancel', done); // dismissed without choosing
   ui.body.appendChild(input);
   colorPick = input;
@@ -4101,8 +4142,17 @@ $<HTMLTextAreaElement>('#chatInput').addEventListener('input', (e) => {
   // Typing indicator debounce
   if (chatOpen && dmPeer) {
     clearTimeout(typingTimers.get('chat') as number);
-    sendTyping(threadKey(dmPeer), true);
-    typingTimers.set('chat', setTimeout(() => sendTyping(threadKey(dmPeer), false), 2000));
+    // One "typing" per run of typing, not one per keystroke: a keystroke each spends the connection's message
+    // budget (40 in a burst, then 8 a second) as fast as someone can type, and the dropped messages then made
+    // the client toast "too many actions". The flag clears when the stop signal goes out.
+    if (!typingTimers.get('chat-on')) {
+      typingTimers.set('chat-on', 1);
+      sendTyping(threadKey(dmPeer), true);
+    }
+    typingTimers.set('chat', setTimeout(() => {
+      typingTimers.delete('chat-on');
+      sendTyping(threadKey(dmPeer), false);
+    }, 2000));
   }
 });
 $<HTMLTextAreaElement>('#chatInput').addEventListener('keydown', (e) => {

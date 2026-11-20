@@ -75,14 +75,14 @@ Clicking your own pet, while you are not studying, toggles `follow` on its row (
 
 You cannot leash someone else's pet. Patting it only grows your bond, and the patter is answered with one line from `PET_LINES`, picked by that bond — the `pat` message everyone receives is for the hearts and the name tag, not a second toast, so the pet's own words are not overwritten.
 
-A trick is a hop with a side-to-side spin and three gold sparkles (`act: 'trick'` in `src/pets.ts`); a pet with level 2 or more with you may do one near you.
+A trick is a hop with a side-to-side spin and three gold sparkles (`act: 'trick'` in `src/pets.ts`); a pet with level 2 or more with you may do one near you, though it will not start another while one is still playing. The spin in a trick and the happy spin after a session or a pat are both a mirror flip of the sprite, so the cadence is the whole effect: the sprite turns over every 400 ms (`SPIN_FLIP_MS` in `src/main.ts`). A flip every 150–160 ms, which is what these used to do, read as a pet flickering left and right rather than as turning.
 
 ## Camera
 
 - The zoom is the largest whole number at which the current room (with walls) fits the space the HUD, dock, side bar and panels leave free. Whole numbers keep the pixels crisp.
 - Zooming out goes two steps beyond that fitted view and no further: the scale never drops below one `AV` unit per art pixel. Nothing changes the zoom on its own — only the buttons, pinch, Ctrl/Cmd + wheel and the `+`/`-` keys do.
 - If the room fits, the camera centres on the room. Otherwise it follows the player. Either way it stops at the edges of the house, so the screen never shows empty space beyond it. It eases between rooms.
-- In Decorate the camera is held on the room being decorated (`editRoom`), not on the player: the panel is about a room, and your character may have wandered into a housemate's. Closing the panel hands the camera back to whoever you are standing as.
+- In Decorate the camera is held on the room being decorated (`editRoom`), not on the player: the panel is about a room, and your character may have wandered into a housemate's. It centres that room even when the zoom is too close for the whole room to fit — following the character instead is what used to leave the view on them. Closing the panel hands the camera back to whoever you are standing as.
 
 ## Using furniture
 
@@ -130,15 +130,15 @@ Each pet kind has free `coats` (fur colours) and can wear one accessory from `PE
 
 ## Gifting
 
-Three gifting paths exist, and only one is rate-limited:
+Three gifting paths exist, and none of them is capped:
 
-| Path | Message | Rate limit |
+| Path | Message | Limit |
 | --- | --- | --- |
-| Coins | `gift` | 5 per day per player |
-| Stored pieces | `gift_item` | None |
-| Handmade pieces | `gift_crafted` | None |
+| Coins | `gift` | Only your balance |
+| Stored pieces | `gift_item` | Only what you own |
+| Handmade pieces | `gift_crafted` | Only what you own |
 
-The coin gift sends `GIFT_COINS` (10) and is capped so coins cannot be shovelled between accounts. Item and crafted gifts move a specific instance and have no cap — a player can hand over as many claw prizes or handmade pieces as they own.
+The coin gift sends `GIFT_COINS` (10) each time, as often as the sender can afford. There is no daily gift cap: a gift only *moves* existing coins, it never mints new ones, so the sender's balance is the whole limit. Item and crafted gifts move a specific instance — a player can hand over as many claw prizes or handmade pieces as they own.
 
 ## Extra rooms
 
@@ -151,6 +151,7 @@ The coin gift sends `GIFT_COINS` (10) and is capped so coins cannot be shovelled
 ## Chat: how fast, and how long
 
 - **One budget per connection.** A socket may send 40 messages in a burst and then 8 a second (a token bucket, capped at 40). Going over does not close the socket: the message is dropped and the client gets `{ t: 'error' }` saying it is sending too fast. The per-intent guards (0.6 s between chat lines, 1.5 s between pats, …) still apply on top, so this is only the backstop against a script, not a second gameplay rule.
+- **The client must not spend the budget on raw DOM events.** Anything that fires many times a second is coalesced before it reaches the socket, because the drop is silent apart from that one toast and an intent that is dropped just does nothing. A typing indicator goes out once per run of typing (and its `typing: false` two seconds after the last key), not once per keystroke; a colour from the picker is sent when the dialog closes (`change`), not for every colour the pointer drags over (`input`); and a held arrow key nudge in Decorate sends at most one `move` every 150 ms instead of one per auto-repeat — a press inside that window is queued for the moment it expires rather than dropped, so a quick second tap still moves the piece (150 ms later, on top of the first). Walking already costs one `pos` per tile, about 1–3 a second.
 - **History is kept for two years.** Once a day the server deletes `messages` rows older than 730 days, so the archive cannot grow without bound; a thread’s list row stays (its newest message is younger by definition). Pages older than that are gone from `history`. The pictures and files those messages carried are read first and deleted from the bucket with them, so retention does not leave orphaned objects behind.
 - **Unread counts survive a reload.** `read` writes `threads.seen`, and the server sends the map it has loaded as `me.threadSeen` (thread → newest id read), so a fresh client can tell what it has missed without replaying the archive.
 

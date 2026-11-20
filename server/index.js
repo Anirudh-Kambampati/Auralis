@@ -20,7 +20,7 @@ import {
   ITEMS, WALLPAPERS, FLOORS, SKINS, HAIRS, SHIRTS, STYLES, FACES, OUTFITS, BODIES, ACCESSORIES, isFocusLength, canPlace, placeSwaps, focusReward, quitReward, quitMinutes, focusEnd, streakDays, streakBonus,
   WALL_PATTERNS, FLOOR_STYLES, PETS, MAX_PETS, SIZES, bondLevel, NOTIFY, wantsNotify, EXPAND_COST, colorsFor, USES, PET_ACCS, MAX_ROOMS, ROOM_COST,
   GUEST_BOND_STEP, addGuestBond, guestBond, guestBondLevel, favouriteGuest,
-  isPlant, TASK_COINS, TASK_REWARDS_PER_DAY, discounted, GIFT_COINS, GIFTS_PER_DAY, nextRot, canRotate, sellPrice,
+  isPlant, TASK_COINS, TASK_REWARDS_PER_DAY, discounted, GIFT_COINS, nextRot, canRotate, sellPrice,
   SCAR_ACCS, SCAR_COLOURS, LIGHTS, DRINKS, focusStart, caffeineOverlap, caffeineMinutes,
   CLAW_COST, CLAW_COOLDOWN_MS, clawPrize, readyKey, pieceReadyAt, setPieceReady,
   CRAFT, CRAFT_COOLDOWN_MS, craftColour, craftItem, craftedPrice, craftedProblem,
@@ -697,7 +697,7 @@ async function handle(p, m) {
   const ctx = {
     ACCESSORIES, BODIES, CLAW_COOLDOWN_MS, CLAW_COST,
     CRAFT, CRAFT_COOLDOWN_MS, DRINKS, EXPAND_COST,
-    FACES, FLOORS, FLOOR_STYLES, GIFTS_PER_DAY,
+    FACES, FLOORS, FLOOR_STYLES,
     GIFT_COINS, GUEST_BOND_STEP, HAIRS, ITEMS,
     LIGHTS, MAX_EVENTS, MAX_PETS, MAX_ROOMS,
     NOTIFY, OUTFITS, PETS, PET_ACCS,

@@ -25,6 +25,7 @@ export const ITEMS = {
   coffeeTable: { name: 'Coffee table', w: 2, h: 1, price: 30, solid: true, colors: 'wood', looks: ['Wood', 'Glass', 'Round'] , use: 'tea' },
   armchair: { name: 'Armchair', w: 1, h: 1, price: 35, solid: true, colors: 'pastel', act: 'sit', looks: ['Classic', 'Wingback', 'Egg chair'] },
   plush: { name: 'Plush bear', w: 1, h: 1, price: 40, solid: true, colors: 'pastel', use: 'hug' },
+  plushHead: { name: 'Plush head', w: 1, h: 1, price: 40, solid: true, colors: 'pastel', use: 'hug' },
   mirror: { name: 'Mirror', w: 1, h: 1, price: 40, solid: true, colors: 'wood', use: 'primp' },
   recordPlayer: { name: 'Record player', w: 1, h: 1, price: 40, solid: true, colors: 'wood', use: 'dance' },
   bed: { name: 'Bed', w: 2, h: 3, price: 45, solid: true, colors: 'pastel', act: 'sleep', looks: ['Classic', 'Canopy', 'Futon', 'Four-poster', 'Brass frame', 'Buttoned four-poster'] },
@@ -328,7 +329,7 @@ const FIRST_ITEMS = {
   living: ['tv', 'fireplace', 'coffeeTable', 'sideTable', 'bookshelf', 'standingFan', 'grandClock'],
   kitchen: ['counter', 'stove', 'sink', 'fridge', 'diningTable', 'microwave', 'teapot', 'fruitBowl', 'cake'],
   plants: ['cactus', 'plant', 'sunflower', 'bonsai', 'palm', 'tulips', 'fig', 'terrarium', 'succulent'],
-  decor: ['books', 'lamp', 'globe', 'rug', 'roundRug', 'plush', 'easel'],
+  decor: ['books', 'lamp', 'globe', 'rug', 'roundRug', 'plush', 'plushHead', 'easel'],
   work: ['gamingDesk', 'pcDesk', 'workTable', 'gamingChair', 'officeChair', 'miniFridge', 'coffee', 'energyCan', 'soda', 'wine'],
   fun: ['recordPlayer', 'guitar', 'piano', 'synth', 'drumKit', 'djDeck', 'speaker', 'aquarium', 'telescope'],
   games: ['arcade', 'gameConsole', 'poolTable', 'foosball', 'trampoline'],
@@ -629,8 +630,8 @@ export const TASK_COINS = 5, TASK_REWARDS_PER_DAY = 3;
 export const discounted = (price, discount) => (discount ? Math.ceil(price * 0.9) : price);
 // Selling something back from storage returns half what it cost (free starter pieces fetch nothing, so can't be sold).
 export const sellPrice = (item) => Math.floor((ITEMS[item]?.price ?? 0) / 2);
-// Gifts between housemates: a fixed amount, a few a day, so coins can't be shovelled between accounts.
-export const GIFT_COINS = 10, GIFTS_PER_DAY = 5;
+// Gifts between housemates: a fixed amount, as often as the sender can afford, so coins only ever move.
+export const GIFT_COINS = 10;
 
 // Notifications each player can switch on or off (system ones in a background tab, and pushes with Auralis closed).
 export const NOTIFY = {

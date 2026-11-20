@@ -1219,7 +1219,7 @@ export function drawPainting(c: Ctx, x: number, y: number) {
 // Pixels each sprite reaches above its footprint (things stand "up" in the 3/4 view).
 export const OVERHANG: Record<string, number> = {
   desk: 6, chair: 6, plant: 8, lamp: 12, rug: 0,   bookshelf: 22, bed: 26, sofa: 8, aquarium: 14,
-  books: 2, cactus: 8, sunflower: 12, globe: 8, beanbag: 0, roundRug: 0, coffeeTable: 2, armchair: 11, plush: 2,
+  books: 2, cactus: 8, sunflower: 12, globe: 8, beanbag: 0, roundRug: 0,   coffeeTable: 2, armchair: 11, plushHead: 2,
   mirror: 14, recordPlayer: 4, guitar: 12, cello: 14, sharkPlush: 6, easel: 14, bonsai: 4, wardrobe: 23, piano: 12,
   workTable: 6, pcDesk: 14, gamingDesk: 12, officeChair: 7, gamingChair: 11, miniFridge: 6,
   coffee: 0, energyCan: 0, soda: 0, wine: 1, gymBall: 0, dumbbells: 4, punchingBag: 16, exerciseBike: 9, treadmill: 12,
@@ -1739,7 +1739,9 @@ const DRAW: Record<string, Draw> = {
       r(c, ax + 1, Y + 9, 2, 1, shade('#b07a4e', 0.14));
     }
   },
-  plush(c, x, y, t, col = '#f2b48a') {
+  // The round plush that used to be the plush bear: a beast's head and body in one lump. It is its own item now
+  // ("Plush head"); the plush bear is the giant teddy drawn small, from the recipe shapes below.
+  plushHead(c, x, y, t, col = '#f2b48a') {
     const Y = y - 2 + (Math.floor(t / 900) % 2);
     for (const ex of [4, 12]) { disc(c, x + ex, Y + 4, 3, OUT); disc(c, x + ex, Y + 4, 2, col); r(c, x + ex, Y + 4, 1, 1, '#f4a6c8'); }
     disc(c, x + 8, Y + 11, 7, OUT);
@@ -3276,6 +3278,8 @@ const RECIPES: Record<string, [number, string, string]> = {
   hourglass: [0, '', 'r4,2,8,1,#b07a4e|r4,13,8,1,#b07a4e|r5,3,6,3,#d4f0fb|r7,6,2,2,#d4f0fb|r5,8,6,5,#d4f0fb|r6,4,4,1,#ffd27a|r6,10,4,3,#ffd27a|f7,7,1,2,#ffd27a'],
   floorCandle: [10, '', 'b3,6,4,14,#fffaf3|b9,10,4,10,#fff4e6|f4,3,1,3,#ffd34d|f10,7,1,3,#ffd34d|r2,20,12,2,#d9a06a'],
   bigTeddy: [10, '#d9a87a', 'o4,2,2,$|o12,2,2,$|o8,8,6,$|d8,10,2,$l|r6,7,1,1,O|r10,7,1,1,O|r8,9,1,1,O|o8,20,6,$|d8,21,3,$l|o3,24,2,$|o13,24,2,$|r7,13,3,1,#f48a8a'],
+  // The giant teddy, drawn at a single tile: same ears, muzzle, belly, feet and pink bow, scaled to fit on a shelf.
+  plush: [0, '#d9a87a', 'o4,1,1,$|o9,1,1,$|o6,4,3,$|d6,5,1,$l|r5,3,1,1,O|r8,3,1,1,O|r6,5,1,1,O|o6,11,3,$|d6,11,1,$l|r5,8,2,1,#f48a8a|o3,14,1,$|o9,14,1,$'],
   birdcage: [16, '', 'r7,0,2,3,#ffd34d|r3,4,10,1,#ffd34d|r3,4,1,18,#ffd34d|r6,4,1,18,#ffd34d|r9,4,1,18,#ffd34d|r12,4,1,18,#ffd34d|r2,22,12,2,#ffd34d|o8,13,2,#7fb2e8|r10,13,1,1,#f28a3a|r7,24,2,6,#a8a0b8|r4,30,8,2,#a8a0b8'],
   sculpture: [12, '#b89af0', 'o6,6,4,$|o11,11,3,$l|r7,10,3,6,$d|b4,16,8,4,#e8e3dc|b3,20,10,8,#fffaf3'],
   standingDesk: [10, '#fffaf3', 'b9,0,14,7,#3a3448|r10,1,12,4,#7fb2e8|b0,6,32,5,$|r3,11,3,15,#5a5070|r26,11,3,15,#5a5070|r1,24,30,2,#5a5070'],

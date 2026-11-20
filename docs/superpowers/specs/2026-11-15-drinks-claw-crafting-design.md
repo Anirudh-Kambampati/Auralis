@@ -25,7 +25,7 @@ Three separate gifting paths exist, and only one of them is rate-limited:
 
 | Path | Message | Rate limit |
 | --- | --- | --- |
-| Coins | `gift` | 5 per day per player (`GIFTS_PER_DAY`) |
+| Coins | `gift` | None — `GIFT_COINS` per gift, as often as your balance allows |
 | Stored pieces | `gift_item` | None |
 | Handmade pieces | `gift_crafted` | None |
 

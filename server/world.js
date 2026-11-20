@@ -7,7 +7,7 @@
 //
 // server/handlers.test.js checks that list against every method and against index.js.
 
-export const ctxKeys = ["CLAW_COOLDOWN_MS","CLAW_COST","CRAFT","CRAFT_COOLDOWN_MS","DRINKS","EXPAND_COST","FLOORS","FLOOR_STYLES","GIFTS_PER_DAY","GIFT_COINS","GUEST_BOND_STEP","ITEMS","LIGHTS","MAX_PETS","MAX_ROOMS","PETS","PET_ACCS","ROOM_COST","WALLPAPERS","WALL_PATTERNS","addGuestBond","guestBond","broadcastHouse","canPlace","canRotate","cheerCount","clawPrize","cleanText","colorsFor","craftColour","craftItem","craftedPrice","db","discounted","has","inbox","isPlant","lastCheer","lastInvite","m","newRoom","nextRot","p","petLine","petWord","pick","pieceReadyAt","placeSwaps","readyKey","room","save","sellPrice","send","setPieceReady","sockets"];
+export const ctxKeys = ["CLAW_COOLDOWN_MS","CLAW_COST","CRAFT","CRAFT_COOLDOWN_MS","DRINKS","EXPAND_COST","FLOORS","FLOOR_STYLES","GIFT_COINS","GUEST_BOND_STEP","ITEMS","LIGHTS","MAX_PETS","MAX_ROOMS","PETS","PET_ACCS","ROOM_COST","WALLPAPERS","WALL_PATTERNS","addGuestBond","guestBond","broadcastHouse","canPlace","canRotate","cheerCount","clawPrize","cleanText","colorsFor","craftColour","craftItem","craftedPrice","db","discounted","has","inbox","isPlant","lastCheer","lastInvite","m","newRoom","nextRot","p","petLine","petWord","pick","pieceReadyAt","placeSwaps","readyKey","room","save","sellPrice","send","setPieceReady","sockets"];
 
 // A nap points at a piece by its owner and slot in that owner's room, so any change to the room's furniture list
 // has to carry the nap with it — for every pet in the house, not just the owner's: a guest's pet may be asleep on
@@ -138,14 +138,10 @@ export const world = {
   },
 
   async gift(ctx) {
-    const { db, p, m, GIFT_COINS, GIFTS_PER_DAY, send, sockets, inbox } = ctx;
-    { // send a housemate some coins, a few times a day
+    const { db, p, m, GIFT_COINS, send, sockets, inbox } = ctx;
+    { // send a housemate some coins, as often as you can afford: the coins only move, they are never minted
           const them = db.houses[p.house].members.includes(m.to) && m.to !== p.id ? db.players[m.to] : null;
           if (!them || p.coins < GIFT_COINS) return;
-          const day = new Date().toDateString();
-          if (p.giftDay !== day) { p.giftDay = day; p.giftsSent = 0; }
-          if (p.giftsSent >= GIFTS_PER_DAY) return send(sockets.get(p.id), { t: 'error', text: `You can send ${GIFTS_PER_DAY} gifts a day. Try again tomorrow!` });
-          p.giftsSent++;
           p.coins -= GIFT_COINS;
           them.coins += GIFT_COINS;
           send(sockets.get(p.id), { t: 'reward', text: `🎁 Sent ${them.name} ${GIFT_COINS} coins.` });
