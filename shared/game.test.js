@@ -71,6 +71,31 @@ test('the house grows as a square grid and every room opens to its neighbours', 
   assert.equal(g.at(g.origins[1].x + 4, g.origins[1].y + 8), DOOR);
 });
 
+test('rooms of different sizes still open into the row above', () => {
+  // A grand row over a cozy one: the same column drifts apart, and pairing by index left the right-hand rooms
+  // with no doorway at all. Each one links to the room above it actually shares floor with instead.
+  const g = buildGrid([empty(3), empty(3), empty(3), empty(), empty(), empty()]);
+  const owners = (x, y) => g.owner[y * g.w + x];
+  const o = g.origins[0], reach = new Set(), seen = new Set([`${o.x},${o.y}`]), queue = [[o.x, o.y]];
+  while (queue.length) {
+    const [x, y] = queue.shift();
+    if (owners(x, y) >= 0) reach.add(owners(x, y));
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      const k = `${x + dx},${y + dy}`, c = g.at(x + dx, y + dy);
+      if (!seen.has(k) && (c === FLOOR || c === DOOR)) { seen.add(k); queue.push([x + dx, y + dy]); }
+    }
+  }
+  assert.equal(reach.size, 6);
+  // Each room below also has a doorway of its own straight up, not only a way round through its neighbours, and it
+  // is wide enough to see: a single-tile slot between two posts is a gap, not an entrance.
+  for (const i of [3, 4, 5]) {
+    const b = g.origins[i];
+    let doors = 0;
+    for (let y = 0; y < b.y; y++) for (let x = b.x; x < b.x + g.sizes[i].w; x++) if (g.at(x, y) === DOOR) doors++;
+    assert.ok(doors >= 2, `room ${i} opens upward with a doorway you can see (${doors} tiles)`);
+  }
+});
+
 test('an upgraded room packs snugly next to a small one', () => {
   const g = buildGrid([empty(3), empty(0)]);
   const big = roomSize(empty(3));

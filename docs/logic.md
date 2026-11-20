@@ -9,7 +9,7 @@ All rules live in `shared/game.js` and `shared/stats.js`, so the browser and the
 - Rooms sit in a square grid that grows with the house: 1 room is 1×1, 2–4 rooms 2×2, 5–9 rooms 3×3, and so on. Rooms fill a row before starting the next. In a row they pack side by side by their real size, and neighbours share one wall column. Each row starts below the tallest room of the row above.
 - When the grid grows or a room moves, characters move along with the room they were standing in.
 - **Side-by-side rooms open into each other.** The shared wall becomes an opening (`DOOR` cells) across every floor row both rooms have, except the first and last, which stay as posts. The back wall above stays too, so each room keeps its wallpaper. The opening's floor shows each room's own floor on its half, with a trim seam in the middle.
-- **Rows link with a 2-tile doorway** where the floors overlap, so back walls with their windows stay whole.
+- **Rows link with a doorway** across the wall band wherever the two rooms' floors overlap, with two tiles of wall kept at each end so the upper room's wallpaper stays whole. When the shared stretch is too narrow for both end walls and a doorway you can see (fewer than six tiles of overlap), the end walls are dropped and the whole stretch opens, so no room below is left with a one-tile slot or sealed. A room below links to the room above it shares the most floor with, not to the same column: rooms in one column drift apart once the rows hold different sizes, and pairing by index used to leave the right-hand rooms with no entrance at all.
 - The grid also records which room owns each floor tile, so floors, wallpaper and pets know whose room they're in.
 
 ## Placement (`canPlace`)
@@ -53,7 +53,7 @@ A pet keeps a hidden `visitorBonds` map, one number per person who has fussed ov
 
 ### Who a pet goes to
 
-The owner always outranks everyone: a pet with its owner in the room naps beside them while they study, greets them, follows to them if it is a follower, and pads over now and then otherwise. Guests come next, ranked by their own bond: the highest-bonded guest is `fav`, which every client receives, so however many screens are watching, they agree on who that pet seeks out. `fav` is picked among the pet's current housemates: someone who moved out stops being its favourite (their bond is kept, in case they come back), and a favourite who has not been in the house for a while does not leave the pet waiting for someone who is not there. A pet also only goes to somebody standing in the room it is already in, because its walk is a straight line to the goal and a target in the next room would take it through a wall.
+The owner always outranks everyone: a pet with its owner in the room naps beside them while they study, greets them, follows to them if it is a follower, and pads over now and then otherwise. Guests come next, ranked by their own bond: the highest-bonded guest is `fav`, which every client receives, so however many screens are watching, they agree on who that pet seeks out. `fav` is picked among the pet's current housemates: someone who moved out stops being its favourite (their bond is kept, in case they come back), and a favourite who has not been in the house for a while does not leave the pet waiting for someone who is not there. A pet also only goes to somebody standing in the room it is already in, since its errand is to sit beside them. Every errand walks a route through the doors, and a straight step is only taken across open floor (plus the last step onto a piece of furniture, like a pet bed), so a goal behind a wall is never walked to — a pet hops furniture, never walls.
 
 With the owner away, the pet goes and hangs out beside `fav` instead of drifting back to an empty room. That is all a guest's client needs: it also has `myBond`, so each person's own visits are theirs without anyone else's numbers on the wire.
 
@@ -67,13 +67,20 @@ On a clear day (`sky === 'day'`, not rain or snow) a pet now and then picks a fl
 
 A pet also sometimes curls up on an empty chair, armchair, sofa or bench (`act: 'chair'`, lifted a few pixels so it reads as on the cushion, with no floor shadow). It stays there — no wandering, no visits — until someone clicks it: any `pat` clears `petSeat` and `petSunAt` on every client, so it gets up for the whole house at once. A click is not the only way out: a chair nap times out after four to eight minutes and the pet gets up on its own, so a pet in a house where nobody clicks it is never stuck asleep for a whole session. A sunbath ends the same way, after its twenty-to-forty-five seconds.
 
-A pet sofa is different: clicking it (`pet_sofa`) picks one of the owner's non-away pets that isn't already napping on a sofa and sends it to sleep on the sofa (`act: 'chair'`). It stays there — no wandering — until it is patted twice in a row. The first pat does nothing visible; the second pat clears its `sofa` assignment on the server, every client draws it getting up, and it resumes wandering. Only one pet can be on a given pet sofa at a time, and a pet can only be on one sofa at a time. Pet beds work the same way.
+Pet sleep furniture is different: clicking it (`pet_sofa`) picks one of the owner's non-away pets that isn't already napping on one and sends it there. The pet *walks* first — along the same route as always, through doorways and never over a wall — so a bed in another room means a trip across the house; the curled-up `act: 'chair'` only starts once it is standing on the piece, and a piece it cannot reach just leaves it standing where it is. It stays there — no wandering — until it is patted twice in a row. The first pat does nothing; the second clears its `sofa` assignment on the server and every client draws it getting up. Only one pet can be on a given piece at a time, and a pet can only be on one at a time. The pieces are the catalog's `pet: 'sleep'` entries — pet bed, doghouse, pet tent, pet sofa, pet basket and pet hammock. The cat tower is `pet: 'perch'`, so it is climbed, not slept on, and the client builds its click list from `ITEMS` rather than a second hand-written one. A nap remembers the piece by its slot in the room, so changing that room's furniture keeps it honest: picking the piece up, selling its room or swapping it out wakes the pet, and a piece that merely slides to another slot takes its sleeping pet with it rather than leaving it on whatever inherited the old index.
+
+### Following you
+
+Clicking your own pet, while you are not studying, toggles `follow` on its row (`pet_style`). A follower walks your own trail while you move and comes to sit beside you when you stop, so the toggle shows up at once instead of waiting for the next time you walk away; clicking it again sends it back to its own wandering. Followers roam free while you study, since a pet napping beside a desk should not be pinned in place.
+
+You cannot leash someone else's pet. Patting it only grows your bond, and the patter is answered with one line from `PET_LINES`, picked by that bond — the `pat` message everyone receives is for the hearts and the name tag, not a second toast, so the pet's own words are not overwritten.
 
 A trick is a hop with a side-to-side spin and three gold sparkles (`act: 'trick'` in `src/pets.ts`); a pet with level 2 or more with you may do one near you.
 
 ## Camera
 
 - The zoom is the largest whole number at which the current room (with walls) fits the space the HUD, dock, side bar and panels leave free. Whole numbers keep the pixels crisp.
+- Zooming out goes two steps beyond that fitted view, and further when the house needs it: the deepest step is the one at which the whole house fits (a multiple of `AV`, or whole art pixels for a house too big even for that). A five-room house is wider than any room, so it is the house, not the room you are in, that sets how far out the minus button reaches.
 - If the room fits, the camera centres on the room. Otherwise it follows the player. Either way it stops at the edges of the house, so the screen never shows empty space beyond it. It eases between rooms.
 
 ## Using furniture
@@ -135,7 +142,8 @@ The coin gift sends `GIFT_COINS` (10) and is capped so coins cannot be shovelled
 
 - Each player has `rooms` (up to `MAX_ROOMS` = 3). Room 2 costs 1,500 coins and room 3 costs 2,500 (`ROOM_COST`). Each room upgrades its size on its own and has its own wallpaper and floor.
 - The house grid is every housemate's rooms in order: all of player 1's rooms, then player 2's, and so on, so a player's rooms sit next to each other.
-- Room-specific messages (`place`, `move`, `pickup`, `room`, `flip`, `restyle`, `shape`, `expand`) carry `r`, the room index (first room when missing). The server ignores an index the player doesn't own.
+- An extra room can be sold from the Room shop (two taps). The first room is where you live and can't be sold; any later one pays its full `ROOM_COST[r]` back. Every piece placed in it returns to Storage, so it is in Decorate again, and a pet napping there gets up while pets assigned to later rooms follow their room's new index. Whoever was standing in the room carries on in its owner's first room.
+- Room-specific messages (`place`, `move`, `pickup`, `room`, `flip`, `restyle`, `shape`, `expand`) carry `r`, the room index (first room when missing). The server ignores an index the player doesn't own. `sell_room` carries `r` too and refuses index 0.
 - On startup the server moves old single-`room` saves into `rooms[0]`.
 
 ## Chat: how fast, and how long

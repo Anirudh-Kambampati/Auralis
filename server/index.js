@@ -1097,9 +1097,14 @@ wss.on('connection', (ws) => {
       if (!p || p.__stub) { ws.close(1011, 'storage unavailable'); return; }
       // Old saves: drop furniture types that no longer exist; the old cat decoration becomes a real pet.
       const hadCat = p.rooms.some((r) => r.furniture.some((f) => f.item === 'cat')) || p.inventory.cat > 0;
-      for (const r of p.rooms) {
+      for (const [ri, r] of p.rooms.entries()) {
         r.furniture = r.furniture.filter((f) => has(ITEMS, f.item));
         for (const f of r.furniture) if (!canRotate(f.item) && f.rot !== undefined) delete f.rot;
+        // A nap names its piece by slot, so a save from before those slots were remapped can point at the wrong
+        // piece: drop a nap that no longer lands on sleep furniture rather than nap on whatever took the index.
+        for (const pet of p.pets ?? []) {
+          if (pet.sofa?.r === ri && ITEMS[r.furniture[pet.sofa.index]?.item]?.pet !== 'sleep') pet.sofa = undefined;
+        }
       }
       for (const k of Object.keys(p.inventory)) if (!has(ITEMS, k)) delete p.inventory[k];
       // Handmade pieces: drop anything that is not a real catalog item in a real colour, rather than trust the save.

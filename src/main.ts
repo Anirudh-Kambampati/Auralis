@@ -95,7 +95,7 @@ const petCheerCount = new Map<string, number>(); // 👏 how many times each pet
 const petPlay = new Map<string, number>(); // key -> until timestamp (pets play together after high-five)
 const petNameAt = new Map<string, number>(); // key -> until: this pet's name tag is showing (names come and go)
 let hoverPet: { m: Member; slot: number } | null = null; // pet being hovered
-const petPaths = new Map<string, { x: number; y: number }[]>(); // key -> path to goal
+const petPaths = new Map<string, { goal: { x: number; y: number }; path: { x: number; y: number }[] }>(); // key -> the goal a pet is walking to and the tiles left
 const petTrickAt = new Map<string, number>(); // key -> until: this pet is in the middle of a trick
 const petSaid = new Map<string, number>(); // key -> when I last said this pet came over to me
 const petGreetMe = new Map<string, number>(); // key -> when this pet came to greet me at the door (not my pet)
@@ -166,6 +166,9 @@ let view = { ox: 0, oy: 0, scale: 1 };
 // Phones start one step closer, so faces and small things are easier to see; pinch or +/- changes it.
 const savedZoom = localStorage.getItem('auralis.zoom');
 let zoom = Math.max(-2, Math.min(2, savedZoom !== null ? Number(savedZoom) || 0 : innerWidth < 600 ? 1 : 0));
+// The deepest zoom-out step. It is two beyond the fitted room for a small house, and further when the whole house
+// needs it (five rooms and up), so the whole house can be looked at at once. Recomputed as the house grows.
+let minZoom = -2;
 let cam: { x: number; y: number; scale: number } | null = null; // camera target in art pixels, eased
 let camRoom = 0;
 
@@ -348,8 +351,18 @@ function onMessage(m: any) {
       const x = Math.round(a.tx), y = Math.round(a.ty);
       const ownerAt = (cx: number, cy: number) => (cx >= 0 && cy >= 0 && cx < oldGrid.w && cy < oldGrid.h ? oldGrid.owner[cy * oldGrid.w + cx] : -1);
       const was = [ownerAt(x, y), ownerAt(x - 1, y), ownerAt(x, y - 1)].find((k) => k >= 0) ?? -1;
-      const now = slots.findIndex((x) => `${x.m.id}:${x.ri}` === oldSlots[was]);
-      if (was < 0 || now < 0) continue;
+      if (was < 0) continue;
+      const key = oldSlots[was];
+      const now = slots.findIndex((x) => `${x.m.id}:${x.ri}` === key);
+      if (now < 0) { // the room was sold: whoever stood in it waits in its owner's first room
+        const ownerId = key.slice(0, key.indexOf(':'));
+        const home = slots.findIndex((x) => x.m.id === ownerId && x.ri === 0);
+        if (home < 0) continue;
+        const o = grid.origins[home], s = grid.sizes[home];
+        a.x = a.tx = o.x + (s.w >> 1); a.y = a.ty = o.y + (s.h >> 1);
+        if (id === myId) { path = []; seat = null; send({ t: 'pos', x: a.tx, y: a.ty }); }
+        continue;
+      }
       const dx = grid.origins[now].x - oldGrid.origins[was].x, dy = grid.origins[now].y - oldGrid.origins[was].y;
       if (!dx && !dy) continue;
       a.x += dx; a.tx += dx; a.y += dy; a.ty += dy;
@@ -470,7 +483,9 @@ function onMessage(m: any) {
     patAt.set(`${m.owner}:${m.slot}`, Date.now());
     petNameAt.set(`${m.owner}:${m.slot}`, Date.now() + 6000); // fussing over a pet shows its name for a moment
     const pet = m.owner === myId ? myMember()?.pets[m.slot] : members.find((o) => o.id === m.owner)?.pets[m.slot];
-    if (pet) toast(`💕 <b>${esc(m.name)}</b> petted ${petName(pet)}.`);
+    // Whoever petted already has their answer: their own follow toast, or — for someone else's pet — the line
+    // the server sent them from PET_LINES. Naming the patter here would only overwrite that line.
+    if (pet && m.by !== myId) toast(`💕 <b>${esc(m.name)}</b> petted ${petName(pet)}.`);
     // A pet napping on a pet sofa stays put until patted twice in a row: the server clears sofa then.
     if (!pet?.sofa) {
       petSeat.delete(`${m.owner}:${m.slot}`); // a pat wakes the pet: it gets off the chair or out of the sun
@@ -728,8 +743,9 @@ function startBreak(ms: number, text: string) {
 }
 
 const TVS = new Set(['tv', 'retroTV', 'mediaConsole']);
-// All furniture that pets can sleep on (pet: 'sleep' in shared/game.js)
-const PET_SLEEP_FURNITURE = new Set(['petBed', 'doghouse', 'catTower', 'petTent', 'petSofa', 'petBasket', 'petHammock']);
+// Furniture a pet can be put to sleep on, read from the catalog itself (`pet: 'sleep'`), so the click target and
+// the server's `pet_sofa` check can never drift apart. The cat tower is a perch, not a bed.
+const PET_SLEEP_FURNITURE = new Set(Object.keys(ITEMS).filter((k) => (ITEMS[k as ItemKey] as { pet?: string }).pet === 'sleep'));
 // Pieces a click does something special with, beyond act/use/light/sound (see tapAt).
 const CLICKABLE = new Set(['petBall', ...PET_SLEEP_FURNITURE, 'deskCalendar', 'giftBox', 'whiteboard', 'clawMachine',
   'potteryWheel', 'easel', 'loom', 'craftTable', 'sewingTable']);
@@ -803,11 +819,30 @@ function roomSpawn(i: number) {
   return nearestWalkable(o.x + 5, o.y + 4);
 }
 
-// Pets hop over furniture too, so a crowded room never shuts them in.
+// Pets hop over furniture too, so a crowded room never shuts them in — but they never go through a wall. A goal
+// that sits on a piece (a pet bed, a chair cushion) is reached from a floor tile beside it, since the piece
+// itself is blocked in the grid.
 function petRoute(a: { x: number; y: number }, b: { x: number; y: number }) {
   const k = `${a.x},${a.y}>${b.x},${b.y}`;
-  if (!petRoutes.has(k)) petRoutes.set(k, bfs({ x: Math.round(a.x), y: Math.round(a.y) }, (x, y) => x === b.x && y === b.y, (x, y) => walkable(grid.at(x, y))));
+  if (!petRoutes.has(k)) {
+    const bx = Math.round(b.x), by = Math.round(b.y), onPiece = !walkable(grid.at(bx, by));
+    const done = onPiece
+      ? (x: number, y: number) => (x === bx && y === by) || Math.abs(x - bx) + Math.abs(y - by) === 1
+      : (x: number, y: number) => x === bx && y === by;
+    petRoutes.set(k, bfs({ x: Math.round(a.x), y: Math.round(a.y) }, done, (x, y) => walkable(grid.at(x, y))));
+  }
   return petRoutes.get(k)!;
+}
+
+// The straight line between two points, tile by tile. Without a route the pet may only walk this line across open
+// floor; the last tile is a piece of furniture it is allowed to step onto, so that one is only checked when it is not.
+function petLineClear(a: { x: number; y: number }, b: { x: number; y: number }, ontoPiece: boolean) {
+  const steps = Math.ceil(Math.hypot(b.x - a.x, b.y - a.y));
+  for (let i = 1; i < steps + (ontoPiece ? 0 : 1); i++) {
+    const t = i / steps;
+    if (!walkable(grid.at(Math.round(a.x + (b.x - a.x) * t), Math.round(a.y + (b.y - a.y) * t)))) return false;
+  }
+  return true;
 }
 
 function bfs(from: { x: number; y: number }, done: (x: number, y: number) => boolean, pass = (x: number, y: number) => walkable(grid.at(x, y))) {
@@ -1179,14 +1214,17 @@ function tapAt(e: PointerEvent) {
   const clicked = fi >= 0 ? hit.room.furniture[fi] : undefined;
   if (clicked?.item === 'petBall') { send({ t: 'fetch', owner: hit.m.id, x: grid.origins[si].x + clicked.x, y: grid.origins[si].y + clicked.y }); return; }
   if (clicked && PET_SLEEP_FURNITURE.has(clicked.item)) {
-    const petOnFurniture = petHits.find((h) => Math.abs(h.x - (clicked.x + 0.5)) < 0.4 && Math.abs(h.y - (clicked.y + 0.5)) < 0.4);
+    // Pet positions are grid tiles and `clicked` is room-local: in any room but the first, the two never met, so a
+    // pet you could see curled up on its bed could not be patted awake through it.
+    const co = grid.origins[si];
+    const petOnFurniture = petHits.find((h) => Math.abs(h.x - (co.x + clicked.x)) < 0.4 && Math.abs(h.y - (co.y + clicked.y)) < 0.4);
     if (petOnFurniture) {
       send({ t: 'pat', owner: petOnFurniture.m.id, slot: petOnFurniture.slot });
       const p = petOnFurniture.m.pets[petOnFurniture.slot];
       if (petOnFurniture.m.id === myId && !mine?.focus) {
         send({ t: 'pet_style', slot: petOnFurniture.slot, follow: !p.follow });
         toast(p.follow ? `🐾 ${petName(p)} went back to wandering.` : `🐾 ${petName(p)} is following you!`);
-      }
+      } else if (petOnFurniture.m.id === myId) toast(`💕 You petted ${petName(p)}.`);
     } else {
       send({ t: 'pet_sofa', owner: hit.m.id, r: hit.ri, index: fi });
     }
@@ -1201,7 +1239,7 @@ function tapAt(e: PointerEvent) {
     if (pet.m.id === myId && !mine?.focus) {
       send({ t: 'pet_style', slot: pet.slot, follow: !p.follow });
       toast(p.follow ? `🐾 ${petName(p)} went back to wandering.` : `🐾 ${petName(p)} is following you!`);
-    }
+    } else if (pet.m.id === myId) toast(`💕 You petted ${petName(p)}.`);
     return;
   }
   const friend = friendAt(tx, ty), focus = mine?.focus;
@@ -1232,10 +1270,10 @@ function tapAt(e: PointerEvent) {
 // Zoom: the buttons, Ctrl/Cmd + wheel, or + and - on the keyboard.
 const zoomInBtn = $<HTMLButtonElement>('#zoomIn'), zoomOutBtn = $<HTMLButtonElement>('#zoomOut');
 function setZoom(next: number) {
-  zoom = Math.max(-2, Math.min(2, next));
+  zoom = Math.max(minZoom, Math.min(2, next)); // minZoom is deeper in a big house, so the whole house is reachable
   localStorage.setItem('auralis.zoom', String(zoom));
   zoomInBtn.disabled = zoom >= 2;
-  zoomOutBtn.disabled = zoom <= -2;
+  zoomOutBtn.disabled = zoom <= minZoom;
 }
 zoomInBtn.addEventListener('click', () => setZoom(zoom + 1));
 zoomOutBtn.addEventListener('click', () => setZoom(zoom - 1));
@@ -1405,8 +1443,20 @@ function render(t: number, dt: number) {
   const o = grid.origins[ri] ?? { x: 1, y: WALL_H }, size = grid.sizes[ri] ?? roomSize(undefined);
   const roomW = (size.w + 2) * T, roomH = (size.h + WALL_H + 1) * T; // room plus its walls
   const fit = Math.max(1, Math.floor(Math.min(aw / (roomW + T), ah / (roomH + T / 2))));
-  // Characters and redrawn furniture have AV times the detail, so keep the scale a multiple of AV: crisp half-pixels.
-  const scale = Math.min(5 * AV, Math.max(AV, (Math.floor(fit / AV) + zoom) * AV));
+  // How far out the whole house has to be to fit on screen, so the minus button can reach it: a big house is wider
+  // than any one room, so its deepest step is further out than a small one's.
+  const houseFit = Math.floor(Math.min(aw / (grid.w * T), ah / (grid.h * T)));
+  const steps = Math.floor(fit / AV), deep = houseFit >= AV ? Math.floor(houseFit / AV) - steps : -steps;
+  const minZoomNow = Math.min(-2, deep);
+  // Characters and redrawn furniture have AV times the detail, so the scale stays a multiple of AV — except in a
+  // house too big to fit even at that, which drops to whole art pixels (still crisp, no smoothing) instead.
+  const deepest = houseFit >= AV ? AV : 1;
+  if (minZoomNow !== minZoom) {
+    minZoom = minZoomNow;
+    if (zoom < minZoom) { zoom = minZoom; localStorage.setItem('auralis.zoom', String(zoom)); }
+    zoomOutBtn.disabled = zoom <= minZoom;
+  }
+  const scale = Math.min(5 * AV, Math.max(deepest, (steps + Math.min(2, Math.max(minZoom, zoom))) * AV));
   const vw = aw / scale, vh = ah / scale;
   // Centre the whole room when it fits on screen; otherwise follow the player.
   const fits = roomW <= vw && roomH <= vh;
@@ -1611,8 +1661,8 @@ function render(t: number, dt: number) {
   // What each pet does over its usual wander, most important first: fetch, the nap it is already in, a nap beside
   // its studying owner (followers roam free while I study), the happy spin for a finished session or a pat,
   // greeting its owner or following their trail, a lazy sunbathe or a stolen chair, and finally company. Company is
-  // only someone actually here (online, or me) and only in the room the pet is standing in: its walk is a straight
-  // line to the goal, so a target in the next room would take it through a wall.
+  // only someone actually here (online, or me) and only in the room the pet is standing in, since its errand is
+  // to settle beside them.
   const present = new Map(members.filter((o) => o.online || o.id === myId).map((o) => [o.id, avatars.get(o.id)] as const).filter((e): e is [string, Avatar] => !!e[1]));
   const meHere = present.get(myId);
   for (const x of pets) {
@@ -1627,11 +1677,17 @@ function render(t: number, dt: number) {
     const sofa = p.sofa;
     const wasSofa = petSofaToasted.has(key);
     if (sofa) {
-      const sRoom = slots[sofa.r];
-      const sf = sRoom?.room?.furniture?.[sofa.index];
-      if (sf && PET_SLEEP_FURNITURE.has(sf.item)) {
+      // `sofa.r` is a room index within the owner's own rooms, and `x.room` is the slot of the room the pet lives
+      // in (its owner's first), so their room r is that many slots along. `slots[sofa.r]` was the *first*
+      // housemate's room, which broke every nap for anyone else in the house.
+      const sRoom = slots[x.room + sofa.r], so = grid.origins[x.room + sofa.r];
+      const sf = sRoom?.m.id === m.id ? sRoom.room.furniture[sofa.index] : undefined;
+      if (sf && so && PET_SLEEP_FURNITURE.has(sf.item)) {
         petSeat.delete(key);
-        x.goal = { x: sf.x + 0.5, y: sf.y + 0.5 };
+        // Furniture x/y is room-local and a pet walks the whole grid, so the bed's tile needs its room's origin.
+        // (`sf.x` alone was the tile in the *first* room, which is why a pet sent to a bed in another room ran off
+        // to the top-left of the house and never lay down.)
+        x.goal = { x: so.x + sf.x, y: so.y + sf.y };
         x.act = 'chair';
         if (!wasSofa) {
           petSofaToasted.add(key);
@@ -1657,7 +1713,12 @@ function render(t: number, dt: number) {
       petCheerCount.set(key, (petCheerCount.get(key) ?? 0) + 1);
     }
     else if (!x.goal && now - (petDone.get(m.id) ?? 0) < 3000 || (now - (patAt.get(key) ?? 0) < 1200 && bondLevel(p.bond) >= 2)) x.run = true;
-    else if (!x.goal && here && p.follow && !m.focus && tr && now - tr.movedAt < 600) x.goal = trailPoint(tr.pts, gap);
+    else if (!x.goal && here && p.follow && !m.focus) {
+      // A follower walks your own path while you move, and comes to sit beside you when you stop, so the
+      // toggle reads as a change straight away instead of waiting for the next time you walk away.
+      if (tr && now - tr.movedAt < 600) x.goal = trailPoint(tr.pts, gap);
+      else if (Math.hypot(x.pos.x - here.x, x.pos.y - here.y) > gap + 1.5) x.goal = spotNear(here, gap - 0.8);
+    }
     else if (!x.goal && here && now - (petGreet.get(m.id) ?? 0) < 5000) { // greeting: run up, but stop a little way off
       const dx = x.pos.x - here.x, dy = x.pos.y - here.y, d = Math.hypot(dx, dy) || 1;
       if (d > gap) x.goal = { x: here.x + (dx / d) * gap, y: here.y + (dy / d) * gap };
@@ -1723,14 +1784,16 @@ function render(t: number, dt: number) {
     if (goal || fx) {
       const cur = fx ?? { x: px, y: py, left };
       let tx = goal?.x ?? px, ty = goal?.y ?? py;
-      // If we have a goal but no path yet, compute one using petRoute (BFS around walls)
+      // A stored route belongs to the goal it was built for, and it starts from where the pet actually stands: `pos`
+      // is the wander ghost, still ticking along under a pet that is off on an errand, so routing from it sent the
+      // pet chasing a spot it was never at.
+      const cached = petPaths.get(key);
+      if (!goal || !cached || Math.abs(cached.goal.x - goal.x) > 0.5 || Math.abs(cached.goal.y - goal.y) > 0.5) petPaths.delete(key);
       if (goal && !petPaths.has(key)) {
-        const path = petRoute({ x: Math.round(px), y: Math.round(py) }, { x: Math.round(goal.x), y: Math.round(goal.y) });
-        if (path && path.length > 1) petPaths.set(key, path.slice(1)); // skip current position
+        const built = petRoute({ x: Math.round(cur.x), y: Math.round(cur.y) }, { x: Math.round(goal.x), y: Math.round(goal.y) });
+        if (built && built.length > 1) petPaths.set(key, { goal: { x: goal.x, y: goal.y }, path: built.slice(1) }); // skip current position
       }
-      // No goal: clear any stored path
-      if (!goal) petPaths.delete(key);
-      const path = petPaths.get(key);
+      const path = petPaths.get(key)?.path;
       if (path && path.length) {
         // Follow the path: move toward the next waypoint
         const next = path[0];
@@ -1741,12 +1804,20 @@ function render(t: number, dt: number) {
           if (!path.length) petPaths.delete(key);
         }
       }
-      const dx = tx - cur.x, dy = ty - cur.y, d = Math.hypot(dx, dy), step = d ? Math.min(d, dt * 5) / d : 0;
+      const dx = tx - cur.x, dy = ty - cur.y;
+      // A route is walkable by construction. Without one, the straight step is only taken across open floor (and
+      // onto a piece of furniture at the end), so a goal behind a wall is never walked to: the pet stays put.
+      const ontoPiece = !!goal && grid.at(Math.round(goal.x), Math.round(goal.y)) === BLOCKED;
+      const cut = !(path && path.length) && !!goal && !petLineClear(cur, goal, ontoPiece);
+      const d = cut ? 0 : Math.hypot(dx, dy), step = d ? Math.min(d, dt * 5) / d : 0;
       cur.x += dx * step; cur.y += dy * step;
       if (!goal && !path && d < 0.05) petFx.delete(key); else petFx.set(key, cur);
-      px = cur.x; py = cur.y; moving = d > 0.05; pact = moving ? undefined : goal ? act : pact;
+      // The act that comes with a goal (curling up on the bed, sleeping beside its owner) only shows once the pet
+      // is there: a pet still walking to its bed is just walking, not asleep in the middle of the room.
+      const arrived = !!goal && Math.hypot(goal.x - cur.x, goal.y - cur.y) < 0.4;
+      px = cur.x; py = cur.y; moving = d > 0.05; pact = moving ? undefined : goal ? (arrived ? act : undefined) : pact;
       // Face the way it last really walked: tiny steps toward a target that keeps moving mustn't flip it back and forth.
-      if (Math.abs(dx) > 0.02) cur.left = dx < 0;
+      if (d && Math.abs(dx) > 0.02) cur.left = dx < 0;
       left = cur.left ?? left;
     }
     if (run) { moving = true; if (!goal) left = Math.floor(now / 150) % 2 === 0; } // spin: flip side to side
@@ -2397,7 +2468,12 @@ function shopBody(mine: Member) {
       return `<div class="card room-card"><b>${['Cozy', 'Roomy', 'Spacious', 'Grand'][i]}</b>
         <div class="room-mini" style="--w:${s.w};--h:${s.h}"></div><small>${s.w} × ${s.h} tiles</small>${state}</div>`;
     }).join('') + next;
-    shelf = roomPicker(mine) + shelf;
+    const sold = mine.rooms[editRoom];
+    const drop = editRoom > 0 && sold ? `<div class="card room-card"><b>Sell Room ${editRoom + 1}</b>
+        <div class="room-mini" style="--w:${roomSize(sold).w};--h:${roomSize(sold).h}"></div>
+        <small>Full price back, and everything in it returns to your Storage.</small>
+        <button class="danger" data-act="sellroom">${coin()} ${ROOM_COST[editRoom]} back</button></div>` : '';
+    shelf = roomPicker(mine) + shelf + drop;
   }
   const note = me.discount && tab.items ? '<p class="hint">🎉 10% off your next buy, for finishing a house to-do together.</p>'
     : tab.id === 'seasonal' ? festivalNote()
@@ -2726,6 +2802,19 @@ panel.addEventListener('click', (e) => {
     case 'addroom': send({ t: 'add_room' }); editRoom = mine.rooms.length; toast('A new room! Find it next to your others.', 'reward'); break;
     case 'editroom': editRoom = Number(v); moving = null; placing = null; renderPanel(); break;
     case 'expand': send({ t: 'expand', r: editRoom }); toast('Your room just got bigger!', 'reward'); break;
+    case 'sellroom': { // two taps: the room and its decor go, and the pieces land in Decorate
+      const back = `${coin()} ${ROOM_COST[editRoom]} back`;
+      if (!b.classList.contains('armed')) {
+        b.classList.add('armed');
+        b.textContent = 'Tap again to sell';
+        setTimeout(() => { b.classList.remove('armed'); b.innerHTML = back; }, 3000);
+      } else {
+        send({ t: 'sell_room', r: editRoom });
+        editRoom = 0; moving = null; placing = null;
+        toast('Room sold — everything in it is back in your Storage.', 'reward');
+      }
+      break;
+    }
     case 'place': placing = v as ItemKey; placingCrafted = -1; moving = null; renderPanel(); break;
     case 'placeCrafted': {
       const piece = me.crafted?.[Number(v)];

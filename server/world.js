@@ -9,6 +9,20 @@
 
 export const ctxKeys = ["CLAW_COOLDOWN_MS","CLAW_COST","CRAFT","CRAFT_COOLDOWN_MS","DRINKS","EXPAND_COST","FLOORS","FLOOR_STYLES","GIFTS_PER_DAY","GIFT_COINS","GUEST_BOND_STEP","ITEMS","LIGHTS","MAX_PETS","MAX_ROOMS","PETS","PET_ACCS","ROOM_COST","WALLPAPERS","WALL_PATTERNS","addGuestBond","guestBond","broadcastHouse","canPlace","canRotate","cheerCount","clawPrize","cleanText","colorsFor","craftColour","craftItem","craftedPrice","db","discounted","has","inbox","isPlant","lastCheer","lastInvite","m","newRoom","nextRot","p","petLine","petWord","pick","pieceReadyAt","placeSwaps","readyKey","room","save","sellPrice","send","setPieceReady","sockets"];
 
+// A nap points at a piece by its slot in the owner's room, so any change to that room's furniture list has to
+// carry the nap with it: the pet whose piece left gets up, and one whose slot merely shifted keeps sleeping on
+// the same piece instead of on whatever inherited the old index.
+function renaps(pets, r, at) {
+  for (const pet of pets ?? []) {
+    if (!pet.sofa || pet.sofa.r !== r) continue;
+    const index = at(pet.sofa.index);
+    if (index === null) pet.sofa = undefined;
+    else pet.sofa.index = index;
+  }
+}
+// Where a piece's slot ends up once some slots are gone: null when the piece itself is one of them.
+const slotAfter = (index, gone) => (gone.includes(index) ? null : index - gone.filter((i) => i < index).length);
+
 export const world = {
   async buy(ctx) {
     const { has, ITEMS, m, discounted, p } = ctx;
@@ -89,6 +103,7 @@ export const world = {
           p.inventory[m.item]--;
           for (const f of room.furniture.filter((_, i) => out.includes(i))) p.inventory[f.item] = (p.inventory[f.item] ?? 0) + 1;
           room.furniture = room.furniture.filter((_, i) => !out.includes(i));
+          renaps(p.pets, m.r ?? 0, (i) => slotAfter(i, out));
           room.furniture.push({ item: m.item, x: m.x, y: m.y, ...(isPlant(m.item) ? { wateredAt: Date.now() } : {}) });
           return true;
         }
@@ -112,6 +127,7 @@ export const world = {
           const f = room.furniture[m.index];
           if (!f) return;
           room.furniture.splice(m.index, 1);
+          renaps(p.pets, m.r ?? 0, (i) => slotAfter(i, [m.index]));
           p.inventory[f.item] = (p.inventory[f.item] ?? 0) + 1;
           return true;
         }
@@ -229,21 +245,24 @@ export const world = {
   },
 
   async pet_sofa(ctx) {
-    const { db, p, m, save, guestBond, ITEMS } = ctx;
-    const owner = db.houses[p.house].members.includes(m.owner) ? db.players[m.owner] : null;
-    const f = owner?.rooms?.[m.r ?? 0]?.furniture?.[m.index];
-    if (!f || ITEMS[f.item]?.pet !== 'sleep') return;
-    const mine = p.id === owner?.id;
-    const candidates = (owner.pets ?? []).filter((x) => !x.away && !x.sofa && (mine || guestBond(x, p.id) > 0));
-    if (!candidates.length) return;
-    // The pet this guest is most bonded with answers first; the owner's own pets all count.
-    candidates.sort((a, b) => (mine ? 0 : guestBond(b, p.id)) - (mine ? 0 : guestBond(a, p.id)));
-    const pet = candidates[0];
-    // One pet per bed/sofa: nothing can already be napping on it.
-    const taken = (owner.pets ?? []).some((x) => x.sofa && x.sofa.r === m.r && x.sofa.index === m.index);
-    if (taken) return;
-    pet.sofa = { r: m.r ?? 0, index: m.index, pats: 0 };
-    return true;
+    const { db, p, m, guestBond, ITEMS } = ctx;
+    { // a pet bed, sofa, tent, basket, hammock or doghouse: one of the owner's pets naps there until patted twice
+          const owner = db.houses[p.house].members.includes(m.owner) ? db.players[m.owner] : null;
+          const r = Number.isInteger(m.r) && m.r >= 0 ? m.r : 0;
+          if (!Number.isInteger(m.index)) return;
+          const f = owner?.rooms?.[r]?.furniture?.[m.index];
+          if (!f || ITEMS[f.item]?.pet !== 'sleep') return;
+          const mine = p.id === owner?.id;
+          const candidates = (owner.pets ?? []).filter((x) => !x.away && !x.sofa && (mine || guestBond(x, p.id) > 0));
+          if (!candidates.length) return;
+          // The pet this guest is most bonded with answers first; the owner's own pets all count.
+          candidates.sort((a, b) => (mine ? 0 : guestBond(b, p.id)) - (mine ? 0 : guestBond(a, p.id)));
+          const pet = candidates[0];
+          // One pet per bed/sofa: nothing can already be napping on it.
+          if ((owner.pets ?? []).some((x) => x.sofa && x.sofa.r === r && x.sofa.index === m.index)) return;
+          pet.sofa = { r, index: m.index, pats: 0 };
+          return true;
+        }
   },
 
   async fetch(ctx) {
@@ -500,6 +519,24 @@ export const world = {
         }
   },
 
+  async sell_room(ctx) {
+    const { p, m, ROOM_COST } = ctx;
+    { // an extra room only (the first is where you live), full price back, and everything out of it goes to storage
+          const r = m.r;
+          if (!Number.isInteger(r) || r < 1 || r >= p.rooms.length) return;
+          const [room] = p.rooms.splice(r, 1);
+          for (const f of room.furniture) p.inventory[f.item] = (p.inventory[f.item] ?? 0) + 1;
+          p.coins += ROOM_COST[r] ?? 0;
+          // A pet napping in the sold room gets up; one in a later room follows its room's new index.
+          for (const pet of p.pets ?? []) {
+            if (!pet.sofa) continue;
+            if (pet.sofa.r === r) pet.sofa = undefined;
+            else if (pet.sofa.r > r) pet.sofa.r--;
+          }
+          return true;
+        }
+  },
+
   async adopt(ctx) {
     const { has, PETS, m, p, MAX_PETS } = ctx;
     {
@@ -545,7 +582,7 @@ export const world = {
           if (m.acc === '' || (p.petAccs ?? []).includes(m.acc)) pet.acc = m.acc || undefined;
           if (typeof m.name === 'string') pet.name = cleanText(m.name, 16) || undefined;
           if (typeof m.away === 'boolean') pet.away = m.away || undefined; // kept, but not out in the room
-          if (typeof m.follow === 'boolean') pet.follow = m.follow || undefined; // trots after you when you're not studying
+          if (typeof m.follow === 'boolean') pet.follow = m.follow || undefined; // trails you, and sits by you when you stop
           return true;
         }
   },

@@ -693,15 +693,30 @@ export function buildGrid(rooms) {
       const X = o.x + s.w, rows = Math.min(s.h, sizes[i + 1].h);
       for (let y = o.y; y < o.y + rows; y++) set(X, y, DOOR);
     }
-    if (i + COLS < rooms.length) {
-      const b = origins[i + COLS], bs = sizes[i + COLS];
-      const lo = Math.max(o.x, b.x) + CORNER, hi = Math.min(o.x + s.w, b.x + bs.w) - CORNER;
-      for (let y = o.y + s.h; y < b.y; y++) {
+  });
+  // Rows link to the room above they actually share floor with. Rooms in one column drift apart when the rows
+  // hold differently sized rooms (a grand row over a cozy one), so pairing room `i` with `i + COLS` could leave
+  // it with no doorway at all; the room with the widest shared stretch always gets one.
+  for (let start = COLS; start < rooms.length; start += COLS) {
+    for (let i = start; i < Math.min(rooms.length, start + COLS); i++) {
+      const o = origins[i], s = sizes[i];
+      let up = -1, overlap = 0;
+      for (let j = start - COLS; j < start; j++) {
+        const ov = Math.min(o.x + s.w, origins[j].x + sizes[j].w) - Math.max(o.x, origins[j].x);
+        if (ov > overlap) { overlap = ov; up = j; }
+      }
+      if (up < 0) continue; // a wider row below: this one is beyond the row above and gets out through its row
+      const above = origins[up], as = sizes[up], left = Math.max(o.x, above.x), right = left + overlap;
+      // Two tiles of wall stay at each end so the upper room keeps its wallpaper, unless that would leave a slot
+      // too narrow to read as an entrance: then the whole shared stretch opens, so every room below shows a door.
+      const wide = overlap >= 2 * CORNER + 2;
+      const lo = wide ? left + CORNER : left, hi = wide ? right - CORNER : right;
+      for (let y = above.y + as.h; y < o.y; y++) {
         for (let x = lo; x < hi; x++) set(x, y, DOOR);
-        if (hi > lo) { wallIfVoid(lo - 1, y); wallIfVoid(hi, y); } // a shorter room above: wall in the way down
+        wallIfVoid(lo - 1, y); wallIfVoid(hi, y); // a shorter room above: wall in the way down
       }
     }
-  });
+  }
   rooms.forEach((room, i) => {
     const o = origins[i];
     for (const f of room.furniture) {

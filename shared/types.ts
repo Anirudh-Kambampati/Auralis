@@ -142,6 +142,7 @@ export interface Pet {
   visitorBonds?: Record<string, number>; // server-side only: bonds with visitors, never sent as-is
   myBond?: number; // my own bond with this pet (guests only); drives its behaviour, never shown as a number
   fav?: string | null; // the guest this pet likes most, so every screen agrees on who it follows
+  sofa?: { r: number; index: number; pats: number }; // the pet sleep piece it is napping on, by room slot
 }
 
 export interface Focus {
@@ -374,6 +375,7 @@ export interface ClientMessages {
   // Snapshot
   snapshot: { t: 'snapshot' };
   // Room furniture
+  sell_room: { t: 'sell_room'; r: number };
   place: { t: 'place'; item: string; room: number; x: number; y: number; rot?: number; flip?: boolean; v?: number; s?: number; crafted?: boolean };
   move: { t: 'move'; item: string; room: number; x: number; y: number; rot?: number; flip?: boolean };
   remove: { t: 'remove'; item: string; room: number; x: number; y: number };
