@@ -1096,7 +1096,7 @@ body.signed-out #deck, body.signed-out #game, body.signed-out #zoom { display: n
 .tour-list li img { width: 32px; height: 32px; flex: none; image-rendering: pixelated; }
 .tour-list .tour-n { display: grid; place-items: center; width: 32px; height: 32px; flex: none; font-size: 16px; background: var(--soft); border-radius: 8px; }
 .tour-line { min-width: 0; }
-.tour-line b { display: block; font-size: 13px; }
+.tour-line .tour-name { display: block; font-size: 13px; } /* only the row's heading is a block: bold words inside the sentence stay inline */
 .tour-line em { display: block; margin-top: 2px; font-size: 12px; font-style: normal; line-height: 1.45; color: var(--muted); }
 .tour-foot { display: flex; align-items: center; justify-content: flex-end; gap: 8px; margin-top: 14px; }
 

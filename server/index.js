@@ -1100,11 +1100,16 @@ wss.on('connection', (ws) => {
       for (const [ri, r] of p.rooms.entries()) {
         r.furniture = r.furniture.filter((f) => has(ITEMS, f.item));
         for (const f of r.furniture) if (!canRotate(f.item) && f.rot !== undefined) delete f.rot;
-        // A nap names its piece by slot, so a save from before those slots were remapped can point at the wrong
-        // piece: drop a nap that no longer lands on sleep furniture rather than nap on whatever took the index.
-        for (const pet of p.pets ?? []) {
-          if (pet.sofa?.r === ri && ITEMS[r.furniture[pet.sofa.index]?.item]?.pet !== 'sleep') pet.sofa = undefined;
-        }
+      }
+      // A nap names its piece by owner and slot, so a save from before those slots were remapped can point at the
+      // wrong piece: drop a nap that no longer lands on sleep furniture in its owner's room rather than nap on
+      // whatever took the index. A nap without an owner is from an older save and was always on its own furniture.
+      for (const pet of p.pets ?? []) {
+        const s = pet.sofa;
+        if (!s) continue;
+        s.owner ??= p.id;
+        if (s.owner !== p.id) continue; // a housemate's furniture: their own row carries that nap
+        if (ITEMS[p.rooms[s.r]?.furniture[s.index]?.item]?.pet !== 'sleep') pet.sofa = undefined;
       }
       for (const k of Object.keys(p.inventory)) if (!has(ITEMS, k)) delete p.inventory[k];
       // Handmade pieces: drop anything that is not a real catalog item in a real colour, rather than trust the save.

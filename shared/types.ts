@@ -142,7 +142,7 @@ export interface Pet {
   visitorBonds?: Record<string, number>; // server-side only: bonds with visitors, never sent as-is
   myBond?: number; // my own bond with this pet (guests only); drives its behaviour, never shown as a number
   fav?: string | null; // the guest this pet likes most, so every screen agrees on who it follows
-  sofa?: { r: number; index: number; pats: number }; // the pet sleep piece it is napping on, by room slot
+  sofa?: { owner: string; r: number; index: number; pats: number }; // the pet sleep piece it naps on: its owner's room slot
 }
 
 export interface Focus {

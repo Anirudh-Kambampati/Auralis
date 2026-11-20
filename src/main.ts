@@ -22,7 +22,7 @@ type Furniture = { item: string; x: number; y: number; v?: number; s?: number; f
 type Room = { wallpaper: string; floor: string; pattern?: string; floorStyle?: string; level?: number; curtains?: boolean; wallColor?: string; floorColor?: string; furniture: Furniture[] };
 type Member = {
   id: string; name: string; look: Look; rooms: Room[]; focus: Focus | null;
-  totalMinutes: number; online: boolean; pos: { x: number; y: number } | null; pets: { kind: string; name?: string; coat?: number; acc?: string; away?: boolean; follow?: boolean; bond?: number; myBond?: number; fav?: string | null; sofa?: { r: number; index: number; pats: number } }[]; fedAt?: number;
+  totalMinutes: number; online: boolean; pos: { x: number; y: number } | null; pets: { kind: string; name?: string; coat?: number; acc?: string; away?: boolean; follow?: boolean; bond?: number; myBond?: number; fav?: string | null; sofa?: { owner: string; r: number; index: number; pats: number } }[]; fedAt?: number;
   exams?: { subject: string; date: string }[]; // YYYY-MM-DD, soonest first
   caffeineSince?: number; caffeineUntil?: number; tipsyUntil?: number; // the caffeine window rides on the member, so housemates see the flame
   presence?: Presence;
@@ -166,9 +166,6 @@ let view = { ox: 0, oy: 0, scale: 1 };
 // Phones start one step closer, so faces and small things are easier to see; pinch or +/- changes it.
 const savedZoom = localStorage.getItem('auralis.zoom');
 let zoom = Math.max(-2, Math.min(2, savedZoom !== null ? Number(savedZoom) || 0 : innerWidth < 600 ? 1 : 0));
-// The deepest zoom-out step. It is two beyond the fitted room for a small house, and further when the whole house
-// needs it (five rooms and up), so the whole house can be looked at at once. Recomputed as the house grows.
-let minZoom = -2;
 let cam: { x: number; y: number; scale: number } | null = null; // camera target in art pixels, eased
 let camRoom = 0;
 
@@ -637,6 +634,7 @@ let seat: { x: number; y: number } | null = null; // furniture to step onto once
 let useNext: string | null = null; // what to do once the walk ends in front of a piece of furniture
 let restUntil = 0; // pause before wandering on: short after a walk, longer while using furniture
 let quietUntil = 0; // longer pause after you click or steer, so the sprite obeys you
+let staying = false; // I tapped myself: stay on this tile and don't wander until I tap myself again
 let arrive: (() => void) | null = null; // what to do once I reach furniture I clicked (water it, nap...)
 let stayMs = 0; // how long to stay on furniture I picked myself, instead of a random little while
 
@@ -995,10 +993,20 @@ function windowAt(tx: number, ty: number) {
 }
 
 // When nothing else is going on, keep busy: walk somewhere new, or go use a sofa, gym ball, treadmill...
+// Tapping my own character stops it wandering and keeps it where it stands, until I tap it again.
+function toggleStay() {
+  const a = avatars.get(myId);
+  if (!a) return;
+  staying = !staying;
+  if (staying) { path = []; seat = null; useNext = null; arrive = null; } // whatever it was heading off to, it isn't any more
+  toast(staying ? '🧍 Staying right here. Tap yourself again to wander.' : '🚶 Off we go again.');
+}
+
 function wander() {
   const a = avatars.get(myId);
   if (!a) return;
   if (myMember()?.focus) return; // studying at the desk: stay put
+  if (staying) return; // I asked it to stay still
   if (path.length || seat) return;
   if (a.x !== a.tx || a.y !== a.ty) return; // still sliding into a tile
   if (Date.now() < restUntil || Date.now() < quietUntil) return;
@@ -1201,6 +1209,9 @@ function tapAt(e: PointerEvent) {
     return;
   }
   if (e.pointerType === 'touch') showTip(clickLabel(tx, ty), e.clientX, e.clientY - 40, 1200); // fingers can't hover
+  // My own character: tap to hold it still, tap again to let it wander.
+  const self = avatars.get(myId);
+  if (self && Math.abs(self.x - tx) < 0.75 && Math.abs(self.y - ty) < 0.75) { toggleStay(); return; }
   // Clicking a window in one of your rooms opens or closes its curtains, for everyone.
   const wi = windowAt(tx, ty);
   if (wi >= 0) {
@@ -1270,10 +1281,11 @@ function tapAt(e: PointerEvent) {
 // Zoom: the buttons, Ctrl/Cmd + wheel, or + and - on the keyboard.
 const zoomInBtn = $<HTMLButtonElement>('#zoomIn'), zoomOutBtn = $<HTMLButtonElement>('#zoomOut');
 function setZoom(next: number) {
-  zoom = Math.max(minZoom, Math.min(2, next)); // minZoom is deeper in a big house, so the whole house is reachable
+  // Zoom only ever changes because someone asked for it: two steps either side of the fitted room.
+  zoom = Math.max(-2, Math.min(2, next));
   localStorage.setItem('auralis.zoom', String(zoom));
   zoomInBtn.disabled = zoom >= 2;
-  zoomOutBtn.disabled = zoom <= minZoom;
+  zoomOutBtn.disabled = zoom <= -2;
 }
 zoomInBtn.addEventListener('click', () => setZoom(zoom + 1));
 zoomOutBtn.addEventListener('click', () => setZoom(zoom - 1));
@@ -1436,27 +1448,17 @@ function render(t: number, dt: number) {
   const coverTop = 70 * dpr, coverBottom = chrome.below * dpr, coverRight = chrome.right;
   const coverLeft = 0;
   const aw = cw - coverRight - coverLeft, ah = Math.max(ch * 0.3, ch - coverTop - coverBottom);
-  // Frame the room I'm standing in (keep the last one while I'm in an opening or doorway).
+  // Frame the room I'm standing in (keep the last one while I'm in an opening or doorway), except in Decorate: there
+  // the camera stays on the room being decorated, wherever my character has wandered off to.
   const here = grid.owner[Math.round(me_.y) * grid.w + Math.round(me_.x)];
-  if (here >= 0) camRoom = here;
+  if (openPanel === 'decorate' && mySlot() >= 0) camRoom = mySlot();
+  else if (here >= 0) camRoom = here;
   const ri = Math.min(camRoom, grid.origins.length - 1);
   const o = grid.origins[ri] ?? { x: 1, y: WALL_H }, size = grid.sizes[ri] ?? roomSize(undefined);
   const roomW = (size.w + 2) * T, roomH = (size.h + WALL_H + 1) * T; // room plus its walls
   const fit = Math.max(1, Math.floor(Math.min(aw / (roomW + T), ah / (roomH + T / 2))));
-  // How far out the whole house has to be to fit on screen, so the minus button can reach it: a big house is wider
-  // than any one room, so its deepest step is further out than a small one's.
-  const houseFit = Math.floor(Math.min(aw / (grid.w * T), ah / (grid.h * T)));
-  const steps = Math.floor(fit / AV), deep = houseFit >= AV ? Math.floor(houseFit / AV) - steps : -steps;
-  const minZoomNow = Math.min(-2, deep);
-  // Characters and redrawn furniture have AV times the detail, so the scale stays a multiple of AV — except in a
-  // house too big to fit even at that, which drops to whole art pixels (still crisp, no smoothing) instead.
-  const deepest = houseFit >= AV ? AV : 1;
-  if (minZoomNow !== minZoom) {
-    minZoom = minZoomNow;
-    if (zoom < minZoom) { zoom = minZoom; localStorage.setItem('auralis.zoom', String(zoom)); }
-    zoomOutBtn.disabled = zoom <= minZoom;
-  }
-  const scale = Math.min(5 * AV, Math.max(deepest, (steps + Math.min(2, Math.max(minZoom, zoom))) * AV));
+  // Characters and redrawn furniture have AV times the detail, so keep the scale a multiple of AV: crisp half-pixels.
+  const scale = Math.min(5 * AV, Math.max(AV, (Math.floor(fit / AV) + zoom) * AV));
   const vw = aw / scale, vh = ah / scale;
   // Centre the whole room when it fits on screen; otherwise follow the player.
   const fits = roomW <= vw && roomH <= vh;
@@ -1677,11 +1679,11 @@ function render(t: number, dt: number) {
     const sofa = p.sofa;
     const wasSofa = petSofaToasted.has(key);
     if (sofa) {
-      // `sofa.r` is a room index within the owner's own rooms, and `x.room` is the slot of the room the pet lives
-      // in (its owner's first), so their room r is that many slots along. `slots[sofa.r]` was the *first*
-      // housemate's room, which broke every nap for anyone else in the house.
-      const sRoom = slots[x.room + sofa.r], so = grid.origins[x.room + sofa.r];
-      const sf = sRoom?.m.id === m.id ? sRoom.room.furniture[sofa.index] : undefined;
+      // A nap names its piece by owner and room slot, so any member's pet can be asleep on anyone's bed. An older
+      // nap carries no owner: it was always in the pet's own rooms, which start at `x.room`.
+      const sIdx = sofa.owner ? slots.findIndex((s) => s.m.id === sofa.owner && s.ri === sofa.r) : x.room + sofa.r;
+      const sRoom = slots[sIdx], so = grid.origins[sIdx];
+      const sf = sRoom?.room.furniture[sofa.index];
       if (sf && so && PET_SLEEP_FURNITURE.has(sf.item)) {
         petSeat.delete(key);
         // Furniture x/y is room-local and a pet walks the whole grid, so the bed's tile needs its room's origin.
@@ -2255,22 +2257,26 @@ function finishTour() {
   if (fresh.length) setTimeout(() => openTour(fresh.map((s) => ({ item: s.item, text: s.text }))), 0);
 }
 
-// A row with no item needs a title of its own: the first words of its sentence, cut at a word.
-function shortTitle(text: string, i: number) {
-  const plain = text.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
-  if (!plain) return `Step ${i + 1}`;
-  return plain.length > 46 ? `${plain.slice(0, 46).replace(/\s+\S*$/, '')}…` : plain;
+// A card prints its words once: a heading is shown only when it says something the sentence doesn't already open with,
+// so an intro row (no item, no title) is just its sentence instead of a heading cut from that same sentence.
+function tourHeading(r: TourRow): string {
+  const title = (r.title ?? (r.item ? ITEMS[r.item as ItemKey]?.name ?? r.item : '')).trim();
+  if (!title) return '';
+  const plain = r.text.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().toLowerCase();
+  return plain.startsWith(title.toLowerCase()) ? '' : title;
 }
 
 function renderTour() {
   const body = $<HTMLDivElement>('#tourBody');
   if (!body || !tourRows.length) return;
-  const name = (r: TourRow, i: number) => r.title ?? (r.item ? ITEMS[r.item as ItemKey]?.name ?? r.item : shortTitle(r.text, i));
-  body.innerHTML = `<ol class="tour-list">${tourRows.map((r, i) => `<li>
+  body.innerHTML = `<ol class="tour-list">${tourRows.map((r) => {
+    const heading = tourHeading(r);
+    return `<li>
       <div class="tour-row">
         ${r.item ? icon(r.item) : '<b class="tour-n">i</b>'}
-        <span class="tour-line"><b>${esc(name(r, i))}</b><em>${r.html ? r.text : esc(r.text)}</em></span>
-      </div></li>`).join('')}</ol>
+        <span class="tour-line">${heading ? `<b class="tour-name">${esc(heading)}</b>` : ''}<em>${r.html ? r.text : esc(r.text)}</em></span>
+      </div></li>`;
+  }).join('')}</ol>
     <div class="tour-foot">
       <button type="button" data-tour="done">Got it</button>
     </div>`;
@@ -3052,6 +3058,8 @@ function friendAt(tx: number, ty: number) {
 // What clicking this tile would do, in a few words (null: just walk there). Mirrors the click handler.
 function clickLabel(tx: number, ty: number): string | null {
   if (tx < 0 || ty < 0 || tx >= grid.w || ty >= grid.h) return null;
+  const self = avatars.get(myId);
+  if (self && Math.abs(self.x - tx) < 0.75 && Math.abs(self.y - ty) < 0.75) return staying ? 'Let yourself wander again 🚶' : 'Stay right here 🧍';
   const friend = friendAt(tx, ty), mine = myMember()?.focus;
   if (friend) return friend.focus ? `Cheer ${friend.name} on 👏` : mine ? `Invite ${friend.name} to study with you 📚` : `High five ${friend.name} ✋`;
   const wi = windowAt(tx, ty);

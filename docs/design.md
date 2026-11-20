@@ -28,7 +28,9 @@ An item gets a row only when the tooltip does not already explain it. `Water`, `
 
 ## The tour
 
-The Guide can be read, but it cannot make you read it. The tour is the same words at the moment they matter, in a dialog that lists **every step at once**: a scrollable column of rows, the current one expanded to its sentence, the rest collapsed to their titles, with `1 / 9`, Back, Next and Got it underneath. Nothing hides behind a toast or a "next" — the whole shape of it is on screen, and any row can be tapped to jump straight there.
+The Guide can be read, but it cannot make you read it. The tour is the same words at the moment they matter, in a dialog that lists **every step at once**: a scrollable column of cards, each one an icon, the thing's name and its sentence, with a single **Got it** underneath. Nothing hides behind a toast or a "next" — the whole shape of it is on screen.
+
+**A card never prints the same words twice.** The heading is the item's name and the sentence is the line from `GUIDE_TIPS`; when the sentence already opens with that name ("Coffee: click it for…") the heading is dropped, and an intro row that is only a sentence shows the sentence alone rather than a heading cut from it. A tour that repeated its own text made every card read as a stutter.
 
 It opens by itself in three cases, and only those:
 

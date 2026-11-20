@@ -9,15 +9,19 @@
 
 export const ctxKeys = ["CLAW_COOLDOWN_MS","CLAW_COST","CRAFT","CRAFT_COOLDOWN_MS","DRINKS","EXPAND_COST","FLOORS","FLOOR_STYLES","GIFTS_PER_DAY","GIFT_COINS","GUEST_BOND_STEP","ITEMS","LIGHTS","MAX_PETS","MAX_ROOMS","PETS","PET_ACCS","ROOM_COST","WALLPAPERS","WALL_PATTERNS","addGuestBond","guestBond","broadcastHouse","canPlace","canRotate","cheerCount","clawPrize","cleanText","colorsFor","craftColour","craftItem","craftedPrice","db","discounted","has","inbox","isPlant","lastCheer","lastInvite","m","newRoom","nextRot","p","petLine","petWord","pick","pieceReadyAt","placeSwaps","readyKey","room","save","sellPrice","send","setPieceReady","sockets"];
 
-// A nap points at a piece by its slot in the owner's room, so any change to that room's furniture list has to
-// carry the nap with it: the pet whose piece left gets up, and one whose slot merely shifted keeps sleeping on
-// the same piece instead of on whatever inherited the old index.
-function renaps(pets, r, at) {
-  for (const pet of pets ?? []) {
-    if (!pet.sofa || pet.sofa.r !== r) continue;
-    const index = at(pet.sofa.index);
-    if (index === null) pet.sofa = undefined;
-    else pet.sofa.index = index;
+// A nap points at a piece by its owner and slot in that owner's room, so any change to the room's furniture list
+// has to carry the nap with it — for every pet in the house, not just the owner's: a guest's pet may be asleep on
+// someone else's bed. The pet whose piece left gets up, and one whose slot merely shifted keeps sleeping on the
+// same piece instead of on whatever inherited the old index.
+function renaps(db, p, owner, r, at) {
+  for (const id of db.houses[p.house].members) {
+    for (const pet of db.players[id]?.pets ?? []) {
+      const s = pet.sofa;
+      if (!s || (s.owner ?? id) !== owner || s.r !== r) continue;
+      const index = at(s.index);
+      if (index === null) pet.sofa = undefined;
+      else { s.owner = owner; s.index = index; }
+    }
   }
 }
 // Where a piece's slot ends up once some slots are gone: null when the piece itself is one of them.
@@ -83,7 +87,7 @@ export const world = {
   },
 
   async place(ctx) {
-    const { has, ITEMS, m, p, canPlace, room, save, placeSwaps, isPlant } = ctx;
+    const { db, has, ITEMS, m, p, canPlace, room, save, placeSwaps, isPlant } = ctx;
     {
           if (!has(ITEMS, m.item)) return;
           if (m.crafted) { // a handmade piece is one specific instance, so it is placed rather than counted
@@ -103,7 +107,7 @@ export const world = {
           p.inventory[m.item]--;
           for (const f of room.furniture.filter((_, i) => out.includes(i))) p.inventory[f.item] = (p.inventory[f.item] ?? 0) + 1;
           room.furniture = room.furniture.filter((_, i) => !out.includes(i));
-          renaps(p.pets, m.r ?? 0, (i) => slotAfter(i, out));
+          renaps(db, p, p.id, m.r ?? 0, (i) => slotAfter(i, out));
           room.furniture.push({ item: m.item, x: m.x, y: m.y, ...(isPlant(m.item) ? { wateredAt: Date.now() } : {}) });
           return true;
         }
@@ -122,12 +126,12 @@ export const world = {
   },
 
   async pickup(ctx) {
-    const { room, m, p } = ctx;
+    const { db, room, m, p } = ctx;
     {
           const f = room.furniture[m.index];
           if (!f) return;
           room.furniture.splice(m.index, 1);
-          renaps(p.pets, m.r ?? 0, (i) => slotAfter(i, [m.index]));
+          renaps(db, p, p.id, m.r ?? 0, (i) => slotAfter(i, [m.index]));
           p.inventory[f.item] = (p.inventory[f.item] ?? 0) + 1;
           return true;
         }
@@ -246,21 +250,26 @@ export const world = {
 
   async pet_sofa(ctx) {
     const { db, p, m, guestBond, ITEMS } = ctx;
-    { // a pet bed, sofa, tent, basket, hammock or doghouse: one of the owner's pets naps there until patted twice
-          const owner = db.houses[p.house].members.includes(m.owner) ? db.players[m.owner] : null;
+    { // a pet bed, sofa, tent, basket, hammock or doghouse: a pet in the house naps there until patted twice
+          const house = db.houses[p.house];
+          const owner = house.members.includes(m.owner) ? db.players[m.owner] : null;
           const r = Number.isInteger(m.r) && m.r >= 0 ? m.r : 0;
-          if (!Number.isInteger(m.index)) return;
-          const f = owner?.rooms?.[r]?.furniture?.[m.index];
+          if (!owner || !Number.isInteger(m.index)) return;
+          const f = owner.rooms?.[r]?.furniture?.[m.index];
           if (!f || ITEMS[f.item]?.pet !== 'sleep') return;
-          const mine = p.id === owner?.id;
-          const candidates = (owner.pets ?? []).filter((x) => !x.away && !x.sofa && (mine || guestBond(x, p.id) > 0));
+          // One pet per bed/sofa: nothing can already be napping on it (an older nap names no owner, and was
+          // always on its own pet's furniture).
+          if (house.members.some((id) => (db.players[id]?.pets ?? []).some((x) => x.sofa
+            && (x.sofa.owner ?? id) === owner.id && x.sofa.r === r && x.sofa.index === m.index))) return;
+          // Any pet in the house can be sent to bed, so each piece gets its own sleeper instead of one pet taking
+          // every bed: my own pets first, then a housemate's — the ones I've fussed over most ahead of the rest.
+          const candidates = [];
+          for (const id of house.members) for (const x of db.players[id]?.pets ?? []) {
+            if (!x.away && !x.sofa) candidates.push({ x, mine: id === p.id });
+          }
           if (!candidates.length) return;
-          // The pet this guest is most bonded with answers first; the owner's own pets all count.
-          candidates.sort((a, b) => (mine ? 0 : guestBond(b, p.id)) - (mine ? 0 : guestBond(a, p.id)));
-          const pet = candidates[0];
-          // One pet per bed/sofa: nothing can already be napping on it.
-          if ((owner.pets ?? []).some((x) => x.sofa && x.sofa.r === r && x.sofa.index === m.index)) return;
-          pet.sofa = { r, index: m.index, pats: 0 };
+          candidates.sort((a, b) => (a.mine === b.mine ? (a.mine ? 0 : guestBond(b.x, p.id) - guestBond(a.x, p.id)) : a.mine ? -1 : 1));
+          candidates[0].x.sofa = { owner: owner.id, r, index: m.index, pats: 0 };
           return true;
         }
   },
@@ -520,18 +529,20 @@ export const world = {
   },
 
   async sell_room(ctx) {
-    const { p, m, ROOM_COST } = ctx;
+    const { db, p, m, ROOM_COST } = ctx;
     { // an extra room only (the first is where you live), full price back, and everything out of it goes to storage
           const r = m.r;
           if (!Number.isInteger(r) || r < 1 || r >= p.rooms.length) return;
           const [room] = p.rooms.splice(r, 1);
           for (const f of room.furniture) p.inventory[f.item] = (p.inventory[f.item] ?? 0) + 1;
           p.coins += ROOM_COST[r] ?? 0;
-          // A pet napping in the sold room gets up; one in a later room follows its room's new index.
-          for (const pet of p.pets ?? []) {
-            if (!pet.sofa) continue;
-            if (pet.sofa.r === r) pet.sofa = undefined;
-            else if (pet.sofa.r > r) pet.sofa.r--;
+          // A pet napping in the sold room gets up — anyone's pet, since a guest's may be asleep on my bed —
+          // and one in a later room of mine follows its room's new index.
+          for (const id of db.houses[p.house].members) for (const pet of db.players[id]?.pets ?? []) {
+            const s = pet.sofa;
+            if (!s || (s.owner ?? id) !== p.id) continue;
+            if (s.r === r) pet.sofa = undefined;
+            else if (s.r > r) s.r--;
           }
           return true;
         }
