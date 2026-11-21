@@ -82,7 +82,7 @@ for (const impl of impls) {
   t('exposes the whole storage interface', async () => {
     await withStore(async (s) => {
       for (const name of ['saveAll', 'syncCoins', 'addMessage', 'history', 'threadsWithImg', 'addSession', 'sessionsFor',
-        'sessionDaysFor', 'sessionTotals', 'rollUpSessions', 'friends', 'setFriend',
+        'sessionDaysFor', 'sessionTotals', 'coinTotals', 'rollUpSessions', 'friends', 'setFriend',
         'deleteFriend', 'usernames', 'renameAccount', 'playerByUsername', 'playerByEmail', 'deleteHouse', 'findAccount', 'emailTaken',
         'hasAccount', 'createAccount', 'issueToken', 'playerForToken', 'revokeToken',
         'createResetToken', 'resetPassword', 'close',

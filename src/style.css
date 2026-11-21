@@ -255,6 +255,9 @@ button:focus-visible, select:focus-visible, a:focus-visible { outline: 3px dashe
 .ph img { width: 28px; height: 28px; }
 .ph h2 { margin: 0; font-size: 22px; }
 .ph .close { margin-left: auto; width: 36px; height: 36px; padding: 0; background: var(--paper); color: var(--ink); box-shadow: 0 3px 0 var(--ink); }
+.ph .seg { flex: 0 0 auto; margin: 0 0 0 auto; gap: 4px; flex-wrap: nowrap; }
+.ph .seg button { font-size: 13px; padding: 4px 8px; box-shadow: 0 2px 0 var(--ink); }
+.ph .seg + .close { margin-left: 0; }
 .pb { overflow-y: auto; padding: var(--pad); }
 .pb h3 { margin: 16px 0 8px; font-size: 14px; color: var(--muted); text-transform: uppercase; letter-spacing: 2px; }
 .pb h3:first-child { margin-top: 0; }

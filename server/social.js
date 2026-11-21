@@ -135,10 +135,13 @@ export const social = {
   },
 
   async leaderboard(ctx) {
-    const { m, db, p, friendList, boardMinutes, send, sockets } = ctx;
+    const { m, db, p, friendList, boardMinutes, send, sockets, store } = ctx;
     {
           // Ranked by focused minutes, this week (last 7 days) or all time; house only, friends, everyone, or houses.
           // The minutes are summed from the session log and its roll-up, never from a number kept on a row.
+          // metric: 'coins' ranks the same pools by the coins they hold right now — a balance, not a total, so the
+          // period does not apply and nothing is summed from a table.
+          const byCoins = m.metric === 'coins';
           const since = m.period === 'all' ? 0 : Date.now() - 7 * 86_400_000;
           const pool = m.scope === 'all' ? Object.values(db.players)
             : m.scope === 'friends' ? [p, ...friendList(p).filter((f) => f.status === 'friend').map((f) => db.players[f.id])].filter(Boolean)
@@ -147,6 +150,20 @@ export const social = {
           const ids = m.scope === 'all' ? null
             : m.scope === 'houses' ? [...new Set(Object.values(db.houses).filter((h) => h.owner && h.members.length).flatMap((h) => h.members))]
               : pool.map((o) => o.id);
+          if (byCoins) {
+            // A balance lives on the account. A player who is not online is only a stub in the world, so their
+            // purse comes from the accounts table, not from the row the board never loaded.
+            const held = (await store.coinTotals?.(ids)) ?? {};
+            const purse = (id) => { const o = db.players[id]; return o && !o.__stub && o.coins != null ? o.coins : (held[id] ?? 0); };
+            const rows = (m.scope === 'houses'
+              ? Object.values(db.houses).filter((h) => h.owner && h.members.length > 0)
+                .map((h) => ({ name: h.ownerName ?? 'Unnamed house', members: h.members.length, coins: h.members.reduce((n, id) => n + purse(id), 0), me: h.code === p.house }))
+              : pool.map((o) => ({ name: o.name, me: o.id === p.id, coins: purse(o.id) })))
+              .filter((r) => r.coins > 0 || r.me)
+              .sort((a, b) => b.coins - a.coins)
+              .slice(0, 25);
+            return send(sockets.get(p.id), { t: 'leaderboard', metric: 'coins', scope: m.scope, period: m.period, rows });
+          }
           const minutes = await boardMinutes(since, ids, `${m.scope}|${m.period}|${ids ? [...ids].sort().join(',') : '*'}`);
           const sumOf = (members) => members.reduce((n, id) => n + (minutes[id] ?? 0), 0);
           let rows;
@@ -163,7 +180,7 @@ export const social = {
               .sort((a, b) => b.minutes - a.minutes)
               .slice(0, 25);
           }
-          return send(sockets.get(p.id), { t: 'leaderboard', scope: m.scope, period: m.period, rows });
+          return send(sockets.get(p.id), { t: 'leaderboard', metric: 'minutes', scope: m.scope, period: m.period, rows });
         }
   },
 

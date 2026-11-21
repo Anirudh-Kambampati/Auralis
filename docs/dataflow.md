@@ -46,12 +46,12 @@ If the socket is down when the client writes, the message waits in the client's 
 | `focus_done` | The session's end time has passed. Awards coins (+25% if a housemate is studying) and appends `{at, minutes, tag}` to `sessions`. |
 | `buy`, `adopt`, `expand`, `add_room` | Enough coins; pet cap of 4; room level limit. |
 | `sell_room {r}` | Only an extra room (`r` ≥ 1 and owned). Pays `ROOM_COST[r]` back, returns the room's furniture to `inventory`, and drops or renumbers every `sofa` that pointed at one of my rooms — any member's pet may be napping there (the furniture in a kept room does not move, so its naps keep their slots). |
-| `place`, `move`, `pickup` | The item is in your storage; `canPlace` (inside your room, no overlap). Placing can swap a same-kind work piece out and picking a piece up closes its slot, so every nap on that room — any member's pet — is remapped to the piece's new index, or cleared when the piece itself is gone. |
+| `place`, `move`, `pickup` | The item is in your storage; `canPlace` (inside your room, no overlap). A wall piece is placed with a negative room-local `y` (`-1` or `-2`), the wall band above the floor. Placing can swap a same-kind work piece out and picking a piece up closes its slot, so every nap on that room — any member's pet — is remapped to the piece's new index, or cleared when the piece itself is gone. |
 | `flip`, `restyle`, `room` | The furniture exists; colours and patterns come from the allowed lists. |
 | `todo_*`, `chat` | Text cleaned and length-capped; chat flood guard (one message per 0.6 s). |
 | `watch {url, to?, g?}` | URL must pass `parseVideo`. House chat (no `to`/`g`) starts/ends the house watch party for everyone in that house. In a DM (`to`, must be a housemate or friend) starts/ends a private watch party for just those two users, even in different houses. In a group chat (`g`) starts/ends a watch party for all group members, even in different houses. `watchCtl` syncs play/pause/seek for the matching party. |
 | `join`, `leave` | The house code exists. Moving out takes your room with you into a new house. |
-| `leaderboard` | Answered to the asker only: minutes summed from `sessions` and `session_days` for the last 7 days (or all time), over the house, friends, everyone, or houses. |
+| `leaderboard` | Answered to the asker only: minutes summed from `sessions` and `session_days` for the last 7 days (or all time), over the house, friends, everyone, or houses. With `metric: 'coins'` the same scopes are ranked by the balance in `accounts` instead, and `period` is ignored. |
 | `friend_search {q}` | At least 2 characters. Answered to the asker only with `friend_matches`: up to 8 usernames starting with `q`, never your own. |
 | `friend_request {name}` | A username, a housemate's name, or a house code (its owner); at most 20 requests waiting. |
 | `tip_seen {id}` | The id is one of the Guide's tips. Adds it to the player's `tipsSeen`, so that nudge never shows again. |

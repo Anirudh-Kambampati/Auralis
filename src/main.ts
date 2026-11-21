@@ -38,7 +38,7 @@ type Session = { at: number; minutes: number; tag: string; early?: boolean };
 type Inbox = { kind: string; from?: string; by?: string; text: string; at: number; n?: number };
 type Friend = { id: string; name: string; look: Look; online: boolean; focus: boolean; status: 'friend' | 'incoming' | 'outgoing'; here?: boolean; visit?: boolean; asked?: boolean; presence?: Presence };
 type Me = { id: string; home?: string; visited?: { code: string; ownerName: string | null; online: number }[]; banned?: { id: string; name: string }[]; coins: number; discount?: boolean; notes?: { from: string; text: string; at: number }[]; inbox?: Inbox[]; inboxSeen?: number; tipsSeen?: string[]; events?: CalEvent[]; pushKey?: string; notify?: Record<string, boolean>; groups?: Record<string, { name: string; members: string[]; msgs: Chat[] }>; friends?: Friend[]; inventory: Record<string, number>; crafted?: { item: string; col: string }[]; sessions: Session[]; subjects: string[]; hiddenSubjects: string[]; todos: Todo[]; dm: Record<string, Chat[]>; petAccs?: string[]; watch?: Watch | null };
-type Board = { scope: string; period: string; rows: { name: string; me: boolean; minutes: number; members?: number }[] };
+type Board = { metric?: string; scope: string; period: string; rows: { name: string; me: boolean; minutes?: number; coins?: number; members?: number }[] };
 type Avatar = { x: number; y: number; tx: number; ty: number; up: boolean; dist: number; use?: string };
 type ItemKey = keyof typeof ITEMS;
 type PetKey = keyof typeof PETS;
@@ -108,7 +108,7 @@ let me: Me = { id: myId, coins: 0, inventory: {}, sessions: [], subjects: [], hi
 let statsTab = 'mine';
 let statsRange = 'week';
 let statsAnchor = Date.now();
-let boardScope = 'house', boardPeriod = 'week';
+let boardScope = 'house', boardPeriod = 'week', boardMetric = 'minutes';
 let board: Board | null = null;
 let grid = buildGrid([]);
 let petSpots: { x: number; y: number }[][] = []; // walkable floor tiles per room, for pets to wander
@@ -1215,13 +1215,17 @@ function tapAt(e: PointerEvent) {
     const hit = placing ? { i: -1, depth: 0, count: 0 } : pickAt(myRoom()!, lx, ly);
     const i = hit.i;
     if (placing) {
+      const wallPiece = !!(ITEMS[placing] as { wall?: boolean }).wall;
+      // A wall piece hangs on the wall above the floor, so tapping anywhere in the room hangs it on the wall straight
+      // above that spot rather than refusing the tap: the wall is where the player was aiming either way.
+      const wy = wallPiece && ly >= 0 ? -1 : ly;
       // A handmade piece is one instance and is never swapped away, so it only goes where it fits.
-      const fits = placingCrafted >= 0 ? canPlace(myRoom()!, placing, lx, ly) : !!placeSwaps(myRoom()!, placing, lx, ly);
+      const fits = placingCrafted >= 0 ? canPlace(myRoom()!, placing, lx, wy) : !!placeSwaps(myRoom()!, placing, lx, wy);
       if (fits) {
-        send({ t: 'place', r: editRoom, item: placing, x: lx, y: ly, ...(placingCrafted >= 0 ? { crafted: true } : {}) });
+        send({ t: 'place', r: editRoom, item: placing, x: lx, y: wy, ...(placingCrafted >= 0 ? { crafted: true } : {}) });
         placing = null; placingCrafted = -1;
       }
-      else toast('That spot is taken or outside your room.', 'error');
+      else toast(wallPiece ? 'Wall pieces hang on the wall above your room, and not on top of each other.' : 'That spot is taken or outside your room.', 'error');
     } else if (i >= 0) {
       // Grab it: drag to move, or just tap to select it.
       const f = myRoom()!.furniture[i];
@@ -1998,6 +2002,13 @@ function render(t: number, dt: number) {
     ctx.setLineDash([]);
     const f = moving !== null ? myRoom()!.furniture[moving] : null;
     const it = f && ITEMS[f.item as ItemKey];
+    // Wall pieces hang in the band above the floor, so show where they can go instead of the room outline alone.
+    if ((placing && (ITEMS[placing] as { wall?: boolean }).wall) || (it as { wall?: boolean } | undefined)?.wall) {
+      ctx.strokeStyle = '#ffe08a';
+      ctx.setLineDash([3, 2]);
+      ctx.strokeRect(o.x * T + 0.5, (o.y - WALL_H) * T + 0.5, s.w * T - 1, WALL_H * T - 1);
+      ctx.setLineDash([]);
+    }
     if (f && it) {
       const gx = drag?.moved ? drag.lx : f.x, gy = drag?.moved ? drag.ly : f.y;
       if (drag?.moved) {
@@ -2609,7 +2620,9 @@ function decorateBody(mine: Member) {
         ? `<button class="swatch on" style="background:${sel.col}" data-act="noop" title="Your custom colour" aria-label="Your custom colour"></button>` : ''}<button class="swatch custom" data-act="paintfurn" title="Custom colour" aria-label="Custom colour" style="background:${CUSTOM_SWATCH}"></button></div>` : ''}` : '';
   const craftedReadyAt = sel && moving !== null ? myReady(sel, editRoom, moving) : 0;
   const craftBar = sel && CRAFT[sel.item as keyof typeof CRAFT] ? `<p class="hint">${craftedReadyAt ? `Ready ${fmt(craftedReadyAt - Date.now())} from now.` : 'Tap the piece in your room to make something: free, and it only makes what that piece is for.'}</p>` : '';
-  const hint = placing ? `Tap a spot in your room to place the <b>${ITEMS[placing].name}</b>.`
+  const hint = placing ? ((ITEMS[placing] as { wall?: boolean }).wall
+    ? `Tap the wall above your room to hang the <b>${ITEMS[placing].name}</b> — tapping the floor hangs it straight above.`
+    : `Tap a spot in your room to place the <b>${ITEMS[placing].name}</b>.`)
     : sel ? (canRot ? 'Drag it, or tap a new spot to move it there. Keys: arrows move · R rotate · F flip · Delete put away · Esc done.' : 'Drag it, or tap a new spot to move it there. Keys: arrows move · F flip · Delete put away · Esc done.')
     : 'Drag any furniture to move it, or tap it for more options. Tap a stack again to reach what is underneath.';
   const shelves = SHELVES.filter((sh) => inv.some(([k]) => (ITEMS[k as ItemKey] as { shelf?: string }).shelf === sh.id));
@@ -2644,13 +2657,16 @@ function statsBody() {
   if (statsTab === 'board') {
     const seg = (act: string, cur: string, opts: string[][]) => `<div class="seg small">${opts.map(([k, l]) =>
       `<button class="${cur === k ? 'on' : 'off'}" data-act="${act}" data-v="${k}">${l}</button>`).join('')}</div>`;
-    const rows = board && board.scope === boardScope && board.period === boardPeriod ? board.rows : null;
+    const coins = boardMetric === 'coins';
+    const rows = board && (board.metric ?? 'minutes') === boardMetric && board.scope === boardScope
+      && (coins || board.period === boardPeriod) ? board.rows : null;
     const medal = (i: number) => ['🥇', '🥈', '🥉'][i] ?? `#${i + 1}`;
     return `${tabs}<div class="row">${seg('scope', boardScope, [['house', 'My house'], ['friends', 'Friends'], ['all', 'Everyone']])}
-        ${seg('period', boardPeriod, [['week', 'This week'], ['all', 'All time']])}</div>
+        
+        ${coins ? '' : seg('period', boardPeriod, [['week', 'This week'], ['all', 'All time']])}</div>
       ${!rows ? '<p class="hint">Loading…</p>' : `<ol class="board">${rows.map((r, i) =>
-        `<li class="${r.me ? 'me' : ''}"><span class="rank">${medal(i)}</span><b>${esc(r.name)}${r.me ? ' (you)' : ''}</b>${r.members ? ` <small>(${r.members} members)</small>` : ''}<span>${hm(r.minutes)}</span></li>`).join('')}</ol>`}
-      <p class="hint">Ranked by focused minutes from finished sessions.</p>`;
+        `<li class="${r.me ? 'me' : ''}"><span class="rank">${medal(i)}</span><b>${esc(r.name)}${r.me ? ' (you)' : ''}</b>${r.members ? ` <small>(${r.members} members)</small>` : ''}<span>${coins ? `${coin()} ${r.coins ?? 0}` : hm(r.minutes ?? 0)}</span></li>`).join('')}</ol>`}
+      <p class="hint">${coins ? 'Ranked by the coins each person holds right now — spending moves you down the board.' : 'Ranked by focused minutes from finished sessions.'}</p>`;
   }
   const c = chart(me.sessions, statsRange, statsAnchor);
   const max = Math.max(...c.values, 1);
@@ -2800,7 +2816,11 @@ function renderPanel() {
   const typed = typing && { value: typing.value, start: typing.selectionStart, end: typing.selectionEnd };
   panel.hidden = false;
   panel.style.setProperty('--theme', th.color);
-  panel.innerHTML = `<header class="ph"><img src="${uiIconURL(th.icon)}" alt=""><h2>${th.title}</h2>
+  // The minutes/coins switch rides in the stats header, next to the close button, on the leaderboard tab.
+  const metricSwitch = openPanel === 'stats' && statsTab === 'board'
+    ? `<div class="seg small head-seg">${[['minutes', 'Minutes'], ['coins', 'Coins']].map(([k, l]) =>
+      `<button class="${boardMetric === k ? 'on' : 'off'}" data-act="boardMetric" data-v="${k}">${l}</button>`).join('')}</div>` : '';
+  panel.innerHTML = `<header class="ph"><img src="${uiIconURL(th.icon)}" alt=""><h2>${th.title}</h2>${metricSwitch}
     <button class="close" data-act="close" aria-label="Close">✕</button></header><div class="pb">${panelBody(mine)}</div>`;
   panel.querySelector('.pb')!.scrollTop = scroll;
   const rail = panel.querySelector<HTMLElement>('.rail');
@@ -2887,6 +2907,7 @@ panel.addEventListener('click', (e) => {
     case 'next': statsAnchor = shift(statsRange, statsAnchor, 1).getTime(); renderPanel(); break;
     case 'scope': boardScope = v; requestBoard(); renderPanel(); break;
     case 'period': boardPeriod = v; requestBoard(); renderPanel(); break;
+    case 'boardMetric': boardMetric = v; requestBoard(); renderPanel(); break;
     case 'cancel': armGiveUp(b, 'Give up'); break;
     case 'tab': {
       shopTab = v; renderPanel(); panel.querySelector('.pb')!.scrollTop = 0;
@@ -3278,7 +3299,7 @@ function welcome() {
   openTour(GUIDE_START.map((text) => ({ text, html: true })));
 }
 
-const requestBoard = () => send({ t: 'leaderboard', scope: boardScope, period: boardPeriod });
+const requestBoard = () => send({ t: 'leaderboard', scope: boardScope, period: boardPeriod, metric: boardMetric });
 
 // To-dos and chat open from the dock as a card above it, one at a time.
 const isSide = (name: string | null): name is SideCard => name === 'todos' || name === 'chat';
@@ -4500,7 +4521,14 @@ function showLanding(on: boolean) {
 // kept anywhere: a stolen token can log out, but only the person can delete the account. It is asked for in
 // a dialog of our own, because prompt() and confirm() are blocked in app shells and embedded browsers —
 // with them, the button did nothing at all.
-function deleteAccount() {
+async function deleteAccount() {
+  // Two taps before the password is asked for: the button in the panel is one, and this question is the other.
+  const sure = await ask({
+    title: 'Delete your account?',
+    body: 'This erases your room, your house, your chats and your study history for good. Nobody can bring it back.',
+    yes: 'Yes, continue', no: 'Keep my account', danger: true,
+  });
+  if (!sure) return;
   const dialog = $<HTMLDialogElement>('#deleteModal');
   const pass = $<HTMLInputElement>('#deletePass');
   pass.value = '';

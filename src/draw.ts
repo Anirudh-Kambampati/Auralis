@@ -3405,6 +3405,9 @@ const RECIPES: Record<string, [number, string, string]> = {
   lotusLamp: [0, '', 'r4,13,8,1,#8fd0a8|r3,10,10,3,#f4a6c8|r2,9,2,2,#f4a6c8|r12,9,2,2,#f4a6c8|r5,7,2,4,#f7c0c8|r9,7,2,4,#f7c0c8|r7,6,2,5,#fbd8e0|f7,3,2,3,#ffd34d|r7,5,2,1,#c8805a'],
   deskCalendar: [0, '', 'b3,4,10,10,#fffaf3|r3,4,10,3,#e06a5a|r5,2,1,3,#3a3448|r10,2,1,3,#3a3448|r5,9,1,1,#a8a0b8|r7,9,1,1,#a8a0b8|r9,9,1,1,#e06a5a|r5,11,1,1,#a8a0b8|r7,11,1,1,#a8a0b8|r9,11,1,1,#a8a0b8'],
   projectorScreen: [0, '#c58b5a', 'b0,0,48,16,$|b2,2,44,12,#ffffff|r4,4,10,4,#e8e3dc|r18,4,10,4,#e8e3dc|r4,10,10,4,#e8e3dc|r18,10,10,4,#e8e3dc|b0,12,48,2,$d|r2,14,2,1,#8a5a3c|r44,14,2,1,#8a5a3c'],
+  // The air conditioner hangs on the wall: a wide white body, two louver slats across the front, a cool readout and
+  // a single mint standby light. Trades its colour with the room like any other pastel piece.
+  aircon: [0, '#fdf4eb', 'b2,1,28,12,$|r5,6,22,1,$d|r5,8,22,1,#b9aebd|r5,10,22,1,#b9aebd|r21,3,4,1,#9db4ee|r22,4,2,1,$l|r26,4,1,1,#7de0b0'],
 };
 type Shape = { k: string; n: number[]; col: string };
 const parsed = new Map<string, Shape[]>();

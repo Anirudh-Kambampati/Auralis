@@ -118,6 +118,25 @@ test('furniture blocks cells; rugs do not', () => {
   assert.equal(g.at(o.x + 5, o.y + 5), FLOOR);
 });
 
+test('wall pieces hang on the wall band, never on the floor', () => {
+  const room = { furniture: [] };
+  assert.equal(canPlace(room, 'aircon', 0, -1), true); // the wall tile against the floor
+  assert.equal(canPlace(room, 'aircon', 0, -2), true); // the wall tile above it
+  assert.equal(canPlace(room, 'aircon', 0, 0), false); // a wall piece never stands on the floor
+  assert.equal(canPlace(room, 'aircon', 0, -3), false); // above the two-tile wall there is nothing to hang on
+  assert.equal(canPlace(room, 'aircon', 9, -1), false); // two tiles wide, so it would hang past the wall
+  assert.equal(canPlace(room, 'plant', 0, -1), false); // floor pieces never hang
+  // Wall pieces collide with each other and with nothing on the floor.
+  const withAir = { furniture: [{ item: 'aircon', x: 0, y: -1 }] };
+  assert.equal(canPlace(withAir, 'plant', 0, 0), true);
+  assert.equal(canPlace(withAir, 'desk', 0, 0), true);
+  assert.equal(canPlace(withAir, 'aircon', 0, -1), false);
+  assert.equal(canPlace(withAir, 'aircon', 1, -2), true); // next to it, one tile up
+  // The floor tile under a wall piece is still walkable.
+  const g = buildGrid([{ furniture: [{ item: 'aircon', x: 0, y: -1 }] }]);
+  assert.equal(g.at(g.origins[0].x, g.origins[0].y), FLOOR);
+});
+
 test('placement rules', () => {
   const room = { furniture: [{ item: 'desk', x: 0, y: 0 }] };
   assert.equal(canPlace(room, 'plant', 1, 0), false); // overlaps desk

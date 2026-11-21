@@ -22,7 +22,27 @@ async function player(name) {
     await new Promise((r, j) => { p.ws.on('open', r); p.ws.on('error', j); });
     p.ws.on('message', (raw) => {
       const m = JSON.parse(raw);
-      if (m.t === 'state') p.state = m;
+      if (m.t === 'state') {
+        // The client keeps what a snapshot leaves out: rooms travel by revision (`{ r }` means "keep yours"),
+        // and the chat tails and the conversation list only ride on a full snapshot.
+        const had = p.state;
+        for (const mem of m.house.members) {
+          const prev = had?.house.members.find((x) => x.id === mem.id)?.rooms ?? [];
+          mem.rooms = (mem.rooms ?? []).map((r, i) => (r && r.furniture ? r : { ...(prev[i] ?? {}), ...r }));
+        }
+        m.house.chat = m.house.chat ?? had?.house.chat ?? [];
+        m.me.dm = m.me.dm ?? had?.me.dm ?? {};
+        p.state = m;
+      }
+      // A new line comes as its own `msg` frame, the way the client receives it.
+      if (m.t === 'msg' && p.state) {
+        const thread = m.thread ?? '', me = p.state.me;
+        if (thread === `h:${p.state.house.code}`) p.state.house.chat.push(m.msg);
+        else if (thread.startsWith('d:')) {
+          const peer = thread.slice(2).split('|').find((id) => id !== me.id);
+          if (peer) (me.dm[peer] ??= []).push(m.msg);
+        }
+      }
       if (m.t === 'read') p.reads.push(m);
       if (m.t === 'history') p.history = m;
     });
@@ -32,7 +52,7 @@ async function player(name) {
   };
   p.send = (m) => p.ws.send(JSON.stringify(m));
   p.house = () => p.state.house.chat;
-  p.dm = () => p.state.me.dm;
+  p.dm = () => p.state.me.dm ?? {};
   await p.connect();
   p.id = p.state.me.id;
   return p;

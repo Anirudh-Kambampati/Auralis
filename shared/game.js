@@ -55,6 +55,9 @@ export const ITEMS = {
   exerciseBike: { name: 'Exercise bike', w: 1, h: 1, price: 85, solid: true, colors: 'pastel', act: 'bike' },
   treadmill: { name: 'Treadmill', w: 1, h: 1, price: 105, solid: true, act: 'run' },
   projectorScreen: { name: 'Projector screen', w: 3, h: 1, price: 150, solid: true, colors: 'pastel', shelf: 'living' },
+  // wall: true hangs on one of the wall tiles above the floor instead of taking a floor tile. Only wall pieces may go
+  // there, and a wall piece cannot be put on the floor. `solid` stays off: nothing walks into a wall unit.
+  aircon: { name: 'Air conditioner', w: 2, h: 1, price: 210, solid: false, wall: true, colors: 'pastel', use: 'admire', shelf: 'living' },
   // kitchen
   counter: { name: 'Kitchen counter', w: 2, h: 1, price: 40, solid: true, colors: 'wood', use: 'cook' },
   sink: { name: 'Kitchen sink', w: 1, h: 1, price: 35, solid: true , use: 'wash' },
@@ -745,12 +748,13 @@ export const canRotate = (item) => {
   if (BED_ADJACENT.has(item)) return true;
   const it = ITEMS[item];
   if (!it) return false;
+  if (it.wall) return false; // a wall piece only faces the room
   if (!it.solid && !it.top) return true; // rugs and floor mats
   return !!(it.act === 'sleep' || it.pet === 'sleep' || item.toLowerCase().includes('bed') || item.toLowerCase().includes('rug') || item.toLowerCase().includes('mat'));
 };
 export const footprint = (f) => { const it = ITEMS[f.item]; return (canRotate(f.item) && f.rot % 2) ? { w: it.h, h: it.w } : { w: it.w, h: it.h }; };
 // Rugs, mats and beds are seen from above, so they turn as a whole picture; upright things show a side or their back.
-export const lying = (it) => (!it?.solid && !it?.top) || it?.h > it?.w || it?.act === 'sleep' || it?.pet === 'sleep' || (typeof it?.name === 'string' && it.name.toLowerCase().includes('bed'));
+export const lying = (it) => (!it?.wall && !it?.solid && !it?.top) || it?.h > it?.w || it?.act === 'sleep' || it?.pet === 'sleep' || (typeof it?.name === 'string' && it.name.toLowerCase().includes('bed'));
 // The next way a piece can face. Square upright things only have a front and a back.
 export const nextRot = (f) => {
   if (!canRotate(f.item)) return 0;
@@ -762,14 +766,18 @@ export const nextRot = (f) => {
 export const LIGHTS = new Set(['lamp', 'arcLamp', 'bedsideLamp', 'candles', 'neonHeart', 'fairyJar', 'floorCandle', 'snowflakeLamp', 'lanternString', 'diya', 'menorah', 'discoBall',
   'skyLantern', 'sparklers', 'garbaLamp', 'bonfire', 'eidLantern', 'crescentLamp', 'lotusLamp']);
 
-// Room-local placement check. Each layer only collides with itself: rugs, solid furniture, small tabletop things.
-const layer = (it) => (it.top ? 2 : it.solid ? 1 : 0);
+// Room-local placement check. Each layer only collides with itself: rugs, solid furniture, small tabletop things,
+// and wall pieces, which hang on the wall band above the floor and never collide with anything on it.
+const layer = (it) => (it.wall ? 3 : it.top ? 2 : it.solid ? 1 : 0);
 export function canPlace(room, item, x, y, rot = 0) {
   const it = ITEMS[item];
   const s = roomSize(room);
   if (!it || !Number.isInteger(x) || !Number.isInteger(y)) return false;
   const d = footprint({ item, rot: canRotate(item) ? rot : 0 });
-  if (x < 0 || y < 0 || x + d.w > s.w || y + d.h > s.h) return false;
+  if (x < 0 || x + d.w > s.w) return false;
+  // Wall pieces hang in the WALL_H wall tiles above the floor row (y = -1 is the tile against the floor, -WALL_H the
+  // top one) and nowhere else; floor pieces start at the floor row and stay inside the room.
+  if (it.wall ? y + d.h > 0 || y < -WALL_H : y < 0 || y + d.h > s.h) return false;
   return !room.furniture.some((f) => hits(f, it, x, y, d));
 }
 const hits = (f, it, x, y, d) => {

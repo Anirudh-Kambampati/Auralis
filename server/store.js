@@ -285,6 +285,15 @@ export function openStore(file, legacyJsonFile, { lazy = false } = {}) {
       ) where at >= ? group by player_id`).all(...args, ...args, since);
       return Object.fromEntries(rows.map((r) => [r.player_id, Number(r.minutes)]));
     },
+    // What each player holds right now, for the coins board: the account row, which is where a purse lives.
+    // `playerIds` null means everyone. An offline player is only a stub in the world, so this is the only
+    // place their balance can come from.
+    coinTotals: (playerIds = null) => {
+      if (playerIds && !playerIds.length) return {};
+      const filter = playerIds ? ` and player_id in (${playerIds.map(() => '?').join(',')})` : '';
+      const rows = sql.prepare(`select player_id, coins from accounts where coins is not null${filter}`).all(...(playerIds ?? []));
+      return Object.fromEntries(rows.map((r) => [r.player_id, Number(r.coins)]));
+    },
     // Folds sessions older than `cutoff` into the day roll-up in one transaction; returns day rows written.
     rollUpSessions: (cutoff) => {
       const rows = sql.prepare('select player_id, at, minutes, tag from sessions where at < ?').all(cutoff);

@@ -16,6 +16,7 @@ All rules live in `shared/game.js` and `shared/stats.js`, so the browser and the
 
 - The item must be in the catalog, at whole-tile coordinates, and fully inside the room's current size.
 - Solid items can't overlap solid items. Rugs (non-solid) can't overlap rugs but can sit under furniture.
+- **Wall pieces** are the items marked `wall: true` in `ITEMS` (the air conditioner). They hang in the two wall tiles above the room's floor row instead of taking floor: room-local `y` is `-1` for the tile against the floor or `-2` for the one above it, and `x + w` must still fit inside the room's width. They collide only with other wall pieces, so a lamp or a rug on the floor under one is fine, and the floor tile beneath stays walkable. A wall piece can't be put on the floor and a floor piece can't be hung, which is what keeps `y < 0` meaningful in a saved room.
 - Moving checks placement against the room *without* the item being moved.
 
 ## Focus and rewards
@@ -34,6 +35,7 @@ All rules live in `shared/game.js` and `shared/stats.js`, so the browser and the
 - Day = 24 hourly bars, Week = Sun–Sat, Month = one bar per day, Year = Jan–Dec. Arrows move the range with `shift()`, which clamps month changes (Jan 31 + 1 month = Feb 1).
 - Streak = consecutive days with at least one session, counted back from today, or from yesterday if nothing is finished yet today. A rolled-up day still counts, so a streak is never broken by the window. Finishing a session pays a streak bonus in coins (`streakBonus` in `shared/game.js`): +10% at 3 days, +25% at 7, +50% at 30.
 - Leaderboard = sum of minutes in the last 7 days (or all-time totals), for the house or every player, summed from the log and the roll-up rather than from a number kept on a row.
+- The same board can rank by **coins** instead (`metric: 'coins'`): the balance each player holds right now, read from the `accounts` table (a player who is offline is only a stub in the world), so the period does not apply and a player spending coins moves down the board. Houses show their members' coins added up.
 
 ## Subjects
 

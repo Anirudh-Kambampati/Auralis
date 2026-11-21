@@ -70,7 +70,15 @@ async function connect(p) {
   await new Promise((r, j) => { p.ws.on('open', r); p.ws.on('error', j); });
   p.ws.on('message', (raw) => {
     const m = JSON.parse(raw);
-    if (m.t === 'state') p.state = m;
+    if (m.t === 'state') {
+      // Rooms travel by revision: `{ r }` means "keep the one you have", so keep it exactly as the client does.
+      const had = p.state;
+      for (const mem of m.house.members) {
+        const prev = had?.house.members.find((x) => x.id === mem.id)?.rooms ?? [];
+        mem.rooms = (mem.rooms ?? []).map((r, i) => (r && r.furniture ? r : { ...(prev[i] ?? {}), ...r }));
+      }
+      p.state = m;
+    }
     if (m.t === 'info') p.infos.push(m);
   });
   p.ws.send(JSON.stringify({ t: 'hello', token: p.token }));

@@ -144,6 +144,10 @@ const PET_SCALE: Record<string, number> = Object.fromEntries(
 );
 for (const [kind, scale] of Object.entries(PET_SCALE)) console.assert(scale >= 1, `pet ${kind} must not shrink below capybara size`);
 
+// Pets with wings: these hover instead of trotting, with a wingbeat bob in the air and a small shadow left on the
+// floor beneath them. Everything else walks, and keeps its little hop.
+export const FLYERS = new Set(['owl', 'dragon']);
+
 const coatOf = (kind: string, coat = 0) => {
   const coats = (PETS as Record<string, { coats: string[] }>)[kind]?.coats ?? ['#f2c48a'];
   return coats[coat] ?? coats[0];
@@ -318,13 +322,20 @@ export function petPos(seed: number, now: number, areas: Area[], home = 0, near:
 export function drawPet(c: CanvasRenderingContext2D, kind: string, x: number, y: number, moving: boolean, left: boolean, now: number, act?: string, coat = 0, acc?: string) {
   // 'sun' is a doze in a window's light and 'chair' a nap on a cushion: both lie down like sleep does.
   const sleeping = act === 'sleep' || act === 'sun' || act === 'chair', tricking = act === 'trick';
-  const hop = sleeping ? 1 : act === 'watch' ? 0 : act === 'dance' ? -Math.abs(Math.round(Math.sin(now / 150) * 2))
+  // A flyer with wings stays off the floor unless it is perched or lying down; it holds a height and beats its wings
+  // there, which is its walk. The bob is the wingbeat, so a flying pet never looks like it is sliding.
+  const flies = FLYERS.has(kind) && !sleeping && act !== 'perch' && act !== 'lap' && act !== 'chair' && act !== 'eat';
+  const hover = flies ? (moving ? 6 : 4) + Math.round(Math.sin(now / (moving ? 110 : 200)) * (moving ? 2 : 1)) : 0;
+  const hop = hover ? -hover : sleeping ? 1 : act === 'watch' ? 0 : act === 'dance' ? -Math.abs(Math.round(Math.sin(now / 150) * 2))
     : tricking ? -Math.abs(Math.round(Math.sin(now / 130) * 3))
     : moving ? -Math.abs(Math.round(Math.sin(now / 90) * 2)) : Math.floor(now / 800) % 2 ? 0 : -1;
   if (act === 'perch') y -= 16;
   else if (act === 'lap') y -= 8;
   else if (act === 'chair') y -= 5; // curled up on a cushion, a few pixels up and no floor shadow at all
-  else {
+  else if (flies) { // a winged shadow, small and faint, stays where the pet would have landed
+    c.fillStyle = 'rgba(58,38,51,0.10)';
+    c.fillRect(x + 5, y + 14, 6, 2);
+  } else {
     c.fillStyle = 'rgba(58,38,51,0.18)';
     c.fillRect(x + 3, y + 14, 10, 2);
   }

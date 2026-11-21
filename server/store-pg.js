@@ -254,6 +254,10 @@ export async function openPgStore(url, legacyJsonFile, { lazy = false } = {}) {
       select player_id, minutes, day as at from session_days where ($2::text[] is null or player_id = any($2))
     ) t where at >= $1 group by player_id`, [since, playerIds])).rows
       .reduce((out, r) => { out[r.player_id] = Number(r.minutes); return out; }, {}),
+    // What each player holds right now, for the coins board (the account row is where a purse lives).
+    // `playerIds` null means everyone, the same as `sessionTotals`.
+    coinTotals: async (playerIds = null) => (await pool.query('select player_id, coins from accounts where coins is not null and ($1::text[] is null or player_id = any($1))', [playerIds])).rows
+      .reduce((out, r) => { out[r.player_id] = Number(r.coins); return out; }, {}),
     // Folds sessions older than `cutoff` into the day roll-up in one statement (delete + insert, atomic).
     rollUpSessions: async (cutoff) => (await pool.query(`with gone as (
         delete from sessions where at < $1 returning player_id, at, minutes, tag)

@@ -291,15 +291,18 @@ export interface BannedUser {
 
 // Board/leaderboard types
 export interface Board {
+  metric?: 'minutes' | 'coins';
   scope: string;
   period: string;
   rows: BoardRow[];
 }
 
+// minutes on a minutes board, coins on a coins board: a row carries whichever metric the board ranks by.
 export interface BoardRow {
   name: string;
   me: boolean;
-  minutes: number;
+  minutes?: number;
+  coins?: number;
   members?: number;
 }
 
