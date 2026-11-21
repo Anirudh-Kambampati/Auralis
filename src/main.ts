@@ -2742,6 +2742,7 @@ function panelBody(mine: Member) {
         <p class="hint">Total focus: <b>${mine.totalMinutes}</b> min</p>
         <div class="me-actions"><button class="off small-chip" data-act="logout">Log out</button>
         <button class="danger small-chip" data-act="deleteaccount" title="Erase this account and everything in it">Delete account</button>
+        <button class="off small-chip" data-act="status">🟢 Set activity</button>
         <button class="off small-chip" data-act="chimes">${chimes ? '🔔 Sounds on' : '🔕 Sounds off'}</button>
         ${installPrompt ? '<button class="off small-chip" data-act="install">📲 Install app</button>' : ''}
         <a class="hint" href="/privacy.html" target="_blank" rel="noopener">Privacy policy</a></div></div></div>
@@ -3070,6 +3071,7 @@ panel.addEventListener('click', (e) => {
       break;
     case 'logout': signOut(true); break;
     case 'deleteaccount': void deleteAccount(); break;
+    case 'status': setStatus(); break;
     case 'chimes':
       chimes = !chimes;
       localStorage.setItem('auralis.chimes', chimes ? 'on' : 'off');
@@ -3615,17 +3617,25 @@ function renderGallery() {
 }
 
 
-function setMyStatusPrompt() {
+// The picker is a dialog, not two prompt()s: app shells and embedded browsers block prompt(), so asking that
+// way left the status unchanged and said nothing about why. Opened from Me → Set activity.
+const statusModal = $<HTMLDialogElement>('#statusModal');
+function setStatus() {
   const cur = getPresence(myId);
-  const pick = prompt('Set activity status: idle, focus, break, afk, or chat', cur?.status ?? 'idle');
-  if (!pick) return;
-  const status = pick.trim().toLowerCase() as PresenceStatus;
-  if (!['idle', 'focus', 'break', 'afk', 'chat'].includes(status)) return toast('Use: idle, focus, break, afk, or chat', 'error');
-  const custom = prompt('Optional status text (leave blank for default)', cur?.custom ?? '') ?? '';
-  setMyPresence(status, custom.trim());
+  $<HTMLSelectElement>('#statusPick').value = cur?.status ?? 'idle';
+  $<HTMLInputElement>('#statusText').value = cur?.custom ?? '';
+  if (!statusModal.open) statusModal.showModal();
+  $<HTMLInputElement>('#statusText').focus();
+}
+$('#statusCancel').addEventListener('click', () => statusModal.close());
+$<HTMLFormElement>('#statusForm').addEventListener('submit', (e) => {
+  e.preventDefault();
+  const status = $<HTMLSelectElement>('#statusPick').value as PresenceStatus;
+  setMyPresence(status, $<HTMLInputElement>('#statusText').value.trim().slice(0, 40));
+  statusModal.close();
   renderSide();
   toast('Activity status updated.');
-}
+});
 
 // ===== END NEW CHAT FEATURES =====
 
@@ -3919,7 +3929,13 @@ $('#chatLog').addEventListener('scroll', () => {
 });
 $('#chatLog').addEventListener('click', (e) => {
   const link = (e.target as HTMLElement).closest<HTMLAnchorElement>('a[href]');
-  if (link && !confirm(`Open this external link?\n\n${link.href}\n\nOnly open links from people you trust.`)) return e.preventDefault();
+  if (link) {
+    // The question is a dialog, so the page cannot be left until it is answered: hold the click either way.
+    e.preventDefault();
+    void ask({ title: 'Open this link?', body: `${link.href}\n\nOnly open links from people you trust.`, yes: 'Open link' })
+      .then((ok) => { if (ok) open(link.href, '_blank', 'noopener'); });
+    return;
+  }
   const dl = (e.target as HTMLElement).closest<HTMLButtonElement>('.chat-dl');
   if (dl) return downloadAttachment(dl.dataset.dl!);
   const doc = (e.target as HTMLElement).closest<HTMLButtonElement>('.chat-doc');
@@ -4280,10 +4296,17 @@ $('#chatThreadActions').addEventListener('click', (e) => {
   if (unfriendBtn) {
     const id = unfriendBtn.dataset.unfriend!;
     const f = friendsOnly().find((x) => x.id === id);
-    if (f && confirm(`Unfriend ${f.name}? ${members.some((m) => m.id === f.id) ? '' : "You won't be able to message each other any more."}`)) {
-      send({ t: 'friend_remove', id: f.id });
-      chatOpen = false;
-      renderSide();
+    if (f) {
+      void ask({
+        title: `Unfriend ${f.name}?`,
+        body: members.some((m) => m.id === f.id) ? '' : "You won't be able to message each other any more.",
+        yes: 'Unfriend', danger: true,
+      }).then((ok) => {
+        if (!ok) return;
+        send({ t: 'friend_remove', id: f.id });
+        chatOpen = false;
+        renderSide();
+      });
     }
     return;
   }
@@ -4298,10 +4321,17 @@ $('#chatThreadActions').addEventListener('click', (e) => {
   const leaveBtn = (e.target as HTMLElement).closest<HTMLButtonElement>('[data-group-leave]');
   if (leaveBtn) {
     const g = groupOf(dmPeer);
-    if (g && confirm(`Leave "${g.name}"? You won't see its messages any more.`)) {
-      send({ t: 'group_leave', g: dmPeer!.slice(2) });
-      chatOpen = false;
-      renderSide();
+    if (g) {
+      void ask({
+        title: `Leave "${g.name}"?`,
+        body: "You won't see its messages any more.",
+        yes: 'Leave group', danger: true,
+      }).then((ok) => {
+        if (!ok) return;
+        send({ t: 'group_leave', g: dmPeer!.slice(2) });
+        chatOpen = false;
+        renderSide();
+      });
     }
     return;
   }
@@ -4507,6 +4537,35 @@ function deleteAccount() {
   });
 })();
 
+// One question in place of confirm(), which app shells and embedded browsers block (a blocked confirm reads as
+// "no" and looks like a dead button). The answer arrives as a promise; Escape, Cancel, and a second question
+// replacing the first all count as no, and the safe answer keeps the focus.
+const askDialog = $<HTMLDialogElement>('#askModal');
+let askAnswer: ((yes: boolean) => void) | null = null;
+function settleAsk(yes: boolean) {
+  const answer = askAnswer;
+  askAnswer = null;
+  if (askDialog.open) askDialog.close();
+  answer?.(yes);
+}
+function ask(opts: { title: string; body?: string; yes?: string; no?: string; danger?: boolean }): Promise<boolean> {
+  settleAsk(false); // a question already open is being replaced, and its answer is no
+  $('#askTitle').textContent = opts.title;
+  const body = $('#askBody');
+  body.textContent = opts.body ?? '';
+  body.hidden = !opts.body;
+  $<HTMLButtonElement>('#askYes').textContent = opts.yes ?? 'OK';
+  $<HTMLButtonElement>('#askYes').className = opts.danger ? 'danger' : '';
+  $<HTMLButtonElement>('#askNo').textContent = opts.no ?? 'Cancel';
+  askDialog.showModal();
+  $<HTMLButtonElement>('#askNo').focus(); // a stray Enter means no, never the destructive answer
+  return new Promise((resolve) => { askAnswer = resolve; });
+}
+$('#askYes').addEventListener('click', () => settleAsk(true));
+$('#askNo').addEventListener('click', () => settleAsk(false));
+askDialog.addEventListener('cancel', (e) => { e.preventDefault(); settleAsk(false); }); // Escape answers no, and still settles
+askDialog.addEventListener('close', () => settleAsk(false)); // anything else that closes it also answers no
+
 function signOut(tellServer: boolean) {
   stopAllSounds();
   if (tellServer && token) fetch(`${apiBase}/api/logout`, { method: 'POST', body: JSON.stringify({ token }) }).catch(() => {});
@@ -4574,7 +4633,10 @@ bellMenu.addEventListener('click', (e) => {
   switch (b.dataset.bell) {
     case 'clear': send({ t: 'inbox_clear' }); return;
     case 'announce': toggleBell(false); postAnnouncement(); return;
-    case 'announce-del': if (confirm('Delete this announcement?')) send({ t: 'announcement_del', id: Number(v) }); return;
+    case 'announce-del':
+      void ask({ title: 'Delete this announcement?', body: 'Everyone in the house loses it.', yes: 'Delete', danger: true })
+        .then((ok) => { if (ok) send({ t: 'announcement_del', id: Number(v) }); });
+      return;
     case 'join': send({ t: 'focus_join', id: v, tz: new Date().getTimezoneOffset() }); break;
     case 'todos': setPanel('todos'); break;
     case 'letin': case 'nope': send({ t: 'visit_answer', id: v, yes: b.dataset.bell === 'letin' }); break;

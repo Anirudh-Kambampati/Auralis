@@ -290,6 +290,21 @@
         <div class="end"><button type="button" class="off" id="deleteCancel">Keep my account</button><button class="danger" id="deleteGo">Delete forever</button></div>
       </form>
     </dialog>
+    <dialog id="askModal" class="modal" aria-labelledby="askTitle">
+      <h2 id="askTitle"></h2>
+      <p class="hint" id="askBody"></p>
+      <div class="end"><button type="button" class="off" id="askNo">Cancel</button><button id="askYes">OK</button></div>
+    </dialog>
+    <dialog id="statusModal" class="modal" aria-labelledby="statusTitle">
+      <form id="statusForm">
+        <h2 id="statusTitle">Set your activity</h2>
+        <div class="fields">
+          <label class="field"><select id="statusPick" aria-label="Activity"><option value="idle">🟢 Available</option><option value="focus">📚 Focusing</option><option value="break">☕ Break</option><option value="afk">🌙 AFK</option><option value="chat">💬 Chatting</option></select></label>
+          <label class="field"><input id="statusText" type="text" maxlength="40" placeholder="Say something (optional)" aria-label="Status text" autocomplete="off" /></label>
+        </div>
+        <div class="end"><button type="button" class="off" id="statusCancel">Cancel</button><button id="statusSave">Save</button></div>
+      </form>
+    </dialog>
     <dialog id="tour" class="modal tour" aria-labelledby="tourTitle">
       <div class="tour-head">
         <h2 id="tourTitle"><img data-icon="guide" alt="" /> A quick look around</h2>

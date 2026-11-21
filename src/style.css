@@ -1232,6 +1232,9 @@ button.ghost.small { padding: 8px 14px; font-size: 15px; box-shadow: 0 3px 0 var
 .modal .field input, .modal .field select { flex: 1; min-width: 0; padding: 4px 0; font: inherit; color: #3a2633; background: none; border: none; outline: none; }
 .modal .field select { cursor: var(--point); appearance: none; padding-right: 24px; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%233a2633' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 4px center; }
 .modal .field:focus-within { outline: 3px solid var(--point); outline-offset: 1px; }
+.modal .fields { display: grid; gap: 8px; }
+/* A link in a question is one long unbroken word: let it wrap instead of pushing the dialog wide. */
+#askBody { overflow-wrap: anywhere; white-space: pre-line; }
 .modal .end { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
 .who { display: flex; flex-wrap: wrap; gap: 6px; }
 .who-chip { display: inline-flex; }
