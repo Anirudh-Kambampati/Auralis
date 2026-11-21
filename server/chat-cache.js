@@ -129,7 +129,16 @@ function makeRefreshThread({ broadcastHouse, refresh, db }) {
 // What a player's client needs when it connects: their conversation list, and the lines of each thread.
 async function loadPlayerThreads(p, store) {
   const rows = (await store.threadsFor?.(p.id)) ?? [];
-  threadIndex.set(p.id, new Map(rows.map((r) => [r.thread, r])));
+  const index = new Map(rows.map((r) => [r.thread, r]));
+  threadIndex.set(p.id, index);
+  // A receipt still waiting for the next flush (up to a couple of seconds old) is not in the rows yet:
+  // keep it, or reconnecting straight after reading brings the unread badge back.
+  const mine = `${p.id}|`;
+  for (const [key, id] of pendingSeen) {
+    if (!key.startsWith(mine)) continue;
+    const row = index.get(key.slice(mine.length));
+    if (row && id > (row.seen ?? 0)) row.seen = id;
+  }
   const threads = [...new Set([...(p.house ? [`h:${p.house}`] : []), ...rows.map((r) => r.thread)])];
   const found = (await store.tails?.(threads, MAX_TAIL)) ?? {};
   for (const thread of threads) if (!tails.has(thread)) rememberTail(thread, found[thread] ?? []);

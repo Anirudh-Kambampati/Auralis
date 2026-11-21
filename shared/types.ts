@@ -107,6 +107,8 @@ export interface Look {
 }
 
 export interface Room {
+  // Its revision in a snapshot: a room the viewer already has travels as `{ r }` alone (see docs/dataflow.md).
+  r?: string;
   wallpaper: string;
   floor: string;
   pattern?: string;

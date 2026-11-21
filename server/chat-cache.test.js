@@ -1,7 +1,7 @@
 // The read receipts the cache holds back and writes once per thread (see chat-cache.js).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { noteSeen, flushSeen, seenView } from './chat-cache.js';
+import { noteSeen, flushSeen, seenView, loadPlayerThreads } from './chat-cache.js';
 import { threadIndex } from './chat-cache.js';
 
 const index = (playerId, thread, seen = 0) => threadIndex.set(playerId, new Map([[thread, { thread, seen }]]));
@@ -36,4 +36,19 @@ test('a write that failed is retried on the next flush', async () => {
 
   assert.equal(await flushSeen(store), 1, 'the receipt that failed is sent again');
   assert.deepEqual(writes, [[player, thread, 4]]);
+});
+
+test('a receipt waiting for its write survives a reconnect', async () => {
+  const player = 'rlive', thread = 'h:CCCCC';
+  const store = {
+    threadsFor: async () => [{ thread, seen: 0 }],
+    tails: async () => ({}),
+    setThreadSeen: async () => {},
+  };
+  await loadPlayerThreads({ id: player, house: 'CCCCC' }, store);
+  noteSeen(player, thread, 12);
+  assert.equal(seenView({ id: player })[thread], 12);
+
+  await loadPlayerThreads({ id: player, house: 'CCCCC' }, store); // reconnecting before the flush
+  assert.equal(seenView({ id: player })[thread], 12, 'the unread badge does not come back');
 });

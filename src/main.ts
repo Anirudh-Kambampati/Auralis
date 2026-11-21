@@ -19,7 +19,7 @@ import { chart, streak, rangeTitle, shift, hm, RANGES } from '../shared/stats.js
 import './style.css';
 
 type Furniture = { item: string; x: number; y: number; v?: number; s?: number; flip?: boolean; rot?: number; wateredAt?: number; off?: boolean; col?: string };
-type Room = { wallpaper: string; floor: string; pattern?: string; floorStyle?: string; level?: number; curtains?: boolean; wallColor?: string; floorColor?: string; furniture: Furniture[] };
+type Room = { wallpaper: string; floor: string; pattern?: string; floorStyle?: string; level?: number; curtains?: boolean; wallColor?: string; floorColor?: string; furniture: Furniture[]; r?: string };
 type Member = {
   id: string; name: string; look: Look; rooms: Room[]; focus: Focus | null;
   totalMinutes: number; online: boolean; pos: { x: number; y: number } | null; pets: { kind: string; name?: string; coat?: number; acc?: string; away?: boolean; follow?: boolean; bond?: number; myBond?: number; fav?: string | null; sofa?: { owner: string; r: number; index: number; pats: number } }[]; fedAt?: number;
@@ -250,6 +250,14 @@ const send = (m: object) => {
   return false;
 };
 
+// A snapshot names each room by revision and leaves the body out when it is one we already hold:
+// keep the room we have for that index, and take the room only when it really is a new one.
+function mergeRooms(have: Room[] | undefined, next: (Room | { r?: string })[]): Room[] {
+  return next.map((room, i) => (Array.isArray((room as Room).furniture)
+    ? (room as Room)
+    : { ...(have?.[i] ?? { wallpaper: 'plaster', floor: 'oak', furniture: [] }), r: room.r }));
+}
+
 function onMessage(m: any) {
   if (m.t === 'auth') {
     signOut(false); // token expired or revoked
@@ -267,12 +275,15 @@ function onMessage(m: any) {
     const oldGrid = grid, oldSlots = slots.map((x) => `${x.m.id}:${x.ri}`);
     houseCode = m.house.code;
     houseOwnerName = m.house.ownerName ?? '';
-    members = m.house.members;
+    const heldRooms = new Map(members.map((o) => [o.id, o.rooms]));
+    members = (m.house.members as Member[]).map((o) => ({ ...o, rooms: mergeRooms(heldRooms.get(o.id), o.rooms) }));
     for (const member of members) for (const r of member.rooms) for (const f of r.furniture) if (!canRotate(f.item) && f.rot !== undefined) delete f.rot;
     todos = m.house.todos;
     houseEvents = m.house.events ?? [];
     houseAnnouncements = m.house.announcements ?? [];
-    me = { ...m.me, sessions: m.me.sessions ?? me.sessions }; // study history only comes when it changed
+    // Study history only comes when it changed; a snapshot that is not full leaves the conversation lines
+    // out too (they travel as their own `msg` frames), so what we already have stays.
+    me = { ...m.me, sessions: m.me.sessions ?? me.sessions, dm: m.me.dm ?? me.dm, groups: mergeGroups(m.me.groups) };
     // Initialize house chat read position from server
     const houseThread = `h:${houseCode}`;
     lastChatId = (m.me.threadSeen ?? {})[houseThread] ?? -1;
@@ -429,7 +440,7 @@ function onMessage(m: any) {
       }
     }
     for (const id of avatars.keys()) if (!members.some((x) => x.id === id)) avatars.delete(id);
-    receiveChat(m.house.chat);
+    if (m.house.chat) receiveChat(m.house.chat); // no lines in this snapshot: keep the ones on screen
     const mine = myMember();
     if (pendingLook && mine) { send({ t: 'look', name: mine.name, look: pendingLook }); pendingLook = null; }
     const focusing = !!myMember()?.focus;
@@ -464,6 +475,21 @@ function onMessage(m: any) {
     toast(`📚 <b>${esc(m.by)}</b> invites you to study <b>${esc(m.tag)}</b> together. <u>Tap to join</u> (or open Focus)`, 'reward', {
       ms: 10_000, onClick: () => send({ t: 'focus_join', id: m.from, tz: new Date().getTimezoneOffset() }),
     });
+  } else if (m.t === 'msg') { // one new line, on its own frame rather than inside a whole-house snapshot
+    const thread: string = m.thread ?? '';
+    if (thread === `h:${houseCode}`) receiveChat([m.msg]);
+    else if (thread.startsWith('g:')) {
+      const g = me.groups?.[thread.slice(2)];
+      if (g) addMsg((g.msgs ??= []), m.msg);
+    } else if (thread.startsWith('d:')) {
+      const peer = thread.slice(2).split('|').find((id: string) => id !== myId);
+      if (peer) { me.dm ??= {}; addMsg((me.dm[peer] ??= []), m.msg); }
+    } else return;
+    noteNewDms(); // unread counts, ping and badge, exactly as a fresh state would have decided them
+    renderSide();
+  } else if (m.t === 'coins') { // a coin change is one small frame now, not a house snapshot
+    me.coins = m.coins;
+    renderHud();
   } else if (m.t === 'history') { // older messages of a thread, asked for by scrolling to the top
     const key = m.k === 'h' ? `h:${houseCode}` : m.k === 'g' ? `g:${m.id}` : m.id;
     olderMsgs[key] = [...m.msgs, ...threadMsgs(key === `h:${houseCode}` ? null : key)];
@@ -3585,6 +3611,20 @@ const recentMsgs = (peer: string | null): Chat[] => (!peer ? chat : groupOf(peer
 const olderMsgs: Record<string, Chat[]> = {}, historyDone = new Set<string>();
 let historyBusy = false;
 const threadKey = (peer: string | null) => peer ?? `h:${houseCode}`;
+// A line that arrived on its own `msg` frame. Appended once: a reconnect can replay the same message in a
+// fresh snapshot, and a duplicate would show twice.
+function addMsg(list: Chat[], msg: Chat) {
+  if (!msg || list.some((c) => c.id === msg.id)) return;
+  list.push(msg);
+  list.sort((a, b) => a.id - b.id);
+}
+// A non-full snapshot carries a group's name and members but not its lines: keep what we have.
+const mergeGroups = (next: Me['groups']): Me['groups'] => {
+  if (!next) return me.groups;
+  const out: NonNullable<Me['groups']> = {};
+  for (const [gid, g] of Object.entries(next)) out[gid] = { ...g, msgs: g.msgs ?? me.groups?.[gid]?.msgs ?? [] };
+  return out;
+};
 function threadMsgs(peer: string | null): Chat[] {
   const recent = recentMsgs(peer), old = olderMsgs[threadKey(peer)];
   if (!old?.length) return recent;

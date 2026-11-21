@@ -10,6 +10,8 @@
 // Domains move here when they are large enough to read on their own; world and social stay in the switch
 // for now and move the same way when they are split.
 
+import crypto from 'node:crypto';
+
 export const ctxKeys = ["sockets","db","p","m","store","pushTail","noteThread","dmThread","findMsg","isFriend","cleanText","newId","lastDm","lastChat","chatImg","attachLabel","threadMuted","push","inbox","save","broadcastHouse","refresh","lastCheer","cheerCount","lastInvite","setTz","focusEnd","focusStart","buddiesOf","quitReward","quitMinutes","caffeineOverlap","recordSession","streakDays","streakBonus","caffeineMinutes","mySessions","bondLevel","PETS","send","groupWatches","houseGroupWatch","watches","dmWatches","endDmWatch","pairKey","parseVideo","room","noteSeen","serverThread","isFocusLength","focusReward","friends","handle","setMute","visitAsks","houseDmWatch"];
 
 export const focus = {
@@ -105,6 +107,19 @@ export const focus = {
   }
 };
 
+// Who can read a thread: the house's members, the two people in a dm, or a group's members. A new line is
+// sent to each of them as one small frame, so a state snapshot never has to carry the conversation.
+export function threadAudience(db, thread) {
+  if (thread.startsWith('h:')) return db.houses[thread.slice(2)]?.members ?? [];
+  if (thread.startsWith('d:')) return thread.slice(2).split('|');
+  const gid = thread.slice(2);
+  return Object.values(db.players).filter((q) => q.groups?.[gid]).map((q) => q.id);
+}
+// The line itself, to everyone who can read it.
+const announce = (send, db, sockets, thread, msg) => {
+  for (const id of threadAudience(db, thread)) send(sockets.get(id), { t: 'msg', thread, msg });
+};
+
 export const chat = {
   async dm(ctx) {
     const { sockets, db, p, m, store, pushTail, noteThread, dmThread, findMsg, isFriend, cleanText, newId, lastDm, lastChat, chatImg, attachLabel, threadMuted, push, inbox, save, broadcastHouse, refresh, lastCheer, cheerCount, lastInvite, setTz, focusEnd, focusStart, buddiesOf, quitReward, quitMinutes, caffeineOverlap, recordSession, streakDays, streakBonus, caffeineMinutes, mySessions, bondLevel, PETS, send, groupWatches, houseGroupWatch, watches, dmWatches, endDmWatch, pairKey, parseVideo, room, noteSeen, serverThread, isFocusLength, focusReward, friends, handle, setMute, visitAsks, houseDmWatch } = ctx;
@@ -120,9 +135,10 @@ export const chat = {
       store.addMessage(thread, msg);
       pushTail(thread, msg);
       noteThread(thread, msg, [p.id, to.id]);
-      if (to.house !== p.house) broadcastHouse(to.house);
+      announce(send, db, sockets, thread, msg);
       if (!sockets.has(to.id) && !threadMuted(to, p.id)) push(to, { title: p.name, body: text || attachLabel(img), tag: `dm-${p.id}` }, 'dm');
-      return true;
+      save();
+      return;
   },
 
   async history(ctx) {
@@ -226,7 +242,9 @@ export const chat = {
       store.addMessage(`g:${gid}`, msg);
       pushTail(`g:${gid}`, msg);
       noteThread(`g:${gid}`, msg, ids);
-      return true;
+      save();
+      refresh(...ids); // a new group is a full picture for each member: its name, members and first line
+      return;
   },
 
   async gmsg(ctx) {
@@ -245,8 +263,9 @@ export const chat = {
         if (!q) continue;
         if (id !== p.id && !sockets.has(id) && !threadMuted(q, thread)) push(q, { title: g.name, body: `${p.name}: ${text || attachLabel(img)}`, tag: `g-${m.g}` }, 'dm');
       }
-      for (const code of new Set(g.members.map((id) => db.players[id]?.house))) if (code && code !== p.house) broadcastHouse(code);
-      return true;
+      announce(send, db, sockets, thread, msg); // reaches members in other houses without their snapshots
+      save();
+      return;
   },
 
   async group_leave(ctx) {
@@ -263,7 +282,7 @@ export const chat = {
         qg.members = qg.members.filter((x) => x !== p.id);
       }
       delete p.groups[m.g];
-      for (const code of new Set(g.members.map((id) => db.players[id]?.house))) if (code && code !== p.house) broadcastHouse(code);
+      announce(send, db, sockets, `g:${m.g}`, msg); // the note, to the people still in it
       return true;
   },
 
@@ -298,7 +317,9 @@ export const chat = {
       }
       // Notify other members (not mentioned, not sender)
       for (const id of h.members) if (id !== p.id && !mentionedIds.has(id) && !sockets.has(id) && !threadMuted(db.players[id], thread)) push(db.players[id], { title: `${p.name} · house chat`, body: text || attachLabel(img), tag: `house-${h.code}` }, 'house');
-      return true;
+      announce(send, db, sockets, thread, msg); // the line, as one frame, instead of a house snapshot per line
+      save();
+      return;
   },
 
   async watch(ctx) {
@@ -330,6 +351,34 @@ export const chat = {
         refresh(p.id, to.id);
         return;
       }
+      if (m.g) {
+        // A group chat starts a party for its members only, even when they live in different houses.
+        const gid = String(m.g), g = p.groups?.[gid];
+        if (!g) return;
+        const thread = `g:${gid}`;
+        if (stop) {
+          if (!groupWatches.has(gid)) return;
+          groupWatches.delete(gid);
+          const msg = { id: newId(), from: p.id, by: p.name, text: 'ended the watch party', at: Date.now() };
+          store.addMessage(thread, msg);
+          pushTail(thread, msg);
+          noteThread(thread, msg, g.members);
+          announce(send, db, sockets, thread, msg);
+          for (const id of g.members) send(sockets.get(id), { t: 'watch_ended', scope: 'group' });
+          save();
+          refresh(...g.members);
+          return;
+        }
+        groupWatches.set(gid, { src, by: p.id, byName: p.name, playing: true, pos: src.start, at: Date.now() });
+        const msg = { id: newId(), from: p.id, by: p.name, text: '🎬 started a watch party', at: Date.now() };
+        store.addMessage(thread, msg);
+        pushTail(thread, msg);
+        noteThread(thread, msg, g.members);
+        announce(send, db, sockets, thread, msg);
+        save();
+        refresh(...g.members); // each member's own state carries the private party
+        return;
+      }
       const h = db.houses[p.house];
       if (stop && !watches.has(p.house)) return;
       if (stop) watches.delete(p.house);
@@ -338,6 +387,7 @@ export const chat = {
       store.addMessage(`h:${h.code}`, msg);
       pushTail(`h:${h.code}`, msg);
       noteThread(`h:${h.code}`, msg, h.members);
+      announce(send, db, sockets, `h:${h.code}`, msg);
       return true;
   },
 
@@ -411,7 +461,8 @@ export const chat = {
         const h = db.houses[code];
         if (h) for (const id of h.members) send(sockets.get(id), msg);
       }
-      return true;
+      save(); // presence is not a reason to rebuild the house: the frame above is the whole update
+      return;
   },
 
   async mute(ctx) {

@@ -9,6 +9,7 @@ import { openStore, checkPassword, dmThread, RESET_MINUTES } from './store.js';
 import { sendMail, resetMail } from './mail.js';
 import { openPgStore } from './store-pg.js';
 import { files, isPng, isJpeg } from './files.js';
+import { roomsFor, forgetRooms } from './rooms.js';
 import { focus as focusHandlers, chat as chatHandlers } from './handlers.js';
 import { world as worldHandlers } from './world.js';
 import { social as socialHandlers } from './social.js';
@@ -321,7 +322,8 @@ setInterval(() => flushSeen(store), 2000).unref();
 setInterval(async () => {
   if (!sockets.size) return;
   const changed = await store.syncCoins();
-  for (const code of new Set(changed.map((id) => db.players[id].house))) broadcastHouse(code);
+  // Coins are private to their owner, so a change is one small frame rather than a house snapshot.
+  for (const id of new Set(changed)) send(sockets.get(id), { t: 'coins', coins: db.players[id]?.coins ?? 0 });
 }, 3000);
 
 // Web Push: reminders reach people with Auralis closed. Off unless the VAPID keys are set (npx web-push generate-vapid-keys).
@@ -582,11 +584,11 @@ function friendList(p) {
   }
   return out;
 }
-// Re-send state to each of these players' houses (friends and DMs reach across houses).
-const refresh = (...ids) => { for (const code of new Set(ids.map((id) => db.players[id]?.house))) if (code) broadcastHouse(code); };
+// Re-send one player's state, now: their own lists changed (a friend, a visit, a loaded thread).
+const refresh = (...ids) => { for (const id of new Set(ids)) sendState(id, true); };
 // Which houses should see a thread change? A house's own, or the houses of the people in a dm or group.
 // Built here because it needs the live world; the cache itself knows nothing about houses.
-const refreshThread = makeRefreshThread({ broadcastHouse, refresh, db });
+const refreshThread = makeRefreshThread({ broadcastHouse: (code) => broadcastHouse(code, true), refresh, db });
 // The bell: things that happened to a player, kept (newest 30) so whatever they missed while away is there later.
 // The same thing from the same person within 10 minutes (petting, say) folds into one entry with a count.
 function inbox(q, kind, from, text) {
@@ -601,6 +603,14 @@ function inbox(q, kind, from, text) {
 // queued inside its socket - the usual way a WebSocket server runs out of memory. Past a couple of
 // megabytes, drop the socket instead: it reconnects and gets a fresh state.
 const MAX_BUFFERED = 2 * 1024 * 1024;
+// A snapshot is "full" when it is the first that player sees for this house (connect, join, a house change):
+// it carries the chat tails and the whole conversation list. Every other snapshot leaves those out, because a
+// new line travels on its own small `msg` frame — a snapshot then stays about the room.
+const lastHouseState = new Map(); // playerId -> the house code their last state was for
+const fullBroadcasts = new Set(); // houses whose next throttled broadcast is a full one
+// Group names and members without the lines: a snapshot that is not full still has to show a new group, and
+// the client keeps the messages it already has.
+const groupsMeta = (p) => Object.fromEntries(Object.entries(p.groups ?? {}).map(([gid, g]) => [gid, { name: g.name, members: g.members ?? [p.id] }]));
 // The cache writers, bound to the live store. Thin wrappers so call sites read the same as before.
 const noteThread = (thread, msg, memberIds) => noteThreadInCache(thread, msg, memberIds, store);
 const loadPlayerThreadsIn = (p) => loadPlayerThreads(p, store);
@@ -613,7 +623,7 @@ function send(ws, msg) {
   ws.send(JSON.stringify(msg));
 }
 
-function broadcastHouseNow(code) {
+function broadcastHouseNow(code, full = false, only = null) {
   const h = db.houses[code];
   if (!h) return;
   const w = watches.get(code);
@@ -622,32 +632,42 @@ function broadcastHouseNow(code) {
   // now lets clients work out how far a playing video has got without trusting their own clocks.
   const house = {
     code, owner: h.owner ?? null, ownerName: db.players[h.owner]?.name ?? null,
-    todos: h.todos ?? [], chat: tail(thread),
+    todos: h.todos ?? [],
     events: h.events ?? [], announcements: h.announcements ?? [], watch: w ? { ...w, now: Date.now(), scope: 'house' } : null,
   };
-  for (const id of h.members) {
+  for (const id of only ? [only] : h.members) {
     const ws = sockets.get(id);
     const p = db.players[id];
     if (!ws) continue; // nobody to send to: their state is not built
+    // First state for this house (or a house change), and on a full broadcast: the chat comes along.
+    const f = full || lastHouseState.get(id) !== code;
+    lastHouseState.set(id, code);
     // Personal to-dos ride along in `me`, which only this player receives.
     const dmw = houseDmWatch(p);
     const gw = houseGroupWatch(p);
     const privateWatch = gw ? groupWatchPayload(gw[0], gw[1]) : dmw ? dmWatchPayload(dmw[0], dmw[1], id) : null;
-    send(ws, { t: 'state', house: { ...house, members: h.members.map((mid) => publicPlayer(db.players[mid], id)), todos: house.todos.filter((t) => canSee(t, h, id)) }, me: { id: p.id, home: p.home, ...houseLists(p), coins: p.coins, discount: !!p.discount, notes: p.notes ?? [], inbox: p.inbox ?? [], inboxSeen: p.inboxSeen ?? 0, tipsSeen: p.tipsSeen ?? [], events: p.events ?? [], inventory: p.inventory, crafted: p.crafted ?? [], ready: p.ready ?? {}, petAccs: p.petAccs ?? [], ...(sentSessions.get(id) !== mySessions(p).length && { sessions: mySessions(p) }), subjects: p.subjects ?? [], hiddenSubjects: p.hiddenSubjects ?? [], todos: p.todos ?? [], dm: dmView(p), groups: groupsView(p), friends: friendList(p), notify: p.notify ?? {}, mutedThreads: mutedView(p), threadSeen: seenView(p), chatThemes: p.chatThemes ?? {}, pushKey: pushOn ? PUSH_KEY : undefined, watch: privateWatch } });
+    send(ws, { t: 'state', house: { ...house, ...(f && { chat: tail(thread) }), members: h.members.map((mid) => { const q = db.players[mid]; return { ...publicPlayer(q, id), rooms: roomsFor(id, q) }; }), todos: house.todos.filter((t) => canSee(t, h, id)) }, me: { id: p.id, home: p.home, ...houseLists(p), coins: p.coins, discount: !!p.discount, notes: p.notes ?? [], inbox: p.inbox ?? [], inboxSeen: p.inboxSeen ?? 0, tipsSeen: p.tipsSeen ?? [], events: p.events ?? [], inventory: p.inventory, crafted: p.crafted ?? [], ready: p.ready ?? {}, petAccs: p.petAccs ?? [], ...(sentSessions.get(id) !== mySessions(p).length && { sessions: mySessions(p) }), subjects: p.subjects ?? [], hiddenSubjects: p.hiddenSubjects ?? [], todos: p.todos ?? [], dm: f ? dmView(p) : undefined, groups: f ? groupsView(p) : groupsMeta(p), friends: friendList(p), notify: p.notify ?? {}, mutedThreads: mutedView(p), threadSeen: seenView(p), chatThemes: p.chatThemes ?? {}, pushKey: pushOn ? PUSH_KEY : undefined, watch: privateWatch } });
     sentSessions.set(id, mySessions(p).length);
   }
 }
 // Throttled full-house broadcast: repeated updates to the same house within BROADCAST_MS
 // collapse into a single payload, cutting WebSocket traffic on bursts of minor changes.
-function broadcastHouse(code) {
+function broadcastHouse(code, full = false) {
   const h = db.houses[code];
   if (!h) return;
+  if (full) fullBroadcasts.add(code);
   const existing = broadcastTimers.get(code);
   if (existing) clearTimeout(existing);
   broadcastTimers.set(code, setTimeout(() => {
     broadcastTimers.delete(code);
-    broadcastHouseNow(code);
+    broadcastHouseNow(code, fullBroadcasts.delete(code));
   }, BROADCAST_MS));
+}
+// One player's state, now: what a connection, a house join and a freshly loaded thread need.
+function sendState(id, full = true) {
+  const p = db.players[id];
+  if (!p?.house || !db.houses[p.house]) return;
+  broadcastHouseNow(p.house, full, id);
 }
 
 // The room a message is about: m.r picks one of the player's rooms (the first when missing).
@@ -1050,7 +1070,7 @@ const server = http.createServer((req, res) => {
 });
 // Refuse game connections from pages on domains we don't serve.
 // Game messages are a few hundred bytes (pictures and files go over HTTP); anything over 64 KB closes the socket.
-const wss = new WebSocketServer({ server, path: '/ws', maxPayload: 64 * 1024, verifyClient: ({ origin }) => originOk(origin) });
+const wss = new WebSocketServer({ server, path: '/ws', maxPayload: 64 * 1024, perMessageDeflate: { threshold: 256 }, verifyClient: ({ origin }) => originOk(origin) });
 
 wss.on('connection', (ws) => {
   let p = null;
@@ -1131,6 +1151,10 @@ wss.on('connection', (ws) => {
       sockets.set(p.id, ws);
       sentSessions.delete(p.id); // a new connection gets the full history once
       save();
+      // A new socket holds nothing yet: send every room, not the revisions the last socket was told. Doing this
+      // here rather than on the old socket's close matters when a reload reconnects before that close lands.
+      forgetRooms(p.id);
+      sendState(p.id, true); // this player needs the chat tails and their whole conversation list
       broadcastHouse(p.house);
       for (const r of p.missed ?? []) send(ws, { t: 'remind', ...r, missed: true }); // reminders that came due while away
       delete p.missed;
@@ -1143,6 +1167,8 @@ wss.on('connection', (ws) => {
       if (p && sockets.get(p.id) === ws) {
         sockets.delete(p.id);
         sessionCache.delete(p.id);
+        lastHouseState.delete(p.id); // a reconnect starts with a full state again
+        forgetRooms(p.id); // ...including every room, not the revisions this socket was told
         broadcastHouse(p.house);
       }
     } catch (err) {
