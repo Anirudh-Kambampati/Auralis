@@ -1,103 +1,104 @@
-# Design
-
-## Feel
-
-Calm, cozy and flat. A dollhouse cutaway sits on warm paper. The game should be pleasant to leave open for an hour of studying, so nothing flashes or competes for attention.
-
-## Palette
-
-| Token | Value | Use |
-| --- | --- | --- |
-| `--bg` | `#efe6da` | Paper background with a faint dot grid |
-| `--paper` | `#fffaf3` | Cards, panels, dock |
-| `--soft` | `#ece2d5` | Unselected buttons, tracks |
-| `--ink` | `#2b2530` | Every outline and offset shadow |
-| `--blue` | `#5b7fd6` | Primary actions, focus |
-| `--gold` | `#f2c14e` | Selection, coins, rewards |
-| `--coral` | `#e06a5a` | Giving up, errors |
-
-Panel headers use a pastel per area: focus blue, decorate mint, shop butter, you pink, house lilac, stats peach, guide mist.
-
-## The Guide
-
-A `?` chip sits in the HUD, grouped with the coin count on the left, and opens the Guide panel.
-
-The panel is one card per system — sixteen of them, plus the opening card — and a card expands in place rather than navigating anywhere. Each card shows a sentence of prose, then either a numbered list of steps (the opening card) or a row per item: the item's own art, its name, and the one thing a hover tooltip cannot say, that a coffee buys ten minutes of extra pay, that the claw waits half an hour between plays.
-
-An item gets a row only when the tooltip does not already explain it. `Water`, `Nap`, `Play music` and `Send a gift` are on the tooltip, so plants, chairs, speakers and gift boxes are not listed.
-
-## The tour
-
-The Guide can be read, but it cannot make you read it. The tour is the same words at the moment they matter, in a dialog that lists **every step at once**: a scrollable column of cards, each one an icon, the thing's name and its sentence, with a single **Got it** underneath. Nothing hides behind a toast or a "next" — the whole shape of it is on screen.
-
-**A card never prints the same words twice.** The heading is the item's name and the sentence is the line from `GUIDE_TIPS`; when the sentence already opens with that name ("Coffee: click it for…") the heading is dropped, and an intro row that is only a sentence shows the sentence alone rather than a heading cut from it. A tour that repeated its own text made every card read as a stutter.
-
-It opens by itself in three cases, and only those:
-
-- **A new player**, once, on their first room: they own nothing worth a tip yet, so they get the five welcome steps.
-- **An existing player**, once, the first time they load after the tour exists: every tipped thing they own is one step.
-- **A new thing with a hidden feature**, bought or otherwise arrived: a short tour of just that item, after the last one closes.
-
-Opening the tour is what marks its steps as seen, so it never asks twice — which is why the old per-item toasts are gone. Two or three toasts and then silence was the failure: a player who owned ten of these things saw two of them and the rest were marked seen without ever being shown. The Guide panel is where to read them again; the tour is where to be told.
-
-The tour is a `<dialog>` (`#tour`) with the same outline-and-offset-shadow card as the other modals, and it is not a form: the only buttons are close, the step rows, and the footer.
-
-## UI rules
-
-- One outline colour (`--ink`, 3px) and solid offset shadows (`0 4px 0`). No gradients or gloss.
-- Buttons press down 3px when tapped.
-- Font: **Fredoka** for UI text, because its numbers are easy to read. The focus timer uses a blocky pixel font drawn in code (`paintBlockText`).
-- A chat log sits on a soft wash of its thread's accent rather than the accent itself (`color-mix(in srgb, var(--thread-accent) 12%, #fff)`), so the white bubbles on both sides read in every thread while a theme still visibly changes the tint. The thread colour lives in `--thread-accent` alone; the old full-strength `--thread-bg` is gone.
-- A chat thread's header carries its small buttons on the right: Leave group, Unfriend (or Cancel request, Decline) and a bell. The bell opens a dropdown with 2 hours, 8 hours and Always (Unmute while it is muted); once muted it is drawn with a stroke through it, and the same crossed bell sits beside the name in the chat list. Muting never hides the unread badge.
-- The to-do card keeps finished items behind a **Completed tasks** fold with a count, so the list reads as what is left to do; the fold looks the same before and after the list is rebuilt (a new house state arrives on every action), and opening it shows the same rows, strikethrough and all.
-- Phone: panels are bottom sheets above an icon dock. Desktop (≥ 900px): to-dos and chat in a left sidebar, panels in a right sidebar, the room centred between them.
-- Focus mode swaps the dock for a focus card with the big timer, a progress track with a coin marker, and two icon buttons (give up needs two taps; room view hides the card). Opening any panel steps the card aside and moves the timer to the HUD chip, and closing the panel brings the card back — the Guide and the to-do card are as reachable mid-session as they are any other time.
-
-## Landing page
-
-The signed-out page is a marketing page for the app, so it is built out of the same parts as the app: the live hero canvas, the icon set, the coin, the paper cards and the outlined buttons. It is four full-screen sections in a scrolling container (`#landing` is `position: fixed` and scrolls itself): **welcome** (the live room canvas, tagline, two calls to action), **how it works** (three steps plus the real catalog counts), **what's inside** (a card per feature, including everything added since the first release) and **get started** (the buddy builder and the sign-up form side by side). The house has a page of its own instead: `/house.html`, a plain static page `public/house.html` that anyone can read before signing up.
-
-- Snapping is on `#landing`, not on `body`: `scroll-snap-align: start` per `.snap` section, `y mandatory` only when the window is at least 900×760, `y proximity` everywhere else. On a phone the sections are taller than the screen (the feature wall alone is eleven stacked cards), and mandatory snapping would hold the reader at the next section's top instead of letting them read the rest of this one.
-- A sticky nav (`.land-nav`) carries the brand, two section links, a link to the house page (`/house.html`, a full page load, not a `[data-goto]` scroll) and Log in / Get started. It turns translucent over the page and takes its own background in both themes.
-- Every call to action is a `[data-goto]` button. Clicking one calls `setAuthMode(mode)` when it names a mode, then scrolls the section into view — so "Log in" in the nav opens the form already in log-in mode instead of making the reader find the switch.
-- Sections rise in as they arrive, but the content is never hidden by default: `armed` is added by script, and the first reveal runs synchronously when the landing is shown, because a page reloaded in a background tab never gets an animation frame or an observer callback. A page whose script never loads still reads top to bottom.
-- Text on the backdrop is `--on-bg`; paper cards (`.step`, `.stat-strip`, `.features li`, `.buddy`, `.auth`) set `--ink` themselves, since `--ink` stays dark in the dark theme and would otherwise leak onto cream paper.
-- The hero's speech bubbles and the "psst… tap the room" hint sit on cream paper in both themes, so they set `color: var(--ink)` themselves for the same reason. Without it they inherited `--on-bg`, which is light in the dark theme, and the greetings disappeared into their own bubbles. `.bubble` sets its size with `clamp(12px, 2vw, 16px)` so the three lines stay readable over the canvas.
-- The feature wall only names what ships. Each card is checked against the Guide's own descriptions in `shared/guide.js` and the catalog constants, so it never advertises a roadmap: no "cheers from the house", no study log, no read ticks, and the counts (286 pieces, 23 pets, 48 wallpapers and floors, 3 rooms) are read off `ITEMS`, `PETS`, `WALLPAPERS`, `FLOORS` and `MAX_ROOMS` rather than guessed.
-- Decoration stays in the two palettes: the same drifting stars and coins, no new illustration and no screenshot.
-- The house is its own page (`public/house.html`, served at `/house.html`), not a landing section. It is static because it has to read without the app's script, so it carries its own copy of the palette, its own inline CSS and furniture drawn as flat CSS shapes rather than the app's generated icons; the landing links to it with a plain `href`, which is a real navigation out of the single-page app. The scene is **one** room: a single framed interior with one continuous floor, one ceiling border and no card per room. Its three `.bay`s each carry their own `--wall` and `--floor`, one of three wallpapers (`dotted`, `stripes`, `plaid` — never `check`, which is the app's checkbox class and would collapse the room to 26px), a paper name tag at the top centre, a picture or window on the wall, a rug in the middle room and two props standing on the floor. Two `.door`s sit between them — near-full-height arches, ten pixels of wall kept above the lintel so they read as doorways and not pillars, a dim `#7f708d`-to-`#554963` passage with the lit plank floor running through the opening, four pixels of ink and negative margins, so the doors cut through wall and floor instead of sitting on top of them as stickers. The last bay stands for the joined house rather than one more room.
-
-### The front door (sign up, log in, forgot, reset)
-
-One panel, four screens: `#authForm` swaps its kicker, title, subtitle, submit label and visible fields, so there is a single place where accounts happen. `data-auth-mode` on the form gives each screen an accent — mint for sign-up, blue for log-in, gold for forgotten passwords, coral for a reset — used by the kicker pill and the active tab.
-
-- Forgot and reset are not on the sign-up/log-in switch: they are reached from the hint under log-in and from the link in the mail. Both hide the switch and show a "Back to log in" button, because the helper line underneath is where the "we emailed you" notice appears and a way out must not vanish with it.
-- The password field carries a reveal button (36px, `aria-pressed`, label flips between Show and Hide) and, on sign-up and reset, three bars reading "at least 8 characters" / "good password" / "strong password". They are hints only: `passwordProblem` is the rule and the server checks it again.
-- Errors are coral callouts, notices ("your session ended", "a link is on its way") are cream ones; both sit above the button so the button never moves under the pointer mid-submit.
-- The form's own attribute is `data-auth-mode`, deliberately not `data-mode`: the delegated click listener looks for `button[data-mode]`, and a `closest()` match on the form itself cancelled every submit. The selector is `button[data-mode]` for the same reason.
-- Every other question goes through `ask()` and `#askModal`: unfriend, leave a group, delete an announcement and open an external link. It returns a promise, Escape, Cancel and a question replacing an earlier one all count as no, the safe answer keeps the focus, and `danger: true` reddens the destructive button. The external-link warning holds the click either way (`preventDefault`), then opens the tab itself when the answer is yes, so no navigation can outrun the dialog. The activity picker is `#statusModal`, opened from Me → Set activity, and replaced two `prompt()`s: a blocked `confirm()` reads as a silent no and a blocked `prompt()` throws, which is why these looked like dead buttons.
-- Deleting an account asks for the password in `#deleteModal`, an in-app `<dialog>` like every other modal, not through `prompt()` and `confirm()`. App shells and embedded browsers block those (the same reason giving up a session is two taps), and with them Delete account did nothing at all: the first `prompt()` threw before any request was sent. Me → Delete account asks twice first: the button, then an `ask()` question ("Delete your account?", red confirm, focus on Keep my account), and only then does the password dialog open. The password dialog is the proof, not the confirmation: it posts the username and password to `/api/delete`, keeps its own error line for a wrong password or an unreachable server, and only signs out once the server has answered `ok` — a stolen token can log out, but only the person, with the password, can erase the account.
-
-## Pixel art
-
-- Everything is original, drawn in code in `src/draw.ts`. There are no image files except the app icon.
-- Tiles are 16×16 art pixels and scale by whole numbers. Image smoothing is off and the canvas matches device pixels exactly, so sprites stay sharp.
-- Characters are 16×21 chibi sprites built from text rows plus overlays: haircut, outfit and face layers, coloured from the player's choices.
+# Design
+
+## Feel
+
+Calm, cozy and flat. A dollhouse cutaway sits on warm paper. The game should be pleasant to leave open for an hour of studying, so nothing flashes or competes for attention.
+
+## Palette
+
+| Token | Value | Use |
+| --- | --- | --- |
+| `--bg` | `#efe6da` | Paper background with a faint dot grid |
+| `--paper` | `#fffaf3` | Cards, panels, dock |
+| `--soft` | `#ece2d5` | Unselected buttons, tracks |
+| `--ink` | `#2b2530` | Every outline and offset shadow |
+| `--blue` | `#5b7fd6` | Primary actions, focus |
+| `--gold` | `#f2c14e` | Selection, coins, rewards |
+| `--coral` | `#e06a5a` | Giving up, errors |
+
+Panel headers use a pastel per area: focus blue, decorate mint, shop butter, you pink, house lilac, stats peach, guide mist.
+
+## The Guide
+
+A `?` chip sits in the HUD, grouped with the coin count on the left, and opens the Guide panel.
+
+The panel is one card per system — sixteen of them, plus the opening card — and a card expands in place rather than navigating anywhere. Each card shows a sentence of prose, then either a numbered list of steps (the opening card) or a row per item: the item's own art, its name, and the one thing a hover tooltip cannot say, that a coffee buys ten minutes of extra pay, that the claw waits half an hour between plays.
+
+An item gets a row only when the tooltip does not already explain it. `Water`, `Nap`, `Play music` and `Send a gift` are on the tooltip, so plants, chairs, speakers and gift boxes are not listed.
+
+## The tour
+
+The Guide can be read, but it cannot make you read it. The tour is the same words at the moment they matter, in a dialog that lists **every step at once**: a scrollable column of cards, each one an icon, the thing's name and its sentence, with a single **Got it** underneath. Nothing hides behind a toast or a "next" — the whole shape of it is on screen.
+
+**A card never prints the same words twice.** The heading is the item's name and the sentence is the line from `GUIDE_TIPS`; when the sentence already opens with that name ("Coffee: click it for…") the heading is dropped, and an intro row that is only a sentence shows the sentence alone rather than a heading cut from it. A tour that repeated its own text made every card read as a stutter.
+
+It opens by itself in three cases, and only those:
+
+- **A new player**, once, on their first room: they own nothing worth a tip yet, so they get the five welcome steps.
+- **An existing player**, once, the first time they load after the tour exists: every tipped thing they own is one step.
+- **A new thing with a hidden feature**, bought or otherwise arrived: a short tour of just that item, after the last one closes.
+
+Opening the tour is what marks its steps as seen, so it never asks twice — which is why the old per-item toasts are gone. Two or three toasts and then silence was the failure: a player who owned ten of these things saw two of them and the rest were marked seen without ever being shown. The Guide panel is where to read them again; the tour is where to be told.
+
+The tour is a `<dialog>` (`#tour`) with the same outline-and-offset-shadow card as the other modals, and it is not a form: the only buttons are close, the step rows, and the footer.
+
+## UI rules
+
+- One outline colour (`--ink`, 3px) and solid offset shadows (`0 4px 0`). No gradients or gloss.
+- Buttons press down 3px when tapped.
+- Font: **Fredoka** for UI text, because its numbers are easy to read. The focus timer uses a blocky pixel font drawn in code (`paintBlockText`).
+- A chat log sits on a soft wash of its thread's accent rather than the accent itself (`color-mix(in srgb, var(--thread-accent) 12%, #fff)`), so the white bubbles on both sides read in every thread while a theme still visibly changes the tint. The thread colour lives in `--thread-accent` alone; the old full-strength `--thread-bg` is gone.
+- A chat thread's header carries its small buttons on the right: Leave group, Unfriend (or Cancel request, Decline) and a bell. The bell opens a dropdown with 2 hours, 8 hours and Always (Unmute while it is muted); once muted it is drawn with a stroke through it, and the same crossed bell sits beside the name in the chat list. Muting never hides the unread badge.
+- The to-do card keeps finished items behind a **Completed tasks** fold with a count, so the list reads as what is left to do; the fold looks the same before and after the list is rebuilt (a new house state arrives on every action), and opening it shows the same rows, strikethrough and all.
+- Phone: panels are bottom sheets above an icon dock. Desktop (≥ 900px): to-dos and chat in a left sidebar, panels in a right sidebar, the room centred between them.
+- Focus mode swaps the dock for a focus card with the big timer, a progress track with a coin marker, and two icon buttons (give up needs two taps; room view hides the card). Opening any panel steps the card aside and moves the timer to the HUD chip, and closing the panel brings the card back — the Guide and the to-do card are as reachable mid-session as they are any other time.
+
+## Landing page
+
+The signed-out page is a marketing page for the app, so it is built out of the same parts as the app: the live hero canvas, the icon set, the coin, the paper cards and the outlined buttons. It is four full-screen sections in a scrolling container (`#landing` is `position: fixed` and scrolls itself): **welcome** (the live room canvas, tagline, two calls to action), **how it works** (three steps plus the real catalog counts), **what's inside** (a card per feature, including everything added since the first release) and **get started** (the buddy builder and the sign-up form side by side). The house has a page of its own instead: `/house.html`, a plain static page `public/house.html` that anyone can read before signing up.
+
+- Snapping is on `#landing`, not on `body`: `scroll-snap-align: start` per `.snap` section, `y mandatory` only when the window is at least 900×760, `y proximity` everywhere else. On a phone the sections are taller than the screen (the feature wall alone is eleven stacked cards), and mandatory snapping would hold the reader at the next section's top instead of letting them read the rest of this one.
+- A sticky nav (`.land-nav`) carries the brand, two section links, a link to the house page (`/house.html`, a full page load, not a `[data-goto]` scroll) and Log in / Get started. It turns translucent over the page and takes its own background in both themes.
+- Every call to action is a `[data-goto]` button. Clicking one calls `setAuthMode(mode)` when it names a mode, then scrolls the section into view — so "Log in" in the nav opens the form already in log-in mode instead of making the reader find the switch.
+- Sections rise in as they arrive, but the content is never hidden by default: `armed` is added by script, and the first reveal runs synchronously when the landing is shown, because a page reloaded in a background tab never gets an animation frame or an observer callback. A page whose script never loads still reads top to bottom.
+- Text on the backdrop is `--on-bg`; paper cards (`.step`, `.stat-strip`, `.features li`, `.buddy`, `.auth`) set `--ink` themselves, since `--ink` stays dark in the dark theme and would otherwise leak onto cream paper.
+- The hero's speech bubbles and the "psst… tap the room" hint sit on cream paper in both themes, so they set `color: var(--ink)` themselves for the same reason. Without it they inherited `--on-bg`, which is light in the dark theme, and the greetings disappeared into their own bubbles. `.bubble` sets its size with `clamp(12px, 2vw, 16px)` so the three lines stay readable over the canvas.
+- The feature wall only names what ships. Each card is checked against the Guide's own descriptions in `shared/guide.js` and the catalog constants, so it never advertises a roadmap: no "cheers from the house", no study log, no read ticks, and the counts (286 pieces, 23 pets, 48 wallpapers and floors, 3 rooms) are read off `ITEMS`, `PETS`, `WALLPAPERS`, `FLOORS` and `MAX_ROOMS` rather than guessed.
+- Decoration stays in the two palettes: the same drifting stars and coins, no new illustration and no screenshot.
+- The house is its own page (`public/house.html`, served at `/house.html`), not a landing section. It is static because it has to read without the app's script, so it carries its own copy of the palette, its own inline CSS and furniture drawn as flat CSS shapes rather than the app's generated icons; the landing links to it with a plain `href`, which is a real navigation out of the single-page app. The scene is **one** room: a single framed interior with one continuous floor, one ceiling border and no card per room. Its three `.bay`s each carry their own `--wall` and `--floor`, one of three wallpapers (`dotted`, `stripes`, `plaid` — never `check`, which is the app's checkbox class and would collapse the room to 26px), a paper name tag at the top centre, a picture or window on the wall, a rug in the middle room and two props standing on the floor. Two `.door`s sit between them — near-full-height arches, ten pixels of wall kept above the lintel so they read as doorways and not pillars, a dim `#7f708d`-to-`#554963` passage with the lit plank floor running through the opening, four pixels of ink and negative margins, so the doors cut through wall and floor instead of sitting on top of them as stickers. The last bay stands for the joined house rather than one more room.
+
+### The front door (sign up, log in, forgot, reset)
+
+One panel, four screens: `#authForm` swaps its kicker, title, subtitle, submit label and visible fields, so there is a single place where accounts happen. `data-auth-mode` on the form gives each screen an accent — mint for sign-up, blue for log-in, gold for forgotten passwords, coral for a reset — used by the kicker pill and the active tab.
+
+- Forgot and reset are not on the sign-up/log-in switch: they are reached from the hint under log-in and from the link in the mail. Both hide the switch and show a "Back to log in" button, because the helper line underneath is where the "we emailed you" notice appears and a way out must not vanish with it.
+- The password field carries a reveal button (36px, `aria-pressed`, label flips between Show and Hide) and, on sign-up and reset, three bars reading "at least 8 characters" / "good password" / "strong password". They are hints only: `passwordProblem` is the rule and the server checks it again.
+- Errors are coral callouts, notices ("your session ended", "a link is on its way") are cream ones; both sit above the button so the button never moves under the pointer mid-submit.
+- The form's own attribute is `data-auth-mode`, deliberately not `data-mode`: the delegated click listener looks for `button[data-mode]`, and a `closest()` match on the form itself cancelled every submit. The selector is `button[data-mode]` for the same reason.
+- Every other question goes through `ask()` and `#askModal`: unfriend, leave a group, delete an announcement and open an external link. It returns a promise, Escape, Cancel and a question replacing an earlier one all count as no, the safe answer keeps the focus, and `danger: true` reddens the destructive button. The external-link warning holds the click either way (`preventDefault`), then opens the tab itself when the answer is yes, so no navigation can outrun the dialog. The activity picker is `#statusModal`, opened from Me → Set activity, and replaced two `prompt()`s: a blocked `confirm()` reads as a silent no and a blocked `prompt()` throws, which is why these looked like dead buttons.
+- Deleting an account asks for the password in `#deleteModal`, an in-app `<dialog>` like every other modal, not through `prompt()` and `confirm()`. App shells and embedded browsers block those (the same reason giving up a session is two taps), and with them Delete account did nothing at all: the first `prompt()` threw before any request was sent. Me → Delete account asks twice first: the button, then an `ask()` question ("Delete your account?", red confirm, focus on Keep my account), and only then does the password dialog open. The password dialog is the proof, not the confirmation: it posts the username and password to `/api/delete`, keeps its own error line for a wrong password or an unreachable server, and only signs out once the server has answered `ok` — a stolen token can log out, but only the person, with the password, can erase the account.
+
+## Pixel art
+
+- Everything is original, drawn in code in `src/draw.ts`. There are no image files except the app icon.
+- Tiles are 16×16 art pixels and scale by whole numbers. Image smoothing is off and the canvas matches device pixels exactly, so sprites stay sharp.
+- Characters are 16×21 chibi sprites built from text rows plus overlays: haircut, outfit and face layers, coloured from the player's choices.
 - Furniture uses a few shapes: an outlined box with a top highlight and bottom shade, discs and hearts. Recolourable pieces take one base colour and shade from it.
-- Wall pieces hang: the air conditioner is the first item with `wall: true`, so it is placed in the two wall tiles above the floor row (`y` of `-1` or `-2`) and the decorate view outlines that band while it is being placed or moved. It draws in the same 32×16 tile box as any two-tile piece, so it sits on the wall's face with a few pixels of paper below it, and the floor under it stays free. A wall piece never casts a floor footprint, which is why it can share a column with a desk or a lamp.
-- The 3/4 view: furniture overhangs its floor footprint upwards (`OVERHANG`). Sprites draw in order of their bottom edge, so characters walk in front of and behind things correctly.
-- Pets draw with a little hop when they move, with a dark version of their coat as the outline so they read soft. The art comes in two sizes (12×10 and 16×12), but every pet is drawn at one size: the capybara's 16×12 at 1.0. Smaller art is scaled up to the same width (`PET_SCALE` in `src/pets.ts`), so a duckling takes up as much floor as a capybara, and accessories scale with the art they sit on instead of staying icon-sized. The owl and the baby dragon fly instead of walking: they hold a height above the floor with a wingbeat bob (`FLYERS` in `src/pets.ts`), and leave a small faint shadow where they would land, so the hover reads as air under them rather than as a pet sliding. Perched or lying down they come back to the floor like everyone else. Coats themselves are a step brighter than the accessories' base tones, and each column of coat carries a one-pixel shine along its lit top edge, so a pet looks glossy next to its accessories instead of flat.
-- Plushes are things you put down on things, not things that block a room: the plush bear, the plush head, the small shark plush and the big shark plush all sit in the tabletop layer, so they can be dropped on a bed, a dresser, a coffee table or the floor, and they lift onto the surface they were put on. The small shark is the big one's own art at half size — the same silhouette, tail, dorsal fin, periwinkle body, white belly band and pink mouth — so it reads as the same toy bought small, and a bed can have one at the foot of it without the bed disappearing under it. Both sizes come out of the sewing table and the claw machine.
-- Two plushes, two jobs: the plush bear is the giant teddy drawn small from the recipe shapes — same ears, muzzle, belly, feet and pink bow, scaled to a single tile — while the old round plush, a head and body in one lump, is its own separate item, the "Plush head". They are not a style of one another: each is its own object in the catalog, with its own colour.
-- Extra furniture looks sit in one block at the end of the furniture section of `draw.ts`, next to the shapes they are built from: a crowned wingback, three beds (four-poster, brass frame, buttoned four-poster), a glass cabinet and an arched bookcase, a pleated paper lantern, a mid-century dresser and a hairpin sideboard, an armoire and a linen press, a Persian or gingham rug, and three karaoke machines (a retro record-player console with a plain spindle and chrome tonearm, a neon booth with a heart sign and breathing EQ, and a cute mint dome with cat ears and a singing face plate). They paint in the room's own art pixels and take the owner's colour, so a style recolours exactly like the original piece.
-- Singing swaps the face layer to an open-mouth variant that is not offered in the editor, adds a mic at the chin (or both hands at the chest for a duet) and three one-pixel notes drifting up. Behind the singer, a separate sprite lays a faint dithered cone and a pool of warm light over the floor, so the mic stand and the singer stay crisp on top of it. The whole thing is ambient: it stays quieter than a lamp. The stand itself is graphite — a nearly black clip, a dark pole with a lit edge and a dark base — because the pale lavender it used to be disappeared against cream and pink floor tiles.
-- A pet's rest states have to read at a glance: a nap in the sun is a floor shadow and a warm gold Zzz, a nap on a cushion is a few pixels higher with the shadow gone, and a lap nap is higher still. Same lying pose, three different places, and the room tells you which without a single word.
-- A pet's name is a piece of the world, not a label on a widget: it fades in while the pet trots about, while it is being fussed over, and for a few seconds now and then, then goes away. A permanently named pet reads as a status bar with legs, and the room stops feeling lived in.
-- A bond with someone else's pet is never a number, bar or badge — only what the pet does: coming over, settling beside you, a trick with a few gold sparkles. If you can read your bond off the screen, it has stopped being a relationship and become a progress track.
-- Pet accessories are the one place that turns up the volume: a candy palette (hot pink, gold, sky blue, red, violet) with a cream highlight and a full ink outline on every piece, so a bow or crown pops off a coat instead of melting into it.
-- The leaderboard ranks by one thing at a time. A small Minutes / Coins switch rides in the Stats header beside the ✕ (shown only while the leaderboard tab is open, so the body keeps just the scope row), and the week/all-time switch is hidden on the coins board: a purse is what someone holds right now, so a period there would promise a comparison the data cannot make. Coin rows use the shop's own coin icon, and the line under the board says spending moves you down.
-- An in-room chat bubble is drawn on the canvas above the player's name tag: it wraps at word boundaries to at most three lines inside `bf * 13` pixels (a single word too wide for that is broken by character instead of overflowing), and only a message that still doesn't fit is cut with an ellipsis on the third line. The box is bottom-anchored above the name tag, so a longer message grows upward rather than covering the player.
-
-## Icon
-
-A happy character with hair buns holding an open book, on a soft pink rounded square with the same dark outline. Unlike the in-game art it is smooth vector, so it stays clean at any size (`public/icon.svg`).
+- A fireplace has two states. Lit, it flickers: a warm wash on the firebox's back wall, fourteen columns of flame (red edge, orange body, yellow heart, pale core), sparks drifting up and glowing embers between the logs. Switched off, the same brick chimney and logs stay but the firebox goes dark — no flames, sparks, embers or wall wash — so a member turning the light off puts the fire out on every screen. The `off` flag comes from the placed item through `drawFurniture` into the drawing recipe, and is part of the baked-image key so a lit and an unlit fireplace are never confused.
+- Wall pieces hang: the air conditioner is the first item with `wall: true`, so it is placed in the two wall tiles above the floor row (`y` of `-1` or `-2`) and the decorate view outlines that band while it is being placed or moved. It draws in the same 32×16 tile box as any two-tile piece, so it sits on the wall's face with a few pixels of paper below it, and the floor under it stays free. A wall piece never casts a floor footprint, which is why it can share a column with a desk or a lamp.
+- The 3/4 view: furniture overhangs its floor footprint upwards (`OVERHANG`). Sprites draw in order of their bottom edge, so characters walk in front of and behind things correctly.
+- Pets draw with a little hop when they move, with a dark version of their coat as the outline so they read soft. The art comes in two sizes (12×10 and 16×12), but every pet is drawn at one size: the capybara's 16×12 at 1.0. Smaller art is scaled up to the same width (`PET_SCALE` in `src/pets.ts`), so a duckling takes up as much floor as a capybara, and accessories scale with the art they sit on instead of staying icon-sized. The owl and the baby dragon fly instead of walking: they hold a height above the floor with a wingbeat bob (`FLYERS` in `src/pets.ts`), and leave a small faint shadow where they would land, so the hover reads as air under them rather than as a pet sliding. Perched or lying down they come back to the floor like everyone else. Coats themselves are a step brighter than the accessories' base tones, and each column of coat carries a one-pixel shine along its lit top edge, so a pet looks glossy next to its accessories instead of flat.
+- Plushes are things you put down on things, not things that block a room: the plush bear, the plush head, the small shark plush and the big shark plush all sit in the tabletop layer, so they can be dropped on a bed, a dresser, a coffee table or the floor, and they lift onto the surface they were put on. The small shark is the big one's own art at half size — the same silhouette, tail, dorsal fin, periwinkle body, white belly band and pink mouth — so it reads as the same toy bought small, and a bed can have one at the foot of it without the bed disappearing under it. Both sizes come out of the sewing table and the claw machine.
+- Two plushes, two jobs: the plush bear is the giant teddy drawn small from the recipe shapes — same ears, muzzle, belly, feet and pink bow, scaled to a single tile — while the old round plush, a head and body in one lump, is its own separate item, the "Plush head". They are not a style of one another: each is its own object in the catalog, with its own colour.
+- Extra furniture looks sit in one block at the end of the furniture section of `draw.ts`, next to the shapes they are built from: a crowned wingback, three beds (four-poster, brass frame, buttoned four-poster), a glass cabinet and an arched bookcase, a pleated paper lantern, a mid-century dresser and a hairpin sideboard, an armoire and a linen press, a Persian or gingham rug, and three karaoke machines (a retro record-player console with a plain spindle and chrome tonearm, a neon booth with a heart sign and breathing EQ, and a cute mint dome with cat ears and a singing face plate). They paint in the room's own art pixels and take the owner's colour, so a style recolours exactly like the original piece.
+- Singing swaps the face layer to an open-mouth variant that is not offered in the editor, adds a mic at the chin (or both hands at the chest for a duet) and three one-pixel notes drifting up. Behind the singer, a separate sprite lays a faint dithered cone and a pool of warm light over the floor, so the mic stand and the singer stay crisp on top of it. The whole thing is ambient: it stays quieter than a lamp. The stand itself is graphite — a nearly black clip, a dark pole with a lit edge and a dark base — because the pale lavender it used to be disappeared against cream and pink floor tiles.
+- A pet's rest states have to read at a glance: a nap in the sun is a floor shadow and a warm gold Zzz, a nap on a cushion is a few pixels higher with the shadow gone, and a lap nap is higher still. Same lying pose, three different places, and the room tells you which without a single word.
+- A pet's name is a piece of the world, not a label on a widget: it fades in while the pet trots about, while it is being fussed over, and for a few seconds now and then, then goes away. A permanently named pet reads as a status bar with legs, and the room stops feeling lived in.
+- A bond with someone else's pet is never a number, bar or badge — only what the pet does: coming over, settling beside you, a trick with a few gold sparkles. If you can read your bond off the screen, it has stopped being a relationship and become a progress track.
+- Pet accessories are the one place that turns up the volume: a candy palette (hot pink, gold, sky blue, red, violet) with a cream highlight and a full ink outline on every piece, so a bow or crown pops off a coat instead of melting into it.
+- The leaderboard ranks by one thing at a time. A small Minutes / Coins switch rides in the Stats header beside the ✕ (shown only while the leaderboard tab is open, so the body keeps just the scope row), and the week/all-time switch is hidden on the coins board: a purse is what someone holds right now, so a period there would promise a comparison the data cannot make. Coin rows use the shop's own coin icon, and the line under the board says spending moves you down.
+- An in-room chat bubble is drawn on the canvas above the player's name tag: it wraps at word boundaries to at most three lines inside `bf * 13` pixels (a single word too wide for that is broken by character instead of overflowing), and only a message that still doesn't fit is cut with an ellipsis on the third line. The box is bottom-anchored above the name tag, so a longer message grows upward rather than covering the player.
+
+## Icon
+
+A happy character with hair buns holding an open book, on a soft pink rounded square with the same dark outline. Unlike the in-game art it is smooth vector, so it stays clean at any size (`public/icon.svg`).

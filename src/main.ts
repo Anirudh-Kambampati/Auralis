@@ -11,7 +11,7 @@ import {
   coinURL, uiIconURL, AV, drawPaper, isDark, paintBlockText, drawWindow as drawWin, drawDroplet, drawHeart, tileURL, ACC_COL, ACC_COLORS, ACC_TINT, type Look,
 } from './draw';
 import { drawPet, petPos, petIconURL, seedOf, singPetAct } from './pets';
-import { toggleSound, soundName, chime, ping, taskComplete, stopAllSounds, setVolume } from './sounds';
+import { toggleSound, soundName, soundPlaying, chime, ping, taskComplete, stopAllSounds, setVolume } from './sounds';
 import { countUnseen } from './tabBadge';
 import { syncWatch, type Watch } from './watch';
 import { parseVideo } from '../shared/watch.js';
@@ -87,6 +87,10 @@ let lastHouseCode = ''; // detect entering a different house to show unseen item
 let focusSeen: Set<string> | null = null; // housemates who were studying at the last state; null until the first one
 let notesSeen = 0; // newest desk note already shown
 let noteTo: string | null = null; // housemate I'm writing a desk note for
+// One desk note every seven seconds. The field waits with a countdown, rather than accepting a second note's first
+// few letters and then dropping the note it was for.
+const NOTE_COOL_MS = 7000;
+let noteCoolUntil = 0, noteTimer = 0;
 let finishedSession = false; // the session that just ended ran to the end (not given up): take a break
 let missed = 0; // messages that arrived while I was focusing, quietly
 const cheers = new Map<string, { text: string; at: number; hop?: boolean }>(); // 👏 or ✋ floating up over a player (hop: a little jump too)
@@ -1293,8 +1297,11 @@ function tapAt(e: PointerEvent) {
     else send({ t: focus ? 'invite' : 'highfive', to: friend.id });
     return;
   }
-  // Clicking something that makes a sound (record player, fireplace, clocks) in any room you can see toggles it, just for you.
-  if (clicked && soundName(clicked.item)) {
+  const reachable = !!clicked && members.some((m) => m.id === hit.m.id);
+  const isLight = !!clicked && reachable && LIGHTS.has(clicked.item);
+  // Clicking something that makes a sound (record player, clocks) in any room you can see toggles it, just for you.
+  // A fireplace is handled below with its light, so one click switches the fire and its crackle together.
+  if (clicked && soundName(clicked.item) && !isLight) {
     const what = soundName(clicked.item);
     toast(toggleSound(clicked.item) ? `🔊 ${what} on. Click the ${ITEMS[clicked.item as ItemKey].name.toLowerCase()} again to stop.` : `${what} off.`);
   }
@@ -1302,7 +1309,10 @@ function tapAt(e: PointerEvent) {
   // A housemate's desk: leave them a note. A lamp in my own room: switch it on or off.
   if (clicked && hit.m.id !== myId && (ITEMS[clicked.item as ItemKey] as { table?: boolean }).table) { writeNote(hit.m.id); return; }
   // Anyone in the house can reach any room's lamps: click one to switch it on or off.
-  if (clicked && members.some((m) => m.id === hit.m.id) && LIGHTS.has(clicked.item)) {
+  if (clicked && isLight) {
+    const off = !clicked.off;
+    // The fireplace's crackle follows its light: putting the fire out stops the sound, and lighting it starts it again.
+    if (soundName(clicked.item) && soundPlaying(clicked.item) === off) toggleSound(clicked.item);
     send({ t: 'light', owner: hit.m.id, r: hit.ri, index: fi });
     toast(`💡 ${ITEMS[clicked.item as ItemKey].name} ${clicked.off ? 'on' : 'off'}.`);
     return;
@@ -1707,7 +1717,7 @@ function render(t: number, dt: number) {
       const thirsty = isPlant(f.item) && now - (f.wateredAt ?? now) > THIRSTY_MS; // droops until someone waters it
       const draw = () => {
         if (dragged) ctx.globalAlpha = 0.35;
-        drawFurniture(ctx, f.item, (o.x + f.x) * T, (o.y + f.y) * T - lift, t, furnColor(f), f.flip, it.w, f.s, bare, f.rot, it.h, lying(it), thirsty);
+        drawFurniture(ctx, f.item, (o.x + f.x) * T, (o.y + f.y) * T - lift, t, furnColor(f), f.flip, it.w, f.s, bare, f.rot, it.h, lying(it), thirsty, !!f.off);
         ctx.globalAlpha = 1;
         const played = clawAt.get(`${m.id}:${ri}:${idx}`);
         if (played && now - played < 5000) drawClaw(ctx, (o.x + f.x) * T, (o.y + f.y) * T - lift, now, played);
@@ -2013,7 +2023,7 @@ function render(t: number, dt: number) {
       const gx = drag?.moved ? drag.lx : f.x, gy = drag?.moved ? drag.ly : f.y;
       if (drag?.moved) {
         // Ghost of the piece being dragged, outlined green where it fits and red where it doesn't.
-        drawFurniture(ctx, f.item, (o.x + gx) * T, (o.y + gy) * T, t, furnColor(f), f.flip, it.w, f.s, 0, f.rot, it.h, lying(it));
+        drawFurniture(ctx, f.item, (o.x + gx) * T, (o.y + gy) * T, t, furnColor(f), f.flip, it.w, f.s, 0, f.rot, it.h, lying(it), false, !!f.off);
         ctx.strokeStyle = canPlace(without(myRoom()!, moving!), f.item, gx, gy, f.rot) ? '#6fcf8a' : '#e06a5a';
       } else ctx.strokeStyle = '#f2c14e';
       ctx.lineWidth = 2;
@@ -2848,6 +2858,28 @@ function renderPanel() {
   const nameInput = panel.querySelector<HTMLInputElement>('#name');
   nameInput?.addEventListener('change', () => send({ t: 'look', name: nameInput.value, look: mine.look }));
   panel.querySelectorAll<HTMLInputElement>('.pet-name').forEach((i) => i.addEventListener('change', () => send({ t: 'pet_style', slot: Number(i.dataset.slot), name: i.value })));
+  paintNoteCool();
+}
+
+// The note being sent is followed by a seven-second wait, shown on the field itself: disabled, with the seconds left.
+// Painting in place (rather than rebuilding the panel) leaves every other box in the House panel alone.
+function paintNoteCool() {
+  const input = panel.querySelector<HTMLInputElement>('#noteText');
+  const btn = panel.querySelector<HTMLButtonElement>('button[data-act="sendnote"]');
+  if (!input || !btn) return;
+  const left = Math.max(0, Math.ceil((noteCoolUntil - Date.now()) / 1000));
+  input.disabled = left > 0;
+  input.placeholder = left > 0 ? `Another note in ${left}s…` : 'Good luck on the exam!';
+  btn.disabled = left > 0;
+  btn.textContent = left > 0 ? `Wait ${left}s` : 'Leave note';
+}
+function startNoteCool() {
+  clearInterval(noteTimer);
+  paintNoteCool();
+  noteTimer = window.setInterval(() => {
+    paintNoteCool();
+    if (Date.now() >= noteCoolUntil) { clearInterval(noteTimer); noteTimer = 0; }
+  }, 250);
 }
 
 panel.addEventListener('click', (e) => {
@@ -3107,9 +3139,13 @@ panel.addEventListener('click', (e) => {
     case 'install': installPrompt?.prompt(); installPrompt = null; renderPanel(); break;
     case 'noteto': writeNote(v); break;
     case 'sendnote': {
+      if (Date.now() < noteCoolUntil) break; // the field is disabled during the wait, so this is belt and braces
       const text = panel.querySelector<HTMLInputElement>('#noteText')!.value.trim();
-      if (text && noteTo) send({ t: 'note', to: noteTo, text });
-      noteTo = null;
+      if (!text || !noteTo) break;
+      send({ t: 'note', to: noteTo, text });
+      // Stay on the same desk and keep the form, disabled, through the wait, so the next note has somewhere to go.
+      noteCoolUntil = Date.now() + NOTE_COOL_MS;
+      startNoteCool();
       renderPanel();
       break;
     }

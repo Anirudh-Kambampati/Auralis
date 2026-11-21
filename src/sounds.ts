@@ -457,6 +457,8 @@ export function setVolume(group: string, v: number) {
 }
 
 export const soundName = (item: string) => SOUNDS[keyOf(item)]?.[0];
+// Whether this piece's sound is running right now, so a click that also switches its light can keep the two in step.
+export const soundPlaying = (item: string) => playing.has(keyOf(item));
 
 function stop(key: string) {
   const p = playing.get(key);

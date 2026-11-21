@@ -1239,7 +1239,7 @@ export const SURFACE: Record<string, number> = { desk: 9, workTable: 9, pcDesk: 
 
 // col is the owner's chosen colour (undefined = the item's own default).
 // bare: tiles of a desk with something placed on them (bit 1 = left, 2 = right); its built-in clutter there isn't drawn.
-type Draw = (c: Ctx, x: number, y: number, t: number, col?: string, bare?: number) => void;
+type Draw = (c: Ctx, x: number, y: number, t: number, col?: string, bare?: number, off?: boolean) => void;
 // Pixel maps for the instruments: one character per art pixel, '.' is empty (palettes below).
 const GUITAR_ROWS = [
   '......oooo......',
@@ -2068,7 +2068,7 @@ const DRAW: Record<string, Draw> = {
     disc(c, x + 21, Y + 6, 2, '#ffd34d');
     r(c, x + 6, Y + 3, 1, 4, 'rgba(255,255,255,0.5)');
   },
-  fireplace(c, x, y, t) {
+  fireplace(c, x, y, t, _col?: string, _bare?: number, off = false) {
     const Y = y - 20;
     // Brick chimney breast, staggered courses with a few lighter and darker bricks.
     box(c, x, Y, 32, 31, '#b5523f');
@@ -2095,11 +2095,12 @@ const DRAW: Record<string, Draw> = {
     arch(3, 7, OUT);
     arch(4, 8, '#2b1418');
     const glow = 0.5 + 0.5 * Math.sin(t / 180) * Math.sin(t / 77);
-    r(c, x + 8, Y + 20, 16, 7, glow > 0.5 ? '#5a2420' : '#4a1e1e'); // firelight on the back wall
+    // A fireplace switched off is a dead firebox: no firelight on the back wall, no flames, no sparks, cold embers.
+    r(c, x + 8, Y + 20, 16, 7, off ? '#241218' : glow > 0.5 ? '#5a2420' : '#4a1e1e'); // firelight on the back wall
     for (const [bx, by] of [[9, 14], [15, 14], [21, 14], [12, 18], [18, 18]]) r(c, x + bx, Y + by, 4, 1, '#3c1a1c');
     // Flames: a red edge, orange body, yellow heart and a pale core, each column flickering on its own.
     const base = Y + 26;
-    for (let i = 0; i < 14; i++) {
+    if (!off) for (let i = 0; i < 14; i++) {
       const h = Math.max(0, Math.round((12 - Math.abs(i - 6.5) * 1.5) * (0.82 + 0.18 * Math.sin(t / 110 + i * 1.9)) + 1.4 * Math.sin(t / 63 + i * 2.7)));
       const fx = x + 9 + i;
       r(c, fx, base - h, 1, h, '#e0533a');
@@ -2108,7 +2109,7 @@ const DRAW: Record<string, Draw> = {
       if (i > 4 && i < 9 && h > 7) r(c, fx, base - Math.round(h * 0.3), 1, Math.round(h * 0.3), '#fff3b0');
     }
     // Sparks drifting up out of the flames.
-    for (let k = 0; k < 3; k++) {
+    if (!off) for (let k = 0; k < 3; k++) {
       const p = (t / 1100 + k / 3) % 1;
       if (p < 0.75) r(c, x + 12 + k * 4 + Math.round(Math.sin(t / 200 + k * 2) * 1.5), base - 8 - Math.round(p * 10), 1, 1, p < 0.4 ? '#fff3b0' : '#ffb347');
     }
@@ -2116,7 +2117,7 @@ const DRAW: Record<string, Draw> = {
     box(c, x + 8, base - 1, 16, 4, '#6a3a26');
     box(c, x + 10, base - 3, 12, 3, '#7a4a32');
     for (const lx of [9, 21]) { r(c, x + lx, base, 2, 2, '#c08a5a'); r(c, x + lx, base, 1, 1, '#e0b080'); }
-    r(c, x + 12, base + 1, 8, 1, glow > 0.3 ? '#f28a3a' : '#c0502e'); // embers between the logs
+    r(c, x + 12, base + 1, 8, 1, off ? '#3a2020' : glow > 0.3 ? '#f28a3a' : '#c0502e'); // embers between the logs
     // Hearth: a stone ledge that sticks out in front.
     box(c, x - 1, Y + 29, 34, 7, '#c66a54');
     r(c, x, Y + 30, 32, 2, '#d98a6a');
@@ -3853,7 +3854,7 @@ function animates(key: string, size: number, paint: (g: Ctx, t: number) => void)
   }
   return v;
 }
-export function drawFurniture(c: Ctx, item: string, x: number, y: number, t: number, col?: string, flip = false, w = 1, s = 0, bare = 0, rot = 0, h = 1, lying = false, thirsty = false) {
+export function drawFurniture(c: Ctx, item: string, x: number, y: number, t: number, col?: string, flip = false, w = 1, s = 0, bare = 0, rot = 0, h = 1, lying = false, thirsty = false, off = false) {
   if (!canRotate(item)) rot = 0;
   const draw = (s && ALT[item]?.[s - 1]) || (HD[item] && hdDraw(HD[item])) || DRAW[item] || recipeDraw(item);
   if (!draw) return;
@@ -3864,37 +3865,37 @@ export function drawFurniture(c: Ctx, item: string, x: number, y: number, t: num
     g.setTransform(AV, 0, 0, AV, pad * AV, pad * AV);
     g.filter = filter;
     furnishing = true;
-    try { paintFurniture(g, draw, item, 0, 0, tt, col, flip, w, h, bare, rot, lying); } finally { furnishing = false; }
+    try { paintFurniture(g, draw, item, 0, 0, tt, col, flip, w, h, bare, rot, lying, off); } finally { furnishing = false; }
   };
   if (!rot && animates(`${item}|${s}`, size, paint)) {
     c.filter = filter;
     furnishing = true;
-    try { paintFurniture(c, draw, item, x, y, t, col, flip, w, h, bare, rot, lying); } finally { furnishing = false; c.filter = 'none'; }
+    try { paintFurniture(c, draw, item, x, y, t, col, flip, w, h, bare, rot, lying, off); } finally { furnishing = false; c.filter = 'none'; }
     return;
   }
-  const cv = baked(`fu|${item}|${col}|${flip}|${w}|${h}|${s}|${bare}|${rot}|${lying}|${thirsty}`, size, size, (g) => paint(g, 0));
+  const cv = baked(`fu|${item}|${col}|${flip}|${w}|${h}|${s}|${bare}|${rot}|${lying}|${thirsty}|${off}`, size, size, (g) => paint(g, 0));
   c.drawImage(cv, x - pad, y - pad, size / AV, size / AV);
 }
-function paintFurniture(c: Ctx, draw: Draw, item: string, x: number, y: number, t: number, col: string | undefined, flip: boolean, w: number, h: number, bare: number, rot: number, lying: boolean) {
-  if (rot && canRotate(item)) { drawTurned(c, draw, item, x, y, t, col, flip, w, h, bare, rot, lying); return; }
-  if (!flip) { draw(c, x, y, t, col, bare); return; }
+function paintFurniture(c: Ctx, draw: Draw, item: string, x: number, y: number, t: number, col: string | undefined, flip: boolean, w: number, h: number, bare: number, rot: number, lying: boolean, off: boolean) {
+  if (rot && canRotate(item)) { drawTurned(c, draw, item, x, y, t, col, flip, w, h, bare, rot, lying, off); return; }
+  if (!flip) { draw(c, x, y, t, col, bare, off); return; }
   // Turned pieces are mirrored around the middle of their footprint.
   c.save();
   c.translate(x * 2 + w * T, 0);
   c.scale(-1, 1);
-  draw(c, x, y, t, col, bare);
+  draw(c, x, y, t, col, bare, off);
   c.restore();
 }
 
 let spare: HTMLCanvasElement | undefined;
-function drawTurned(c: Ctx, draw: Draw, item: string, x: number, y: number, t: number, col: string | undefined, flip: boolean, w: number, h: number, bare: number, rot: number, lying: boolean) {
+function drawTurned(c: Ctx, draw: Draw, item: string, x: number, y: number, t: number, col: string | undefined, flip: boolean, w: number, h: number, bare: number, rot: number, lying: boolean, off: boolean) {
   const W = w * T, up = OVERHANG[item] ?? 0, H = up + h * T;
   spare ??= document.createElement('canvas');
   spare.width = W * AV; spare.height = H * AV; // also clears it and resets its transform
   const g = spare.getContext('2d')!;
   g.imageSmoothingEnabled = false;
   g.setTransform(AV, 0, 0, AV, 0, 0); // at the characters' detail, so redrawn pieces keep it when turned
-  draw(g, 0, up, t, col, bare);
+  draw(g, 0, up, t, col, bare, off);
   const fw = (rot % 2 ? h : w) * T; // footprint width on screen
   c.save();
   if (flip) { c.translate(x * 2 + fw, 0); c.scale(-1, 1); }

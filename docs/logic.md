@@ -101,6 +101,8 @@ Items with a `pet` action (cat tower: perch on top, doghouse and pet bed: nap, p
 
 Each viewer's local clock sets the sky (`skyNow`): day 8:00–17:00, dusk 6–8 and 17–20, night otherwise. Windows show that sky. At dusk and night the house gets a tint, and light is added back around floor lamps. Anyone studying at a desk after dark gets a desk lamp on the table in front of them, with its own glow.
 
+Clicking any piece in `LIGHTS` switches it off for the whole house: the placed item stores `off: true`, its glow is left out of the light map and it stops fending off the night tint. The fireplace is both a light and a sound, so one click puts the fire and its crackle out together; lighting it again starts both. An `off` fireplace is drawn as a cold, dark firebox — no flames, sparks or embers — so turning the light off anywhere puts the fire out on every screen.
+
 ## Using decor
 
 - Every solid item except desks has a `use` (water, read, cook, strum, game, wash, admire…, 24 in all). Desks are used by sitting in the chair behind them. Idle characters sometimes walk to the tile in front of one, face it and play the matching animation for 4–8 s. The action rides along on the `pos` message, and the server only relays names from `USES`.
@@ -141,6 +143,8 @@ Three gifting paths exist, and none of them is capped:
 | Handmade pieces | `gift_crafted` | Only what you own |
 
 The coin gift sends `GIFT_COINS` (10) each time, as often as the sender can afford. There is no daily gift cap: a gift only *moves* existing coins, it never mints new ones, so the sender's balance is the whole limit. Item and crafted gifts move a specific instance — a player can hand over as many claw prizes or handmade pieces as they own.
+
+A desk note (`note {to, text}`) goes to one housemate, who sees it now or at their next login (the last 10 are kept). The client sends one every seven seconds: after a note the form stays on the same desk but its field and button are disabled, counting down in the field's placeholder (`Another note in Ns…`) and on the button (`Wait Ns`). The wait is painted in place rather than rebuilding the panel, so no other box in the House panel is disturbed. This is a client-side courtesy — the field never accepts text that would be dropped.
 
 ## Extra rooms
 

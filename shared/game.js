@@ -764,7 +764,9 @@ export const nextRot = (f) => {
 
 // Lights you can switch on and off by clicking them in your room. Shared so the server checks the same list the client offers.
 export const LIGHTS = new Set(['lamp', 'arcLamp', 'bedsideLamp', 'candles', 'neonHeart', 'fairyJar', 'floorCandle', 'snowflakeLamp', 'lanternString', 'diya', 'menorah', 'discoBall',
-  'skyLantern', 'sparklers', 'garbaLamp', 'bonfire', 'eidLantern', 'crescentLamp', 'lotusLamp']);
+  'skyLantern', 'sparklers', 'garbaLamp', 'bonfire', 'eidLantern', 'crescentLamp', 'lotusLamp',
+  // A fireplace is a light and a sound: switching it off puts the fire and its crackle out together.
+  'fireplace']);
 
 // Room-local placement check. Each layer only collides with itself: rugs, solid furniture, small tabletop things,
 // and wall pieces, which hang on the wall band above the floor and never collide with anything on it.

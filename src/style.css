@@ -99,6 +99,7 @@ button {
 }
 button:active { transform: translateY(3px); box-shadow: 0 1px 0 var(--ink); }
 button:disabled { opacity: 0.45; cursor: var(--nope); transform: none; box-shadow: 0 4px 0 var(--ink); }
+input:disabled { opacity: 0.55; cursor: var(--nope); }
 button.off { background: var(--soft); color: var(--ink); }
 button.on { background: var(--gold); color: var(--ink); }
 button.danger { background: var(--coral); }
