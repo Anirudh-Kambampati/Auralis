@@ -43,66 +43,143 @@
         <span class="d4 star"></span><span class="d5 star"></span><span class="d6 star"></span><span class="d7 star"></span>
       </div>
       <div class="land">
-        <header class="land-top">
-          <div class="brand">
-            <img src="/icon.svg" alt="" />
-            <h1 class="bouncy" aria-label="Auralis"><span>A</span><span>u</span><span>r</span><span>a</span><span>l</span><span>i</span><span>s</span></h1>
+        <nav class="land-nav" aria-label="Landing">
+          <a class="brand-small" href="#s-top"><img src="/icon.svg" alt="" /><span>Auralis</span></a>
+          <div class="land-links">
+            <a href="#s-how">How it works</a>
+            <a href="#s-features">What's inside</a>
+            <a href="/house.html">The house</a>
           </div>
-          <p class="tagline">Study with your friends in a tiny pixel house. <mark>Focus</mark> together, <mark>earn</mark> coins, <mark>decorate</mark> everything.</p>
-        </header>
+          <div class="land-nav-cta">
+            <button type="button" class="ghost small" data-goto="#s-start" data-mode="login">Log in</button>
+            <button type="button" class="cta small" data-goto="#s-start" data-mode="signup">Get started</button>
+          </div>
+        </nav>
 
-        <div class="hero-wrap">
-          <canvas id="heroScene" role="img" aria-label="Friends studying together in a cozy pixel room with a cat, a bunny and a baby dragon"></canvas>
-          <div class="bubble" id="bubbleA"></div>
-          <div class="bubble" id="bubbleB"></div>
-          <div class="bubble" id="bubbleC"></div>
-          <p class="hero-hint">psst… tap the room ✨</p>
-        </div>
+        <section class="snap hero" id="s-top" aria-label="Welcome">
+          <header class="land-top">
+            <p class="eyebrow">a cozy study house 🏠</p>
+            <div class="brand">
+              <img src="/icon.svg" alt="" />
+              <h1 class="bouncy" aria-label="Auralis"><span>A</span><span>u</span><span>r</span><span>a</span><span>l</span><span>i</span><span>s</span></h1>
+            </div>
+            <p class="tagline">Study with your friends in a tiny pixel house. <mark>Focus</mark> together, <mark>earn</mark> coins, <mark>decorate</mark> every corner of it.</p>
+            <div class="cta-row">
+              <button type="button" class="cta" data-goto="#s-start" data-mode="signup">Create your room</button>
+              <button type="button" class="cta ghost" data-goto="#s-start" data-mode="login">I already live here</button>
+            </div>
+            <p class="tiny">free · no ads · one browser tab · it saves as you go</p>
+          </header>
 
-        <section class="steps" aria-label="How it works">
-          <div class="step"><img data-icon="clock" alt="" /><b>1. Focus</b><span>Pick a subject, start a timer. Your buddy sits down at their desk.</span></div>
-          <div class="arrow-step" aria-hidden="true">➜</div>
-          <div class="step"><img class="coin-d" alt="" /><b>2. Earn</b><span>Every focused minute is a coin. Study with a friend for +25%.</span></div>
-          <div class="arrow-step" aria-hidden="true">➜</div>
-          <div class="step"><img data-icon="chair" alt="" /><b>3. Decorate</b><span>Furnish your room, make it bigger, adopt a pet you really earned.</span></div>
+          <div class="hero-wrap">
+            <canvas id="heroScene" role="img" aria-label="Friends studying together in a cozy pixel room with a cat, a bunny and a baby dragon"></canvas>
+            <div class="bubble" id="bubbleA"></div>
+            <div class="bubble" id="bubbleB"></div>
+            <div class="bubble" id="bubbleC"></div>
+            <p class="hero-hint">psst… tap the room ✨</p>
+          </div>
+          <p class="scroll-hint" aria-hidden="true">scroll ↓</p>
         </section>
 
-        <div class="land-grid">
-          <section class="buddy" aria-label="Build your buddy">
-            <h2>Build your buddy</h2>
-            <canvas id="buddyCanvas" role="img" aria-label="Your character preview"></canvas>
-            <p class="buddy-tags" id="buddyTags"></p>
-            <button type="button" id="shuffleBuddy">🎲 Shuffle</button>
-            <p class="hint">Sign up and this buddy is yours. You can change it any time.</p>
+        <section class="snap" id="s-how" aria-label="How it works">
+          <div class="sec-head">
+            <p class="eyebrow">how it works</p>
+            <h2>Move in, sit down, get a little further</h2>
+            <p>Three things happen in every Auralis house, and none of them need a schedule.</p>
+          </div>
+          <section class="steps" aria-label="How it works">
+            <div class="step"><img data-icon="clock" alt="" /><b>1. Focus</b><span>Pick a subject and a timer. Your buddy sits down at their desk, and so do you.</span></div>
+            <div class="arrow-step" aria-hidden="true">➜</div>
+            <div class="step"><img class="coin-d" alt="" /><b>2. Earn</b><span>Every focused minute is a coin. Study with a housemate for +25%, keep a streak for more.</span></div>
+            <div class="arrow-step" aria-hidden="true">➜</div>
+            <div class="step"><img data-icon="chair" alt="" /><b>3. Decorate</b><span>Spend it on the room: furniture, wallpaper, a bigger space, a pet you really earned.</span></div>
           </section>
+          <dl class="stat-strip">
+            <div><dt>286</dt><dd>pieces of furniture</dd></div>
+            <div><dt>23</dt><dd>pets to adopt</dd></div>
+            <div><dt>48</dt><dd>wallpapers &amp; floors</dd></div>
+            <div><dt>3</dt><dd>rooms per person</dd></div>
+          </dl>
+        </section>
 
-          <form class="auth" id="authForm" novalidate>
-            <div class="sticker">free &amp; cozy</div>
-            <h2 id="authTitle">Move into the house 🏠</h2>
-            <div class="seg" id="authSeg">
-              <button type="button" class="on" data-mode="signup">Sign up</button>
-              <button type="button" class="off" data-mode="login">Log in</button>
-            </div>
-            <label id="authUserLabel"><span id="authUserText">Username</span> <input id="authUser" autocomplete="username" required minlength="3" maxlength="254" /></label>
-            <label id="authEmailLabel">Email <input id="authEmail" type="email" autocomplete="email" required maxlength="254" /></label>
-            <label id="authPassLabel">Password <input id="authPass" type="password" autocomplete="new-password" required minlength="8" maxlength="200" /></label>
-            <label id="authConfirmLabel">Confirm password <input id="authConfirm" type="password" autocomplete="new-password" required minlength="8" maxlength="200" /></label>
-            <p class="auth-error" id="authError" role="alert" hidden></p>
-            <p class="auth-note" id="authNote" role="status" hidden></p>
-            <button type="submit" id="authSubmit">Create my room</button>
-            <button type="button" id="authCancel" data-mode="login" hidden>Cancel and log in</button>
-            <p class="hint" id="authHint">Already studying with us? Switch to Log in.</p>
-            <p class="hint"><a href="/privacy.html" target="_blank" rel="noopener">Privacy policy</a></p>
-          </form>
-        </div>
+        <section class="snap" id="s-features" aria-label="What's inside">
+          <div class="sec-head">
+            <p class="eyebrow">what's inside</p>
+            <h2>What is in the house today</h2>
+            <p>No roadmap and nothing "coming soon": every line below is something the app does now, in the room with you.</p>
+          </div>
+          <ul class="features">
+            <li><img data-icon="clock" alt="" /><b>Focus</b><span>Pick a subject and a length. Every finished minute pays a coin.</span></li>
+            <li><img class="coin-d" alt="" /><b>Coins and streaks</b><span>3, 7 and 30 days in a row add 10%, 25% and 50%. Studying beside a housemate pays you both more, up to double.</span></li>
+            <li><img data-icon="chair" alt="" /><b>Decorate</b><span>Drag, rotate, flip, recolour, put away. Wallpaper, pattern, floor and floor style are yours to change.</span></li>
+            <li><img data-icon="house" alt="" /><b>Rooms that join up</b><span>Three rooms each, and a bigger one costs coins. Your house code opens everyone's rooms into one house.</span></li>
+            <li><img data-icon="chat" alt="" /><b>Chat, DMs and groups</b><span>House chat, private messages and groups, with pictures, replies and a colour per conversation.</span></li>
+            <li><img data-icon="todo" alt="" /><b>To-dos</b><span>House or private, with a date, a time, a repeat and a priority. Finishing one pays the house.</span></li>
+            <li><img data-icon="bell" alt="" /><b>Bell and reminders</b><span>A reminder at the time you set, a pop-up if you allow it, and push while the app is closed.</span></li>
+            <li><img data-icon="calendar" alt="" /><b>Calendar and announcements</b><span>A house calendar and a private one, with exams on them. The owner can pin announcements.</span></li>
+            <li><img data-icon="pip" alt="" /><b>Watch parties</b><span>YouTube, Vimeo, Twitch or Dailymotion, in step with the house, a group or one friend.</span></li>
+            <li><img data-icon="face" alt="" /><b>Pets</b><span>Four at most, wandering and napping on their own. A bonded pet does tricks and finds coins.</span></li>
+            <li><img data-icon="bag" alt="" /><b>Making things</b><span>Five making pieces turn out a random thing every 20 minutes. The claw drops a prize for 5 coins.</span></li>
+            <li><img data-icon="guide" alt="" /><b>Drinks, music and gifts</b><span>Coffee pays an extra coin a minute. Instruments play and layer. Gift a housemate 10 coins, five times a day.</span></li>
+          </ul>
+        </section>
 
-        <ul class="features">
-          <li><img data-icon="house" alt="" /><b>Rooms that join up</b><span>Share a code and your rooms open into one big house, each with its own look.</span></li>
-          <li><img data-icon="chat" alt="" /><b>To-dos &amp; chat</b><span>A shared list for the whole house, and speech bubbles over your heads.</span></li>
-          <li><img data-icon="bag" alt="" /><b>25 cozy things</b><span>Sofas, pianos, aquariums, bonsai… recolour them and drag them anywhere.</span></li>
-          <li><img data-icon="chart" alt="" /><b>See your progress</b><span>Day-to-year stats by subject, streaks and a friendly leaderboard.</span></li>
-        </ul>
-        <p class="land-foot">Made with tiny pixels and lots of focus.</p>
+        <section class="snap start" id="s-start" aria-label="Get started">
+          <div class="sec-head">
+            <p class="eyebrow">get started</p>
+            <h2>Your room is one form away</h2>
+            <p>Pick a buddy, pick a name, and you are standing in your own room.</p>
+          </div>
+          <div class="land-grid">
+            <section class="buddy" aria-label="Build your buddy">
+              <h3>Build your buddy</h3>
+              <canvas id="buddyCanvas" role="img" aria-label="Your character preview"></canvas>
+              <p class="buddy-tags" id="buddyTags"></p>
+              <button type="button" id="shuffleBuddy">🎲 Shuffle</button>
+              <p class="hint">Sign up and this buddy is yours. You can change it any time.</p>
+            </section>
+
+            <form class="auth" id="authForm" data-auth-mode="signup" novalidate>
+              <div class="sticker">free &amp; cozy</div>
+              <header class="auth-head">
+                <p class="auth-kicker" id="authKicker">new here?</p>
+                <h3 id="authTitle">Move into the house 🏠</h3>
+                <p class="auth-sub" id="authSub">Pick a name, an email and a password. Your room is built while you watch.</p>
+              </header>
+              <div class="seg" id="authSeg">
+                <button type="button" class="on" data-mode="signup">Sign up</button>
+                <button type="button" class="off" data-mode="login">Log in</button>
+              </div>
+              <label class="field" id="authUserLabel">
+                <span class="field-label" id="authUserText">Username</span>
+                <input id="authUser" autocomplete="username" required minlength="3" maxlength="254" placeholder="pixelpanda" />
+              </label>
+              <label class="field" id="authEmailLabel">
+                <span class="field-label">Email</span>
+                <input id="authEmail" type="email" autocomplete="email" required maxlength="254" placeholder="you@example.com" />
+              </label>
+              <label class="field" id="authPassLabel">
+                <span class="field-label">Password</span>
+                <span class="field-pass">
+                  <input id="authPass" type="password" autocomplete="new-password" required minlength="8" maxlength="200" placeholder="at least 8 characters" />
+                  <button type="button" id="authReveal" aria-pressed="false" aria-label="Show password" title="Show password">👁</button>
+                </span>
+              </label>
+              <p class="strength" id="authStrength" data-score="0" aria-hidden="true" hidden><i></i><i></i><i></i><span>at least 8 characters</span></p>
+              <label class="field" id="authConfirmLabel">
+                <span class="field-label">Confirm password</span>
+                <input id="authConfirm" type="password" autocomplete="new-password" required minlength="8" maxlength="200" placeholder="same again" />
+              </label>
+              <p class="auth-error" id="authError" role="alert" hidden></p>
+              <p class="auth-note" id="authNote" role="status" hidden></p>
+              <button type="submit" id="authSubmit">Create my room</button>
+              <button type="button" id="authCancel" data-mode="login" hidden>← Back to log in</button>
+              <p class="auth-hint" id="authHint">Already studying with us? Switch to Log in.</p>
+              <p class="auth-legal">Your room and your streak are yours alone. <a href="/privacy.html" target="_blank" rel="noopener">Privacy policy</a></p>
+            </form>
+          </div>
+          <p class="land-foot">Made with tiny pixels and lots of focus.</p>
+        </section>
       </div>
     </section>
     <canvas id="game"></canvas>
@@ -202,6 +279,15 @@
         <h2><img data-icon="chat" alt="" /> <span id="announcementModalTitle">New announcement</span></h2>
         <textarea id="announcementText" rows="4" maxlength="500" placeholder="What would you like to announce to the house?" aria-label="Announcement" required></textarea>
         <div class="end"><button type="button" class="off" id="announcementCancel">Cancel</button><button>Post announcement</button></div>
+      </form>
+    </dialog>
+    <dialog id="deleteModal" class="modal" aria-labelledby="deleteModalTitle">
+      <form id="deleteForm">
+        <h2><img data-icon="face" alt="" /> <span id="deleteModalTitle">Delete your account</span></h2>
+        <p class="hint">This erases your room, your house, your chats and your study history for good. Nobody can bring it back.</p>
+        <label class="field"><input id="deletePass" type="password" autocomplete="current-password" placeholder="Your password" aria-label="Your password" required /></label>
+        <p id="deleteNote" class="hint" role="alert" hidden></p>
+        <div class="end"><button type="button" class="off" id="deleteCancel">Keep my account</button><button class="danger" id="deleteGo">Delete forever</button></div>
       </form>
     </dialog>
     <dialog id="tour" class="modal tour" aria-labelledby="tourTitle">

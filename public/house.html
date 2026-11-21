@@ -1,0 +1,273 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#efe6da" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#3b3442" media="(prefers-color-scheme: dark)" />
+    <meta name="description" content="Three rooms, one floor: how an Auralis house joins every housemate's room into one long place you walk through together." />
+    <link rel="icon" href="/icon.svg" type="image/svg+xml" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&display=swap" rel="stylesheet" />
+    <title>Auralis · The house</title>
+    <style>
+      /* The same palette as the app, kept here because this page is served on its own. */
+      :root {
+        --bg: #efe6da;
+        --dot: #e3d7c8;
+        --paper: #fffaf3;
+        --ink: #2b2530;
+        --on-bg: var(--ink);
+        --muted: #8c8090;
+        --blue: #5b7fd6;
+        --coral: #e06a5a;
+        --gold: #f2c14e;
+        font-family: 'Fredoka', system-ui, -apple-system, 'Segoe UI', sans-serif;
+        color: var(--ink);
+      }
+      @media (prefers-color-scheme: dark) {
+        :root { --bg: #3b3442; --dot: #4d4555; --on-bg: #f3ebe0; }
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        background-color: var(--bg);
+        background-image: radial-gradient(var(--dot) 1.5px, transparent 1.5px);
+        background-size: 24px 24px;
+        color: var(--on-bg);
+        -webkit-font-smoothing: antialiased;
+      }
+      .wrap { max-width: 980px; margin: 0 auto; padding: 0 20px 56px; }
+      .top { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 16px 0; }
+      .brand { display: inline-flex; align-items: center; gap: 8px; font-weight: 700; font-size: 20px; color: inherit; text-decoration: none; }
+      .brand img { width: 32px; height: 32px; }
+      .back { font-weight: 600; font-size: 15px; color: inherit; text-decoration: none; opacity: 0.72; }
+      .back:hover { opacity: 1; text-decoration: underline; text-decoration-thickness: 2px; }
+      .head { text-align: center; padding: 18px 0 14px; }
+      .eyebrow { margin: 0 0 6px; font-size: 12px; font-weight: 700; letter-spacing: 0.16em; text-transform: uppercase; opacity: 0.65; }
+      h1 { margin: 0 0 10px; font-size: clamp(30px, 5vw, 46px); line-height: 1.1; }
+      .lede { max-width: 620px; margin: 0 auto; font-size: clamp(15px, 2vw, 18px); line-height: 1.55; opacity: 0.78; }
+
+      /* ---- the room itself: one floor, three walls, two doorways ---- */
+      .scene {
+        --floor-h: clamp(38px, 5vw, 52px);
+        position: relative;
+        display: flex;
+        align-items: stretch;
+        height: clamp(180px, 26vw, 260px);
+        margin: 26px 0 0;
+        overflow: hidden;
+        background: var(--paper);
+        border: 3px solid var(--ink);
+        border-radius: 16px;
+        box-shadow: 0 6px 0 var(--ink);
+      }
+      .scene::before {
+        content: '';
+        position: absolute;
+        inset: 0 0 auto;
+        z-index: 1;
+        height: 9px;
+        background: repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.6) 0 12px, rgba(0, 0, 0, 0.12) 12px 24px);
+        border-bottom: 2px solid rgba(0, 0, 0, 0.22);
+        pointer-events: none;
+      }
+      .bay { position: relative; flex: 1 1 0; min-width: 0; }
+      .bay::before {
+        content: '';
+        position: absolute;
+        inset: 0 0 var(--floor-h);
+        background-color: var(--wall);
+      }
+      .bay::after {
+        content: '';
+        position: absolute;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        height: var(--floor-h);
+        background-color: var(--floor);
+        background-image: repeating-linear-gradient(90deg, rgba(0, 0, 0, 0.1) 0 2px, transparent 2px 18px);
+        border-top: 3px solid var(--ink);
+      }
+      .bay.dotted::before { background-image: radial-gradient(rgba(255, 255, 255, 0.75) 2px, transparent 2px); background-size: 18px 18px; }
+      .bay.stripes::before { background-image: repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.5) 0 7px, transparent 7px 22px); }
+      .bay.plaid::before {
+        background-image: repeating-linear-gradient(45deg, rgba(255, 255, 255, 0.45) 0 5px, transparent 5px 14px),
+          repeating-linear-gradient(-45deg, rgba(0, 0, 0, 0.05) 0 5px, transparent 5px 14px);
+      }
+      .name {
+        position: absolute;
+        z-index: 3;
+        top: 14px;
+        left: 50%;
+        transform: translateX(-50%);
+        padding: 2px 8px;
+        font-size: 12px;
+        font-weight: 700;
+        line-height: 1.35;
+        white-space: nowrap;
+        color: var(--ink);
+        background: var(--paper);
+        border: 2px solid var(--ink);
+        border-radius: 999px;
+        box-shadow: 0 2px 0 var(--ink);
+      }
+      /* Two doorways: a passage with the floor running through it, cut into the wall. */
+      .door {
+        position: relative;
+        z-index: 2;
+        flex: none;
+        width: clamp(44px, 5.2vw, 64px);
+        margin: 10px calc(clamp(44px, 5.2vw, 64px) / -2) 0;
+        background: linear-gradient(180deg, #7f708d 0%, #665a76 46%, #554963 100%);
+        border: 3px solid var(--ink);
+        border-bottom: 0;
+        border-radius: 999px 999px 0 0;
+        box-shadow: inset 5px 0 0 rgba(0, 0, 0, 0.22), inset -5px 0 0 rgba(0, 0, 0, 0.22), inset 0 5px 0 rgba(255, 255, 255, 0.12);
+      }
+      .door::after {
+        content: '';
+        position: absolute;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        height: calc(var(--floor-h) + 3px);
+        background-color: #d6b089;
+        background-image: repeating-linear-gradient(90deg, rgba(0, 0, 0, 0.18) 0 2px, transparent 2px 16px);
+        border-top: 3px solid var(--ink);
+      }
+
+      /* ---- the furniture: flat shapes with the app's one outline colour ---- */
+      .prop { position: absolute; z-index: 2; width: 30px; height: 30px; }
+      .frame { position: absolute; top: 44px; left: 14%; width: 30px; height: 26px; background: #ffe4b4; border: 3px solid var(--ink); border-radius: 3px; box-shadow: inset 0 0 0 2px #fffaf3, inset 0 -8px 0 #dfa9a3; }
+      .window { position: absolute; top: 42px; left: 14%; width: 32px; height: 27px; background: #d9e8fb; border: 3px solid var(--ink); border-radius: 3px; box-shadow: inset 0 0 0 2px #fffaf3; }
+      .window::before {
+        content: '';
+        position: absolute;
+        inset: 0;
+        background: linear-gradient(var(--ink), var(--ink)) center / 2px 100% no-repeat,
+          linear-gradient(var(--ink), var(--ink)) center / 100% 2px no-repeat;
+        opacity: 0.3;
+      }
+      .clock { position: absolute; top: 42px; left: 14%; width: 28px; height: 28px; background: #fffaf3; border: 3px solid var(--ink); border-radius: 50%; }
+      .clock::before { content: ''; position: absolute; left: 50%; top: 4px; width: 2px; height: 8px; margin-left: -1px; background: var(--ink); }
+      .clock::after { content: ''; position: absolute; left: 50%; top: 11px; width: 6px; height: 2px; background: var(--ink); }
+      .chair { left: 15%; bottom: calc(var(--floor-h) - 5px); }
+      .chair::before { content: ''; position: absolute; left: 2px; right: 2px; top: 0; height: 12px; background: #8fbf9b; border: 2px solid var(--ink); border-radius: 5px 5px 2px 2px; }
+      .chair::after {
+        content: '';
+        position: absolute;
+        left: 0;
+        right: 0;
+        top: 13px;
+        height: 9px;
+        background: #8fbf9b;
+        border: 2px solid var(--ink);
+        border-radius: 3px;
+        box-shadow: 2px 11px 0 -2px var(--ink), 20px 11px 0 -2px var(--ink);
+      }
+      .plant { right: 15%; bottom: calc(var(--floor-h) - 5px); }
+      .plant i { position: absolute; bottom: 0; left: 3px; right: 3px; height: 13px; background: #c98a5e; border: 2px solid var(--ink); border-radius: 0 0 6px 6px; }
+      .plant::before,
+      .plant::after { content: ''; position: absolute; width: 13px; height: 13px; background: #6fbf8a; border: 2px solid var(--ink); border-radius: 50% 50% 50% 0; }
+      .plant::before { left: 0; bottom: 11px; transform: rotate(-20deg); }
+      .plant::after { right: 0; bottom: 15px; transform: rotate(34deg); }
+      .lamp { left: 15%; bottom: calc(var(--floor-h) - 5px); height: 46px; }
+      .lamp::before { content: ''; position: absolute; left: 6px; right: 6px; top: 0; height: 15px; background: var(--gold); border: 2px solid var(--ink); border-radius: 4px 4px 2px 2px; }
+      .lamp::after { content: ''; position: absolute; left: 14px; top: 15px; bottom: 5px; width: 2px; background: var(--ink); }
+      .lamp i { position: absolute; left: 6px; right: 6px; bottom: 0; height: 5px; background: var(--ink); border-radius: 2px; }
+      .rug { position: absolute; z-index: 1; left: 50%; bottom: 7px; width: 56%; height: 13px; transform: translateX(-50%); background: repeating-linear-gradient(90deg, #e0918f 0 7px, #f6d0b4 7px 14px); border: 2px solid var(--ink); border-radius: 999px; opacity: 0.9; }
+      .shelf { left: 15%; bottom: calc(var(--floor-h) - 5px); width: 38px; height: 38px; background: #d7b48c; border: 2px solid var(--ink); border-radius: 3px; }
+      .shelf::before { content: ''; position: absolute; left: 0; right: 0; top: 16px; height: 2px; background: var(--ink); }
+      .shelf::after { content: ''; position: absolute; left: 4px; bottom: 4px; width: 7px; height: 10px; background: var(--coral); box-shadow: 9px 0 0 var(--blue), 18px 0 0 var(--gold); }
+
+      .caption { margin: 16px 0 0; text-align: center; font-size: 14px; line-height: 1.6; opacity: 0.65; }
+      .notes { list-style: none; padding: 0; margin: 34px 0 0; display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; }
+      .notes li { display: grid; grid-template-columns: 30px 1fr; column-gap: 10px; font-size: 14px; line-height: 1.5; }
+      .notes i { grid-row: span 2; font-style: normal; font-size: 22px; line-height: 1.25; }
+      .notes b { display: block; font-size: 17px; }
+      .notes span { opacity: 0.75; }
+      .cta-row { display: flex; flex-wrap: wrap; justify-content: center; gap: 12px; margin: 40px 0 0; }
+      .cta {
+        padding: 14px 24px;
+        font-size: 18px;
+        font-weight: 700;
+        font-family: inherit;
+        color: var(--ink);
+        text-decoration: none;
+        background: #b89af0;
+        border: 3px solid var(--ink);
+        border-radius: 14px;
+        box-shadow: 0 5px 0 var(--ink);
+      }
+      .cta.ghost { background: var(--paper); }
+      .cta:hover { transform: translateY(-2px); box-shadow: 0 7px 0 var(--ink); }
+      .cta:active { transform: translateY(3px); box-shadow: 0 2px 0 var(--ink); }
+      .foot { margin: 48px 0 0; text-align: center; font-size: 13px; opacity: 0.55; }
+      .foot a { color: inherit; }
+      @media (max-width: 760px) {
+        .notes { grid-template-columns: 1fr; gap: 16px; }
+        .scene { height: 176px; --floor-h: 36px; }
+        .name { top: 12px; padding: 1px 6px; font-size: 10px; }
+        .frame, .window, .clock { top: 34px; left: 12%; }
+        .chair, .lamp, .shelf { left: 10%; }
+        .plant { right: 10%; }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <header class="top">
+        <a class="brand" href="/"><img src="/icon.svg" alt="" />Auralis</a>
+        <a class="back" href="/">Back to the app →</a>
+      </header>
+
+      <main>
+        <div class="head">
+          <p class="eyebrow">the house</p>
+          <h1>One room becomes a whole house</h1>
+          <p class="lede">Share your house code and the doorways open: everyone keeps the room they decorated, and the house becomes one long place you walk through together.</p>
+        </div>
+
+        <div class="scene" role="img" aria-label="One long room seen from the front: your room, a housemate's room and the shared room, joined by open doorways">
+          <div class="bay dotted" style="--wall: #f8cdd3; --floor: #dfb07f">
+            <span class="name">your room</span>
+            <span class="frame" aria-hidden="true"></span>
+            <span class="prop chair" aria-hidden="true"></span>
+            <span class="prop plant" aria-hidden="true"><i></i></span>
+          </div>
+          <span class="door" aria-hidden="true"></span>
+          <div class="bay stripes" style="--wall: #cfdcf5; --floor: #ecc9a4">
+            <span class="name">their room</span>
+            <span class="window" aria-hidden="true"></span>
+            <span class="rug" aria-hidden="true"></span>
+            <span class="prop lamp" aria-hidden="true"><i></i></span>
+          </div>
+          <span class="door" aria-hidden="true"></span>
+          <div class="bay plaid" style="--wall: #d9efe0; --floor: #cfd8e6">
+            <span class="name">the house</span>
+            <span class="clock" aria-hidden="true"></span>
+            <span class="prop shelf" aria-hidden="true"></span>
+            <span class="prop plant" aria-hidden="true"><i></i></span>
+          </div>
+        </div>
+        <p class="caption">One floor, end to end: step through a doorway and you are in the next person's room.</p>
+
+        <ul class="notes">
+          <li><i aria-hidden="true">🏠</i><b>Shared, slowly.</b><span>Rooms open into each other, so a house grows into one long room you decorate together.</span></li>
+          <li><i aria-hidden="true">💡</i><b>Built to be lived in.</b><span>Photo frames, lamps you can switch off, plants that get thirsty, a piano, a claw machine.</span></li>
+          <li><i aria-hidden="true">💬</i><b>Quiet by default.</b><span>No feed, no ads, no strangers: people arrive with your house code, or by asking to visit.</span></li>
+        </ul>
+
+        <div class="cta-row">
+          <a class="cta" href="/">Create your room</a>
+          <a class="cta ghost" href="/">I already live here</a>
+        </div>
+      </main>
+
+      <p class="foot">Three rooms each, three looks, and a doorway between every pair. <a href="/privacy.html">Privacy policy</a></p>
+    </div>
+  </body>
+</html>

@@ -747,6 +747,11 @@ body.signed-out #deck, body.signed-out #game, body.signed-out #zoom { display: n
   inset: 0;
   overflow-x: hidden;
   overflow-y: auto;
+  /* One screen per section: the page never stops halfway through a thought. Sections are only guaranteed to
+     be screen-sized on a big screen, so narrow or short windows snap loosely instead of trapping their content. */
+  scroll-snap-type: y proximity;
+  scroll-behavior: smooth;
+  overscroll-behavior-y: contain;
   touch-action: pan-y pinch-zoom;
   background-color: var(--bg);
   background-image: radial-gradient(var(--dot) 1.5px, transparent 1.5px);
@@ -754,7 +759,80 @@ body.signed-out #deck, body.signed-out #game, body.signed-out #zoom { display: n
   -webkit-user-select: text;
   user-select: text;
 }
-.land { position: relative; max-width: 1080px; margin: 0 auto; padding: 28px 16px 40px; display: grid; gap: 28px; }
+/* Strict snapping only where every section is guaranteed to fit on one screen: the get-started card needs about
+   960px of height, so a 768px laptop scrolls freely instead of being pulled past the form. */
+@media (min-width: 900px) and (min-height: 960px) { #landing { scroll-snap-type: y mandatory; } }
+.land { position: relative; max-width: 1120px; margin: 0 auto; padding: 0 20px; color: var(--on-bg); }
+
+/* A section is the whole screen, and each one rises in as it arrives. */
+.snap {
+  min-height: 100svh;
+  scroll-snap-align: start;
+  scroll-snap-stop: normal;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 24px;
+  padding: 84px 0 56px;
+}
+/* The snap point for the first section is the top of the nav, so every section keeps its top padding clear of it. */
+.snap.start { padding-bottom: 32px; }
+.snap.armed > * { opacity: 0; transform: translateY(16px); }
+.snap.armed.in > * { opacity: 1; transform: none; transition: opacity 0.5s ease, transform 0.5s ease; }
+@media (prefers-reduced-motion: reduce) { .snap.armed > *, .snap.armed.in > * { opacity: 1; transform: none; transition: none; } }
+
+/* the bar across the top: brand, section links, the two things you can do */
+.land-nav {
+  position: sticky;
+  top: 0;
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin: 0 -20px;
+  padding: 10px 20px;
+  background: rgba(239, 230, 218, 0.9);
+  box-shadow: 0 2px 0 var(--dot);
+  backdrop-filter: blur(6px);
+}
+@media (prefers-color-scheme: dark) { .land-nav { background: rgba(59, 52, 66, 0.9); box-shadow: 0 2px 0 #4d4555; } }
+[data-theme='dark'] .land-nav { background: rgba(59, 52, 66, 0.9); box-shadow: 0 2px 0 #4d4555; }
+[data-theme='light'] .land-nav { background: rgba(239, 230, 218, 0.9); box-shadow: 0 2px 0 var(--dot); }
+.brand-small { display: inline-flex; align-items: center; gap: 8px; font-weight: 700; font-size: 19px; color: var(--on-bg); text-decoration: none; }
+.brand-small img { width: 30px; height: 30px; }
+.land-links { display: flex; gap: 18px; }
+.land-links a { color: var(--on-bg); font-weight: 600; font-size: 15px; text-decoration: none; opacity: 0.72; }
+.land-links a:hover { opacity: 1; text-decoration: underline; text-decoration-thickness: 2px; }
+.land-nav-cta { display: flex; gap: 8px; }
+
+/* buttons: the primary one is the lavender of the wallpaper accents */
+.cta {
+  padding: 14px 24px;
+  font-size: 19px;
+  font-weight: 700;
+  background: #b89af0;
+  color: var(--ink);
+  border: 3px solid var(--ink);
+  border-radius: 14px;
+  box-shadow: 0 5px 0 var(--ink);
+}
+.cta:hover { transform: translateY(-2px); box-shadow: 0 7px 0 var(--ink); }
+.cta:active { transform: translateY(3px); box-shadow: 0 2px 0 var(--ink); }
+.cta.ghost, button.ghost { background: var(--paper); color: var(--ink); }
+.cta.small { padding: 8px 16px; font-size: 16px; box-shadow: 0 3px 0 var(--ink); }
+button.ghost.small { padding: 8px 14px; font-size: 15px; box-shadow: 0 3px 0 var(--ink); }
+.cta-row { display: flex; flex-wrap: wrap; gap: 12px; justify-content: center; margin-top: 4px; }
+
+/* the heading block every section after the hero starts with */
+.sec-head { text-align: center; max-width: 64ch; margin: 0 auto; display: grid; gap: 8px; }
+.sec-head h2 { margin: 0; font-size: clamp(27px, 4.2vw, 42px); line-height: 1.12; }
+.sec-head p { margin: 0; color: var(--on-bg); opacity: 0.72; font-size: clamp(15px, 2vw, 18px); }
+.eyebrow { margin: 0; font-size: 13px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; opacity: 0.6; }
+.tiny { margin: 0; font-size: 14px; opacity: 0.6; }
+.scroll-hint { margin: 0; text-align: center; font-size: 14px; font-weight: 600; opacity: 0.6; animation: nudge 2.2s ease-in-out infinite; }
+@keyframes nudge { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(5px); } }
+
 
 /* drifting coins and sparkles in the background */
 .drift { position: fixed; inset: 0; pointer-events: none; overflow: hidden; }
@@ -772,7 +850,7 @@ body.signed-out #deck, body.signed-out #game, body.signed-out #zoom { display: n
   100% { transform: translateY(-115vh) rotate(200deg); opacity: 0; }
 }
 
-.land-top { text-align: center; color: var(--on-bg); }
+.land-top { text-align: center; color: var(--on-bg); display: grid; gap: 12px; justify-items: center; }
 .brand { display: inline-flex; align-items: center; gap: 14px; }
 .brand img { width: 72px; height: 72px; image-rendering: auto; animation: wobble 3s ease-in-out infinite; }
 .bouncy { margin: 0; font-size: clamp(48px, 10vw, 76px); letter-spacing: 2px; display: inline-flex; }
@@ -790,11 +868,11 @@ body.signed-out #deck, body.signed-out #game, body.signed-out #zoom { display: n
 .bouncy span:nth-child(7) { animation-delay: 0.72s; }
 @keyframes hop { 0%, 60%, 100% { transform: translateY(0); } 30% { transform: translateY(-6px); } }
 @keyframes wobble { 0%, 100% { transform: rotate(-6deg); } 50% { transform: rotate(6deg) scale(1.04); } }
-.tagline { font-size: clamp(18px, 3.4vw, 24px); font-weight: 500; margin: 10px auto 0; max-width: 34ch; }
+.tagline { font-size: clamp(17px, 2.8vw, 23px); font-weight: 500; margin: 0; max-width: 40ch; }
 .tagline mark { background: linear-gradient(transparent 55%, #ffd27a 55%); color: inherit; padding: 0 2px; }
 
 /* hero scene with speech bubbles on top */
-.hero-wrap { position: relative; }
+.hero-wrap { position: relative; width: 100%; max-width: 980px; margin: 0 auto; }
 #heroScene {
   display: block;
   width: 100%;
@@ -810,8 +888,10 @@ body.signed-out #deck, body.signed-out #game, body.signed-out #zoom { display: n
   transform: translate(-50%, -100%) scale(0);
   padding: 6px 12px;
   font-weight: 600;
-  font-size: clamp(11px, 1.8vw, 15px);
+  font-size: clamp(12px, 2vw, 16px);
   white-space: nowrap;
+  /* Paper is cream in both themes, so the text is ink: the page's own colour would be light in the dark theme. */
+  color: var(--ink);
   background: var(--paper);
   border: 3px solid var(--ink);
   border-radius: 14px;
@@ -839,11 +919,16 @@ body.signed-out #deck, body.signed-out #game, body.signed-out #zoom { display: n
 #bubbleA { left: 17.5%; top: 14%; }
 #bubbleB { left: 72.5%; top: 14%; }
 #bubbleC { left: 45%; top: 48%; }
-.hero-hint { position: absolute; right: 14px; bottom: 10px; margin: 0; padding: 2px 10px; font-size: 13px; font-weight: 600; background: rgba(255, 250, 243, 0.85); border-radius: 999px; pointer-events: none; }
+.hero-hint { position: absolute; right: 14px; bottom: 10px; margin: 0; padding: 2px 10px; font-size: 13px; font-weight: 600; color: var(--ink); background: rgba(255, 250, 243, 0.85); border-radius: 999px; pointer-events: none; }
 
 /* how it works */
-.steps { display: flex; align-items: stretch; gap: 10px; }
+.steps { display: flex; align-items: stretch; gap: 10px; max-width: 980px; width: 100%; margin: 0 auto; }
+.stat-strip { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin: 0 auto; max-width: 980px; width: 100%; }
+.stat-strip > div { padding: 12px 10px; text-align: center; background: var(--paper); color: var(--ink); border: 3px solid var(--ink); border-radius: 14px; box-shadow: 0 4px 0 var(--ink); }
+.stat-strip dt { font-size: clamp(24px, 3.4vw, 32px); font-weight: 700; }
+.stat-strip dd { margin: 2px 0 0; font-size: 13px; color: var(--muted); }
 .step {
+  color: var(--ink); /* the cards are paper, whatever the page behind them is */
   flex: 1;
   display: flex;
   flex-direction: column;
@@ -867,6 +952,7 @@ body.signed-out #deck, body.signed-out #game, body.signed-out #zoom { display: n
 /* buddy + sign-up side by side */
 .land-grid { display: grid; gap: 20px; }
 .buddy {
+  color: var(--ink);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -880,22 +966,28 @@ body.signed-out #deck, body.signed-out #game, body.signed-out #zoom { display: n
   border-radius: 18px;
   box-shadow: 0 6px 0 var(--ink);
 }
-.buddy h2, .auth h2 { margin: 0; font-size: 24px; }
+.buddy h3, .auth h3 { margin: 0; font-size: 22px; }
 #buddyCanvas { width: 128px; height: 176px; image-rendering: pixelated; filter: drop-shadow(0 6px 0 rgba(43, 37, 48, 0.2)); }
 #buddyCanvas.pop { animation: pop 0.35s; }
 .buddy-tags { margin: 0; font-weight: 600; text-transform: capitalize; }
 #shuffleBuddy { font-size: 18px; padding: 10px 22px; background: var(--gold); color: var(--ink); }
+/* The front door: sign up, log in, forgot and reset are one panel with one accent each. */
 .auth {
+  color: var(--ink);
   position: relative;
   display: flex;
   flex-direction: column;
-  gap: 14px;
-  padding: 22px 20px 20px;
+  gap: 12px;
+  padding: 26px 22px 20px;
   background: var(--paper);
   border: 3px solid var(--ink);
   border-radius: 18px;
   box-shadow: 0 6px 0 var(--ink);
+  --auth-accent: #8fd0a8;
 }
+.auth[data-auth-mode='login'] { --auth-accent: var(--blue); }
+.auth[data-auth-mode='forgot'] { --auth-accent: var(--gold); }
+.auth[data-auth-mode='reset'] { --auth-accent: var(--coral); }
 .sticker {
   position: absolute;
   top: -16px;
@@ -909,25 +1001,91 @@ body.signed-out #deck, body.signed-out #game, body.signed-out #zoom { display: n
   transform: rotate(6deg);
   box-shadow: 0 3px 0 var(--ink);
 }
-.auth input { width: 100%; }
-.auth button[type='submit'] { padding: 12px; font-size: 18px; }
-.auth-error { margin: 0; padding: 8px 12px; background: #fde4df; border: 2px solid var(--coral); border-radius: 10px; font-weight: 600; }
+.auth-head { display: grid; gap: 6px; }
+.auth-kicker {
+  margin: 0;
+  justify-self: start;
+  padding: 1px 9px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  background: var(--auth-accent);
+  border: 2px solid var(--ink);
+  border-radius: 999px;
+}
+.auth h3 { margin: 0; font-size: clamp(21px, 2.6vw, 25px); line-height: 1.15; }
+.auth-sub { margin: 0; font-size: 14px; line-height: 1.45; color: var(--muted); }
+.auth .seg { margin: 2px 0 0; }
+.auth .seg button { padding: 9px 10px; font-size: 16px; box-shadow: 0 3px 0 var(--ink); }
+.auth .seg button.on { background: var(--auth-accent); color: var(--ink); }
+
+/* A field is its label and its box, stacked, with the label small enough to stay out of the way. */
+.field { gap: 5px; font-weight: 700; }
+.field-label { font-size: 13px; letter-spacing: 0.02em; }
+.auth input { width: 100%; font-size: 16px; padding: 10px 12px; background: #fff; }
+.auth input:focus { outline: 3px solid var(--auth-accent); outline-offset: 1px; }
+.field-pass { position: relative; display: block; }
+.field-pass input { padding-right: 50px; }
+#authReveal {
+  position: absolute;
+  top: 50%;
+  right: 5px;
+  transform: translateY(-50%);
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  font-size: 15px;
+  line-height: 1;
+  background: var(--soft);
+  color: var(--ink);
+  border-width: 2px;
+  box-shadow: 0 2px 0 var(--ink);
+}
+#authReveal.on { background: var(--auth-accent); }
+#authReveal:active { transform: translateY(-50%); box-shadow: 0 1px 0 var(--ink); }
+
+/* Three bars, one word: a hint about the password, never a gate. */
+.strength { display: flex; align-items: center; gap: 6px; margin: -2px 0 0; }
+.strength i { width: 26px; height: 7px; background: var(--soft); border: 2px solid var(--ink); border-radius: 999px; }
+.strength[data-score='1'] i:nth-child(1) { background: var(--coral); }
+.strength[data-score='2'] i:nth-child(-n + 2) { background: var(--gold); }
+.strength[data-score='3'] i { background: #8fd0a8; }
+.strength span { margin-left: 2px; font-size: 12px; font-weight: 600; color: var(--muted); }
+
+.auth button[type='submit'] { padding: 13px; margin-top: 2px; font-size: 18px; background: #b89af0; color: var(--ink); }
+.auth-error { margin: 0; padding: 9px 12px; background: #fde4df; border: 3px solid var(--coral); border-radius: 10px; font-weight: 600; font-size: 14px; }
 /* A notice rather than an error ("your session ended"): same shape, warm cream instead of coral. */
-.auth-note { margin: 0; padding: 8px 12px; background: #fff3d1; border: 2px solid var(--ink); border-radius: 10px; font-weight: 600; }
+.auth-note { margin: 0; padding: 9px 12px; background: #fff3d1; border: 3px solid var(--ink); border-radius: 10px; font-weight: 600; font-size: 14px; }
 /* The sign-up/log-in switch is `display: flex`, which would keep it on screen despite [hidden]. */
 .auth .seg[hidden] { display: none; }
 /* The way out of the reset and forgotten-password screens: quieter than Submit, still a real button. */
-.auth #authCancel { background: var(--paper); color: var(--ink); box-shadow: 0 2px 0 var(--ink); padding: 8px 12px; font-size: 15px; }
+.auth #authCancel {
+  background: none;
+  border: 0;
+  box-shadow: none;
+  padding: 2px;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--ink);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.auth #authCancel:hover { text-decoration-thickness: 2px; }
+.auth #authCancel:active { transform: none; }
+.auth-hint { margin: 0; font-size: 14px; line-height: 1.5; color: var(--muted); }
 /* A link inside the helper text under the form: reads as a link, behaves as a button. */
-.auth .hint .linkish { background: none; border: 0; box-shadow: none; padding: 0; margin: 0; font: inherit; font-weight: 600; color: var(--ink); text-decoration: underline; cursor: pointer; }
-.auth .hint .linkish:hover { text-decoration-thickness: 2px; }
+.auth .linkish { background: none; border: 0; box-shadow: none; padding: 0; margin: 0; font: inherit; font-weight: 600; color: var(--ink); text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
+.auth .linkish:hover { text-decoration-thickness: 2px; }
+.auth-legal { margin: 2px 0 0; font-size: 12px; line-height: 1.5; color: var(--muted); }
+.auth-legal a { color: var(--ink); font-weight: 600; }
 
-.features { list-style: none; padding: 0; margin: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; }
+.features { list-style: none; padding: 0; margin: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px; }
 .features li {
   display: grid;
-  grid-template-columns: 36px 1fr;
-  column-gap: 10px;
-  padding: 14px;
+  grid-template-columns: 32px 1fr;
+  column-gap: 9px;
+  padding: 11px 12px;
   background: var(--paper);
   border: 3px solid var(--ink);
   border-radius: 16px;
@@ -936,23 +1094,44 @@ body.signed-out #deck, body.signed-out #game, body.signed-out #zoom { display: n
 }
 .features li:hover { transform: rotate(-1.5deg) translateY(-3px); }
 .features li:nth-child(even):hover { transform: rotate(1.5deg) translateY(-3px); }
-.features img { width: 36px; height: 36px; grid-row: span 2; }
-.features b { font-size: 17px; }
-.features span { color: var(--muted); font-size: 15px; }
-.land-foot { text-align: center; color: var(--muted); margin: 0; }
+.features img { width: 32px; height: 32px; grid-row: span 2; }
+.features b { font-size: 16px; }
+.features span { color: var(--muted); font-size: 14px; line-height: 1.35; }
+.land-foot { text-align: center; color: var(--on-bg); opacity: 0.6; margin: 0; }
 
-@media (max-width: 640px) {
-  .steps { gap: 8px; }
+.room-card {
+  position: relative;
+  flex: 0 1 260px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--floor);
+  border: 3px solid var(--ink);
+  border-radius: 16px 16px 8px 8px;
+  box-shadow: 0 5px 0 var(--ink);
+}
+.start .land-grid { width: 100%; }
+.features li { color: var(--ink); }
+
+@media (max-width: 760px) {
+  .land { padding: 0 14px; }
+  .land-nav { margin: 0 -14px; padding: 8px 14px; }
+  .land-links { display: none; }
+  .snap { padding: 74px 0 40px; gap: 18px; }
+  .steps { flex-direction: column; gap: 10px; }
   .arrow-step { display: none; }
-  .step { padding: 10px 6px; transform: none !important; }
-  .step img { width: 28px; height: 28px; }
-  .step b { font-size: 15px; }
-  .step span { font-size: 12px; }
+  .step { transform: none !important; }
+  .step span { font-size: 14px; }
+  .stat-strip { grid-template-columns: repeat(2, 1fr); }
   .hero-hint { display: none; }
+  .cta { padding: 12px 18px; font-size: 17px; }
 }
 @media (min-width: 900px) {
-  .land { padding-top: 48px; gap: 36px; }
   .land-grid { grid-template-columns: 1fr 1.2fr; align-items: start; }
+}
+@media (min-width: 720px) and (max-width: 1023px) {
+  .stat-strip { grid-template-columns: repeat(4, 1fr); }
 }
 @media (prefers-reduced-motion: reduce) {
   .drift, .bouncy span, .brand img { animation: none !important; }

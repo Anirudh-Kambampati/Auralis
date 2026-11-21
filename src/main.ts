@@ -2061,19 +2061,45 @@ function render(t: number, dt: number) {
     const b = bubbles.get(m.id);
     if (b && b.until > now) {
       const bf = Math.max(12, 3 * scale);
+      const lh = bf * 1.25, padX = bf * 0.6, padY = bf * 0.45, maxW = bf * 13;
       ctx.font = `500 ${bf}px 'Fredoka', system-ui, sans-serif`;
-      const msg = b.text.length > 38 ? `${b.text.slice(0, 37)}…` : b.text;
-      const bw = ctx.measureText(msg).width + bf * 1.2;
-      const by = sy - fs * 1.5 - bf * 0.6;
+      // Wrap at word boundaries to three lines; a word wider than the bubble is broken by character, and
+      // only a message that still doesn't fit gets an ellipsis on its last line.
+      const lines: string[] = [];
+      let line = '';
+      for (const word of b.text.split(/\s+/).filter(Boolean)) {
+        const next = line ? `${line} ${word}` : word;
+        if (ctx.measureText(next).width <= maxW) { line = next; continue; }
+        if (line) { lines.push(line); line = ''; }
+        let rest = word;
+        while (rest && ctx.measureText(rest).width > maxW && lines.length < 4) {
+          let cut = rest.length;
+          while (cut > 1 && ctx.measureText(rest.slice(0, cut)).width > maxW) cut--;
+          lines.push(rest.slice(0, cut));
+          rest = rest.slice(cut);
+        }
+        line = rest;
+        if (lines.length >= 4) break;
+      }
+      if (line && lines.length < 4) lines.push(line);
+      if (lines.length > 3) {
+        lines.length = 3;
+        let last = lines[2].replace(/\s+$/, '');
+        while (last && ctx.measureText(`${last}…`).width > maxW) last = last.slice(0, -1);
+        lines[2] = `${last}…`;
+      }
+      const bw = Math.max(...lines.map((l) => ctx.measureText(l).width)) + padX * 2;
+      const bh = lines.length * lh + padY * 2;
+      const top = sy - fs * 1.5 - bf * 0.15 - bh; // bottom of the bubble sits above the name, so it grows upward
       ctx.beginPath();
-      ctx.roundRect(sx - bw / 2, by - bf * 1.3, bw, bf * 1.7, bf * 0.6);
+      ctx.roundRect(sx - bw / 2, top, bw, bh, bf * 0.6);
       ctx.fillStyle = '#fffaf3';
       ctx.fill();
       ctx.lineWidth = Math.max(2, scale / 2);
       ctx.strokeStyle = '#2b2530';
       ctx.stroke();
       ctx.fillStyle = '#2b2530';
-      ctx.fillText(msg, sx, by);
+      lines.forEach((l, i) => ctx.fillText(l, sx, top + padY + lh * i + bf * 0.78));
     }
   }
 }
@@ -2816,7 +2842,18 @@ panel.addEventListener('click', (e) => {
       if (!isFocusLength(n)) { toast('Pick a multiple of 5 minutes, from 10 to 180.', 'error'); break; }
       b.dataset.v = String(n); // then start it like any other length
     }
-    // falls through
+    // falls through into starting a session, never into the templates below
+    case 'focus': {
+      const len = b.dataset.v!;
+      lastTag = panel.querySelector<HTMLInputElement>('#tag')?.value.trim() ?? '';
+      localStorage.setItem('auralis.tag', lastTag);
+      localStorage.setItem('auralis.length', len);
+      endBreak();
+      if (window.Notification?.permission === 'default') Notification.requestPermission(); // to say when the session ends in a background tab
+      send({ t: 'focus_start', minutes: Number(len), tag: lastTag || 'Study', tz: new Date().getTimezoneOffset() });
+      setPanel(null);
+      break;
+    }
     case 'focustemplate': {
       const template = SESSION_TEMPLATES.find((t) => t.id === v);
       if (!template) break;
@@ -2829,17 +2866,6 @@ panel.addEventListener('click', (e) => {
       // Store template for auto-continue
       localStorage.setItem('auralis.template', v);
       localStorage.setItem('auralis.templateSession', '1');
-      setPanel(null);
-      break;
-    }
-    case 'focus': {
-      const v = b.dataset.v!;
-      lastTag = panel.querySelector<HTMLInputElement>('#tag')?.value.trim() ?? '';
-      localStorage.setItem('auralis.tag', lastTag);
-      localStorage.setItem('auralis.length', v);
-      endBreak();
-      if (window.Notification?.permission === 'default') Notification.requestPermission(); // to say when the session ends in a background tab
-      send({ t: 'focus_start', minutes: Number(v), tag: lastTag || 'Study', tz: new Date().getTimezoneOffset() });
       setPanel(null);
       break;
     }
@@ -4430,22 +4456,56 @@ function showLanding(on: boolean) {
   ui.body.classList.toggle('signed-out', on);
   ui.documentElement.classList.toggle('signed-out', on);
   $('#landing').hidden = !on;
-  if (on) requestAnimationFrame(heroFrame);
+  if (on) {
+    // Reveal before the first frame: a landing opened in a background tab gets no animation frames, and
+    // sections must not wait for one to become visible.
+    revealLanding();
+    requestAnimationFrame(heroFrame);
+    requestAnimationFrame(revealLanding);
+    setTimeout(revealLanding, 400);
+  }
 }
 
 // Erase the account across every table. The password is the proof, and it is asked for here rather than
-// kept anywhere: a stolen token can log out, but only the person can delete the account.
-async function deleteAccount() {
-  const password = prompt('Type your password to delete your account and everything in it. This cannot be undone.');
-  if (!password) return;
-  if (!confirm('Delete your Auralis account for good? Your rooms, chats and study history go with it.')) return;
-  const username = myMember()?.name ?? '';
-  const res = await fetch(`${apiBase}/api/delete`, {
-    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ username, password }),
-  }).catch(() => null);
-  if (!res?.ok) { toast(res ? 'That password was not right.' : 'Could not reach the server. Try again.', 'error'); return; }
-  signOut(false); // the token went with the account: back to the landing page
+// kept anywhere: a stolen token can log out, but only the person can delete the account. It is asked for in
+// a dialog of our own, because prompt() and confirm() are blocked in app shells and embedded browsers —
+// with them, the button did nothing at all.
+function deleteAccount() {
+  const dialog = $<HTMLDialogElement>('#deleteModal');
+  const pass = $<HTMLInputElement>('#deletePass');
+  pass.value = '';
+  $('#deleteNote').hidden = true;
+  $<HTMLButtonElement>('#deleteGo').disabled = false;
+  if (!dialog.open) dialog.showModal();
+  pass.focus();
 }
+
+(() => {
+  const dialog = $<HTMLDialogElement>('#deleteModal');
+  const pass = $<HTMLInputElement>('#deletePass');
+  const note = $('#deleteNote');
+  const go = $<HTMLButtonElement>('#deleteGo');
+  $('#deleteCancel').addEventListener('click', () => dialog.close());
+  $<HTMLFormElement>('#deleteForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const password = pass.value;
+    if (!password) { note.textContent = 'Type your password first.'; note.hidden = false; pass.focus(); return; }
+    const username = myMember()?.name ?? '';
+    go.disabled = true;
+    const res = await fetch(`${apiBase}/api/delete`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ username, password }),
+    }).catch(() => null);
+    go.disabled = false;
+    if (!res?.ok) {
+      note.textContent = res ? 'That password was not right. Nothing was deleted.' : 'Could not reach the server. Try again.';
+      note.hidden = false;
+      pass.select();
+      return;
+    }
+    dialog.close();
+    signOut(false); // the token went with the account: back to the landing page
+  });
+})();
 
 function signOut(tellServer: boolean) {
   stopAllSounds();
@@ -4565,45 +4625,89 @@ async function subscribePush() {
 
 // Sign-up asks for a username and an email; log-in takes either one in the first box. Forgot and reset
 // are reached from the log-in hint and from the link in the mail, not from the sign-up/log-in switch.
-const AUTH_MODES: Record<AuthMode, { title: string; submit: string; user: string; hint: string }> = {
-  signup: { title: 'Move into the house 🏠', submit: 'Create my room', user: 'Username',
+const AUTH_MODES: Record<AuthMode, { kicker: string; title: string; sub: string; submit: string; user: string; hint: string }> = {
+  signup: { kicker: 'new here?', title: 'Move into the house 🏠', sub: 'Pick a name, an email and a password. Your room is built while you watch.',
+    submit: 'Create my room', user: 'Username',
     hint: 'Already studying with us? <button type="button" class="linkish" data-mode="login">Switch to Log in</button>.' },
-  login: { title: 'Welcome back! 👋', submit: 'Log in', user: 'Username or email',
+  login: { kicker: 'welcome back', title: 'Welcome back! 👋', sub: 'Your desk is where you left it. Use your username or the email on the account.',
+    submit: 'Log in', user: 'Username or email',
     hint: 'New here? <button type="button" class="linkish" data-mode="signup">Switch to Sign up</button>. <button type="button" class="linkish" data-mode="forgot">Forgot password?</button>' },
-  forgot: { title: 'Forgot your password? 🔑', submit: 'Email me a link', user: 'Email',
-    hint: 'The address on your account. The link works once, for an hour.' },
-  reset: { title: 'Choose a new password 🔒', submit: 'Save and log in', user: 'Username',
-    hint: 'Pick something new, at least 8 characters.' },
+  forgot: { kicker: 'forgot password', title: 'Forgot your password? 🔑', sub: 'Tell us the address on your account and we will mail a link that works once, for an hour.',
+    submit: 'Email me a link', user: 'Email',
+    hint: 'Nothing changes until you open the link. Your house and streak stay put.' },
+  reset: { kicker: 'new password', title: 'Choose a new password 🔒', sub: 'Set it once more and you are back in your room, streak and all.',
+    submit: 'Save and log in', user: 'Username',
+    hint: 'At least 8 characters. Everything else stays exactly as you left it.' },
 };
 function setAuthMode(mode: AuthMode) {
   authMode = mode;
   const m = AUTH_MODES[mode];
   const fromLink = mode === 'forgot' || mode === 'reset'; // reached from elsewhere, not from the switch
+  // Not `data-mode`: the form's own click handler looks for `[data-mode]` buttons, and a match on the form
+  // itself would cancel every submit.
+  $('#authForm').dataset.authMode = mode; // each screen has its own accent colour
   $('#authSeg').hidden = fromLink;
   ui.querySelectorAll<HTMLButtonElement>('#authSeg [data-mode]').forEach((x) => x.className = x.dataset.mode === mode ? 'on' : 'off');
-  $('#authSubmit').textContent = m.submit;
+  $('#authKicker').textContent = m.kicker;
   $('#authTitle').textContent = m.title;
+  $('#authSub').textContent = m.sub;
+  $('#authSubmit').textContent = m.submit;
   $('#authUserLabel').hidden = fromLink;
   $('#authUserText').textContent = m.user;
   $('#authEmailLabel').hidden = mode !== 'signup' && mode !== 'forgot';
   $('#authPassLabel').hidden = mode === 'forgot';
   $('#authConfirmLabel').hidden = mode !== 'signup' && mode !== 'reset';
   $<HTMLInputElement>('#authPass').autocomplete = mode === 'login' ? 'current-password' : 'new-password';
+  $('#authHint').className = 'auth-hint';
   $('#authHint').innerHTML = m.hint;
   $('#authError').hidden = true;
   $('#authNote').hidden = true; // a notice belongs to the attempt that made it, not to this screen
   // The way back out of forgot/reset is a button of its own: the helper text underneath is where the
   // "we have emailed you" notice used to live, and a way out must not disappear with it.
   $('#authCancel').hidden = !fromLink;
+  renderStrength();
+}
+// A reveal switch and three bars under the password. They only ever hint: passwordProblem is the rule,
+// and the server checks it again.
+function renderStrength() {
+  const box = $('#authStrength');
+  const wanted = authMode === 'signup' || authMode === 'reset';
+  box.hidden = !wanted;
+  if (!wanted) return;
+  const v = $<HTMLInputElement>('#authPass').value;
+  const score = !v ? 0 : v.length < 8 ? 1 : v.length >= 12 && /[^A-Za-z0-9]/.test(v) ? 3 : 2;
+  box.dataset.score = String(score);
+  const short = 8 - v.length;
+  box.querySelector('span')!.textContent = !v ? 'at least 8 characters'
+    : score === 1 ? `${short} more character${short === 1 ? '' : 's'}`
+    : score === 2 ? 'good password' : 'strong password';
 }
 // One listener on the form: the switch and the hints are replaced as the mode changes, so a listener
 // bound to each button would keep pointing at markup that is no longer on the page.
 $('#authForm').addEventListener('click', (e) => {
-  const mode = (e.target as HTMLElement).closest<HTMLElement>('[data-mode]')?.dataset.mode as AuthMode | undefined;
+  const mode = (e.target as HTMLElement).closest<HTMLElement>('button[data-mode]')?.dataset.mode as AuthMode | undefined;
   if (!mode) return;
   e.preventDefault();
   setAuthMode(mode);
 });
+
+// Show what you typed, or put it back to dots. The button keeps its state across modes, so switching to
+// log-in after a sign-up attempt does not leave the password in plain sight.
+$('#authReveal').addEventListener('click', () => {
+  const pass = $<HTMLInputElement>('#authPass');
+  const showing = pass.type === 'text';
+  pass.type = showing ? 'password' : 'text';
+  const btn = $<HTMLButtonElement>('#authReveal');
+  btn.classList.toggle('on', !showing);
+  btn.setAttribute('aria-pressed', String(!showing));
+  const label = showing ? 'Show password' : 'Hide password';
+  btn.setAttribute('aria-label', label);
+  btn.title = label;
+  pass.focus();
+});
+$('#authPass').addEventListener('input', renderStrength);
+$<HTMLInputElement>('#authPass').addEventListener('focus', renderStrength);
+renderStrength(); // the page opens on sign up, so the bars belong there from the start
 
 $('#authForm').addEventListener('submit', async (e) => {
   e.preventDefault();
@@ -4842,6 +4946,30 @@ $('#shuffleBuddy').addEventListener('click', () => {
   buddy.classList.add('pop');
 });
 drawBuddy();
+
+// ---------- landing: one screen per section, and every call to action opens the form ----------
+// Sections rise in as they arrive. `armed` hides them only once the script is running, so a page whose
+// script never loads still reads top to bottom.
+const landSections = Array.from(ui.querySelectorAll<HTMLElement>('#landing .snap'));
+for (const s of landSections) s.classList.add('armed');
+function revealLanding() {
+  if ($('#landing').hidden) return;
+  for (const s of landSections) if (s.getBoundingClientRect().top < innerHeight * 0.85) s.classList.add('in');
+}
+// Viewport root, not the scroller: the landing is a fixed, full-screen scroller, and observing it while it was
+// still hidden left every section armed (invisible) the first time the page was opened.
+const landWatcher = new IntersectionObserver((entries) => {
+  for (const e of entries) if (e.isIntersecting) e.target.classList.add('in');
+}, { threshold: 0.2 });
+for (const s of landSections) landWatcher.observe(s);
+$('#landing').addEventListener('scroll', revealLanding, { passive: true }); // a belt for the observer's braces
+ui.addEventListener('visibilitychange', revealLanding); // back from another tab: whatever is on screen shows
+// "Create your room", "Log in", the nav buttons: all of them land on the card at the bottom, in that mode.
+ui.querySelectorAll<HTMLElement>('#landing [data-goto]').forEach((btn) => btn.addEventListener('click', () => {
+  const mode = btn.dataset.mode as AuthMode | undefined;
+  if (mode) setAuthMode(mode);
+  ui.querySelector<HTMLElement>(btn.dataset.goto!)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}));
 
 // A reset link carries its token in the fragment (`#reset?token=…`). Taking it out of the address bar
 // after reading it keeps it out of history too.
