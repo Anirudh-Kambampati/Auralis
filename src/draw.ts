@@ -1756,22 +1756,6 @@ const DRAW: Record<string, Draw> = {
     r(c, x + 3, Y + 11, 2, 1, '#f7a0a8');
     r(c, x + 11, Y + 11, 2, 1, '#f7a0a8');
   },
-  // The big shark plush at a quarter of its size, for a single tile: the same periwinkle body, white belly band,
-  // pink mouth and one eye, with a tail fin out to the left and a dorsal fin on top so it still reads as a shark.
-  sharkPlushSmall(c, x, y, _t, col = '#86a2d4') {
-    const dark = shade(col, -0.14);
-    box(c, x, y + 5, 3, 2, OUT); box(c, x, y + 9, 3, 3, OUT);
-    r(c, x + 1, y + 5, 2, 2, col); r(c, x + 1, y + 9, 2, 2, dark);
-    box(c, x + 6, y + 2, 1, 3, OUT); box(c, x + 7, y + 1, 1, 4, OUT); box(c, x + 8, y + 3, 1, 2, OUT);
-    r(c, x + 7, y + 2, 1, 3, col); r(c, x + 8, y + 4, 1, 1, dark);
-    box(c, x + 4, y + 4, 9, 4, OUT); box(c, x + 2, y + 6, 13, 6, OUT); box(c, x + 5, y + 10, 8, 4, OUT);
-    box(c, x + 5, y + 5, 7, 2, col); box(c, x + 3, y + 7, 11, 4, col); box(c, x + 6, y + 11, 6, 2, col);
-    box(c, x + 6, y + 9, 5, 2, '#fff8f0');
-    r(c, x + 12, y + 9, 2, 1, '#d01868');
-    r(c, x + 11, y + 6, 2, 2, '#2b2530'); r(c, x + 11, y + 6, 1, 1, '#ffffff');
-    r(c, x + 9, y + 7, 1, 3, dark);
-    r(c, x + 5, y + 12, 3, 1, dark);
-  },
   mirror(c, x, y, t, col = '#d9a06a') {
     const Y = y - 14;
     box(c, x + 3, Y, 10, 28, col);
@@ -3520,8 +3504,32 @@ const SHARK_ROWS = [
   '................................................................',
 ];
 const SHARK_PAL: Record<string, string> = { o: '#6a5a98', b: '#86a2d4', v: '#7a78b8', u: '#7262a6', w: '#ffffff', r: '#d01868' };
+// The same shark at half size, for a single tile: SHARK_ROWS sampled every other pixel, so the small one is the big
+// one shrunk rather than a second drawing — same silhouette, tail, dorsal fin, belly band and pink mouth (32x22).
+const SHARK_SMALL_ROWS = [
+  '................oo..............',
+  '...............ovvo.............',
+  '...............obbvo............',
+  '.oooo.........ovbbbvo...........',
+  'ouuuuo........obbbbbvo..........',
+  '.ouuuuo.......obbbbbbvo.........',
+  '..ouuuuo......obbbbbbbvo........',
+  '...ouuuuo....ovbbbbbbbbvo.......',
+  '....ouuuuo.ooobbbbbbbbbbvooo....',
+  '.....ouuuuovvvbbbbbbbbbbbvvvo...',
+  '......ouuuvbbbbbbbbbbbbbbbbbvoo.',
+  '.......oubbbbbbbvbvbbbbbbvbbbvvo',
+  '.......oubbbbbbbvbvbbbbbbvbbbbbv',
+  '......ouuubbbbbbbbbwwwwwwwwwwwwo',
+  '.....ouuuuobbbbbbbbwwwwwwwrrroo.',
+  '....ouuuuo.obbbbbbbwwobbooooo...',
+  '...ouuuoo..obbbboooooobbo.......',
+  '..ouuuo....obbbo......oo........',
+  '...ooo......ooo.................',
+];
 const HD: Record<string, HdDraw> = {
   sharkPlush(c) { pix(c, 0, -12, SHARK_ROWS, SHARK_PAL); },
+  sharkPlushSmall(c) { pix(c, 0, 4, SHARK_SMALL_ROWS, SHARK_PAL); },
   desk(c, t, col = '#d9a06a', bare = 0) {
     const Y = -6, leg = shade(col, -0.2);
     for (const lx of [2, 26]) { B(c, lx, Y + 14, 4, 8, leg); R(c, lx + 1, Y + 15, 0.5, 6, shade(leg, 0.12)); }

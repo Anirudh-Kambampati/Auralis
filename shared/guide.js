@@ -48,7 +48,7 @@ export const GUIDE_SECTIONS = [
   {
     id: 'claw',
     title: 'The claw machine',
-    blurb: 'Five coins a play, then half an hour before you can play again. Anyone in the house can play, and each of them waits on their own clock. It drops one of 25 catalog prizes: mostly small trinkets, rarely a giant teddy.',
+    blurb: 'Five coins a play, then half an hour before you can play again. Anyone in the house can play, and each of them waits on their own clock. It drops one of 26 catalog prizes: mostly small trinkets, rarely a giant teddy.',
     items: [
       { item: 'clawMachine', text: 'Click to play. Five coins, one prize, then a thirty-minute wait for you. A housemate can play it too, and their wait is their own.' },
     ],
@@ -62,7 +62,7 @@ export const GUIDE_SECTIONS = [
       { item: 'easel', text: 'Free, twenty-minute wait, and one random piece: photo frames, vase, sculpture or bust.' },
       { item: 'loom', text: 'Free, twenty-minute wait, and one random rug: round, oval or runner.' },
       { item: 'craftTable', text: 'Free, twenty-minute wait, and one random piece: candles, photo frames or a snow globe.' },
-      { item: 'sewingTable', text: 'Free, twenty-minute wait, and one random plush: plush bear, giant teddy or big shark.' },
+      { item: 'sewingTable', text: 'Free, twenty-minute wait, and one random plush: plush bear, giant teddy, big shark or small shark.' },
     ],
   },
   {

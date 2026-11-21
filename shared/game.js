@@ -418,11 +418,11 @@ export const CLAW_PRIZES = [
   // small trinkets: the usual haul
   { item: 'candyBowl', weight: 7 },
   { item: 'giftBox', weight: 7 },
-  { item: 'snowGlobe', weight: 8 },
+  { item: 'snowGlobe', weight: 7 },
   { item: 'photoFrames', weight: 7 },
   { item: 'candles', weight: 6 },
   { item: 'hourglass', weight: 6 },
-  { item: 'fairyJar', weight: 7 },
+  { item: 'fairyJar', weight: 6 },
   { item: 'jewelryBox', weight: 6 },
   { item: 'diya', weight: 5 },
   { item: 'lotusLamp', weight: 5 },
@@ -441,6 +441,7 @@ export const CLAW_PRIZES = [
   { item: 'reindeer', weight: 1 },
   { item: 'discoBall', weight: 1 },
   { item: 'sharkPlush', weight: 1 },
+  { item: 'sharkPlushSmall', weight: 2 },
   { item: 'bigTeddy', weight: 1 },
 ];
 export const CLAW_COST = 5;
@@ -480,7 +481,7 @@ export const CRAFT = {
   easel: ['photoFrames', 'vase', 'sculpture', 'bust'],
   loom: ['rug', 'roundRug', 'ovalRug', 'runnerRug'],
   craftTable: ['candles', 'photoFrames', 'snowGlobe'],
-  sewingTable: ['plush', 'bigTeddy', 'sharkPlush'],
+  sewingTable: ['plush', 'bigTeddy', 'sharkPlush', 'sharkPlushSmall'],
 };
 export const CRAFT_COOLDOWN_MS = 20 * 60_000;
 // A random piece from this piece's own pool, uniform across every object in it. Null when the thing you clicked
