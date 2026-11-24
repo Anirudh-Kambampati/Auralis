@@ -176,7 +176,7 @@ let zoom = Math.max(DEEPEST_OUT, Math.min(2, savedZoom !== null ? Number(savedZo
 // Set by the render loop: the lowest zoom step that still shows the whole house. Until the first frame the saved zoom
 // is not limited.
 let outLimit = DEEPEST_OUT;
-let cam: { x: number; y: number; scale: number } | null = null; // camera target in art pixels, eased
+let cam: { x: number; y: number; scale: number; z: number } | null = null; // camera target in art pixels, eased
 let camRoom = 0;
 
 // ---------- network ----------
@@ -1563,17 +1563,18 @@ function render(t: number, dt: number) {
   }
   const scale = Math.min(MAX_SCALE, Math.max(1, base + zoom * AV));
   const vw = aw / scale, vh = ah / scale;
-  // Centre the whole room when it fits on screen; otherwise follow the player. Decorate is the exception: it always
+  // Centre the whole room when it fits on screen and we are not zoomed in; otherwise follow the player.
+  // Zooming in always centres the camera on my character avatar. Decorate is the exception: it always
   // centres the room it is decorating, even zoomed in past fitting, instead of following me out of it.
   const decorating = openPanel === 'decorate' && mySlot() >= 0;
   const fits = roomW <= vw && roomH <= vh;
   // When following the player, stop at the house edges so the view never shows empty paper beyond them.
   const follow = (p: number, view: number, size: number) => (size + T <= view ? size / 2 : Math.max(view / 2 - T / 2, Math.min(size - view / 2 + T / 2, p)));
-  const centred = fits || decorating;
+  const centred = decorating || ((zoom <= 0) && fits);
   const bx = centred ? (o.x - 1) * T + roomW / 2 : me_.x * T + 8, by = centred ? (o.y - WALL_H) * T + roomH / 2 : me_.y * T + 8;
   const tx = follow(bx + camPan.x, vw, grid.w * T), ty = follow(by + camPan.y, vh, grid.h * T);
   camPan.x = tx - bx; camPan.y = ty - by; // dragging past the edge of the house doesn't pile up
-  if (!cam || cam.scale !== scale) cam = { x: tx, y: ty, scale };
+  if (!cam || cam.scale !== scale || cam.z !== zoom) cam = { x: tx, y: ty, scale, z: zoom };
   const ease = pan?.moved ? 1 : 1 - Math.exp(-dt * 8); // glide when moving to another room (same pace at any frame rate); stick to the finger while dragging
   cam.x += (tx - cam.x) * ease;
   cam.y += (ty - cam.y) * ease;
