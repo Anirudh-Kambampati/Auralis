@@ -37,7 +37,7 @@ type Focus = { minutes: number; endsAt: number; tag?: string; pausedAt?: number 
 type Session = { at: number; minutes: number; tag: string; early?: boolean };
 type Inbox = { kind: string; from?: string; by?: string; text: string; at: number; n?: number };
 type Friend = { id: string; name: string; look: Look; online: boolean; focus: boolean; status: 'friend' | 'incoming' | 'outgoing'; here?: boolean; visit?: boolean; asked?: boolean; presence?: Presence };
-type Me = { id: string; home?: string; visited?: { code: string; ownerName: string | null; online: number }[]; banned?: { id: string; name: string }[]; coins: number; discount?: boolean; notes?: { id: number; from: string; text: string; at: number; seen?: boolean }[]; sentNotes?: { id: number; toName: string; text: string; at: number }[]; scratch?: { id: number; text: string; at: number; editedAt?: number }[]; inbox?: Inbox[]; inboxSeen?: number; tipsSeen?: string[]; events?: CalEvent[]; pushKey?: string; notify?: Record<string, boolean>; groups?: Record<string, { name: string; members: string[]; msgs: Chat[] }>; friends?: Friend[]; inventory: Record<string, number>; crafted?: { item: string; col: string }[]; sessions: Session[]; subjects: string[]; hiddenSubjects: string[]; todos: Todo[]; dm: Record<string, Chat[]>; petAccs?: string[]; watch?: Watch | null };
+type Me = { id: string; home?: string; threadSeen?: Record<string, number>; visited?: { code: string; ownerName: string | null; online: number }[]; banned?: { id: string; name: string }[]; coins: number; discount?: boolean; notes?: { id: number; from: string; text: string; at: number; seen?: boolean }[]; sentNotes?: { id: number; toName: string; text: string; at: number }[]; scratch?: { id: number; text: string; at: number; editedAt?: number }[]; inbox?: Inbox[]; inboxSeen?: number; tipsSeen?: string[]; events?: CalEvent[]; pushKey?: string; notify?: Record<string, boolean>; groups?: Record<string, { name: string; members: string[]; msgs: Chat[] }>; friends?: Friend[]; inventory: Record<string, number>; crafted?: { item: string; col: string }[]; sessions: Session[]; subjects: string[]; hiddenSubjects: string[]; todos: Todo[]; dm: Record<string, Chat[]>; petAccs?: string[]; watch?: Watch | null };
 type Board = { metric?: string; scope: string; period: string; rows: { name: string; me: boolean; minutes?: number; coins?: number; members?: number }[] };
 type Avatar = { x: number; y: number; tx: number; ty: number; up: boolean; dist: number; use?: string };
 type ItemKey = keyof typeof ITEMS;
@@ -156,7 +156,6 @@ function micNearTile(x: number, y: number) {
 const avatars = new Map<string, Avatar>();
 const bubbles = new Map<string, { text: string; until: number }>();
 let lastChatId = -1;
-let unread = false;
 let path: { x: number; y: number }[] = [];
 let openPanel: string | null = null;
 let guideOpen: string | null = null; // which Guide card is expanded, or null
@@ -234,6 +233,9 @@ function retryNow() {
 }
 addEventListener('online', retryNow);
 document.addEventListener('visibilitychange', () => { if (!document.hidden) retryNow(); });
+// A line that landed while the tab was hidden still counts for the title, but the thread it belongs to is on
+// screen the moment you return, so it is read then.
+document.addEventListener('visibilitychange', () => { if (!document.hidden && viewing(dmPeer)) markThreadRead(dmPeer); });
 
 // Everything made while the socket was down, once the server has met us again.
 function flushOutbox() {
@@ -293,6 +295,7 @@ function onMessage(m: any) {
     // Initialize house chat read position from server
     const houseThread = `h:${houseCode}`;
     lastChatId = (m.me.threadSeen ?? {})[houseThread] ?? -1;
+    threadSeen = { ...(m.me.threadSeen ?? {}) }; // where every thread stands on the server, for what a fresh load missed
     // A mute I just changed is the truth for the rest of the session: state messages that were already in
     // flight when I clicked still carry the old value, and would flip the bell back.
     const myMutes = new Map([...mutedThreads].filter(([thread]) => muteChosen.has(thread)));
@@ -314,7 +317,7 @@ function onMessage(m: any) {
       notify(chime);
       for (const o of started) {
         toast(`📚 <b>${esc(o.name)}</b> started studying <b>${esc(o.focus!.tag ?? 'Study')}</b>. Open Focus to join in!`, 'reward');
-        sysNotify('study', '📚 Study time', `${o.name} started studying ${o.focus!.tag ?? 'Study'}`);
+        sysNotify('study', '📚 Study time', `${o.name} started studying ${o.focus!.tag ?? 'Study'}`, 'focus');
       }
     }
     for (const o of members) { // pets greet owners who just came online, and do a happy spin when a session ends
@@ -469,6 +472,7 @@ function onMessage(m: any) {
     renderHud();
     renderSide();
     if (openPanel && !isSide(openPanel)) renderPanel();
+    if (pendingOpen) openFromNotification(pendingOpen); // a notification that arrived before the house was ready
   } else if (m.t === 'pos') {
     const a = avatars.get(m.id);
     if (a) { a.tx = m.x; a.ty = m.y; a.use = m.use; }
@@ -509,7 +513,7 @@ function onMessage(m: any) {
   } else if (m.t === 'remind') { // a to-do I'm on just came due (missed: it came due while I was away)
     notify(chime);
     toast(`⏰ ${m.missed ? 'While you were away' : 'Reminder'}: <b>${esc(m.text)}</b>`, 'reward', { ms: 12_000, onClick: () => setPanel('todos') });
-    if (!m.missed) sysNotify('todo', 'Auralis reminder', m.text);
+    if (!m.missed) sysNotify('todo', 'Auralis reminder', m.text, 'todos');
   } else if (m.t === 'pat') {
     patAt.set(`${m.owner}:${m.slot}`, Date.now());
     petNameAt.set(`${m.owner}:${m.slot}`, Date.now() + 6000); // fussing over a pet shows its name for a moment
@@ -546,7 +550,7 @@ function onMessage(m: any) {
     notify(chime);
     if (!m.text) {
       finishedSession = true; // a focus session paid out
-      sysNotify('focus', 'Auralis', `Session complete! +${m.coins} coins`);
+      sysNotify('focus', 'Auralis', `Session complete! +${m.coins} coins`, 'stats');
     }
     if (m.text) toast(esc(m.text), 'reward');
     else toast(`Session complete! +${m.coins} ${coin()}${m.buddies ? ` (×${buddyMultiplier(m.buddies)} for studying together!)` : ''}${streakBonus(m.streak) ? ` 🔥 ${m.streak}-day streak +${streakBonus(m.streak) * 100}%` : ''}${m.cheerBonus ? ` 👏 Cheers +${m.cheerBonus}` : ''}`, 'reward');
@@ -613,10 +617,10 @@ function receiveChat(list: Chat[]) {
         if (!muted) {
           if (chatHidden()) pingOrHold();
           countUnseen();
-          if (!viewing(null)) { houseUnread++; unread = true; sysNotify('house', `${c.by} · house chat`, c.img ? attachLabel(c.img) : c.text); }
+          if (!viewing(null)) { houseUnread++; sysNotify('house', `${c.by} · house chat`, c.img ? attachLabel(c.img) : c.text, 'house'); }
           noteUnreadChat();
         } else if (!viewing(null)) {
-          houseUnread++; unread = true; noteUnreadChat(); // silent: show unread badge but no sound/notification
+          houseUnread++; noteUnreadChat(); // silent: show unread badge but no sound/notification
         }
       }
     }
@@ -685,6 +689,8 @@ addEventListener('beforeinstallprompt', (e) => {
 addEventListener('appinstalled', () => toast('📲 Auralis is on your home screen!', 'reward'));
 // Only the built site has the service worker (it serves an offline page); in development it would cache stale pages.
 if ('serviceWorker' in navigator && import.meta.env.PROD) navigator.serviceWorker.register('/sw.js').catch(() => {});
+// A tapped push while Auralis is already open: the service worker says which place the notification was about.
+navigator.serviceWorker?.addEventListener('message', (e) => { if (e.data?.t === 'open') openFromNotification(e.data.open); });
 
 // Notification sounds (rewards, new messages), on unless turned off in the You panel.
 let chimes = localStorage.getItem('auralis.chimes') !== 'off';
@@ -2204,6 +2210,20 @@ function renderHud() {
   tickTimers();
 }
 
+// The chat button carries the number of unread lines, not just a dot: every thread, house chat included. Painted
+// on every side re-render too, so a message shows its count even in a tab whose timers are throttled.
+function paintChatBadge() {
+  const n = houseUnread + Object.values(dmUnread).reduce((a, b) => a + b, 0);
+  const badge = !n ? '' : n > 99 ? '99+' : String(n);
+  const el = $<HTMLElement>('#chatCount');
+  if (el.textContent !== badge) el.textContent = badge;
+  el.hidden = !n;
+  const btn = ui.querySelector<HTMLButtonElement>('#dock [data-panel="chat"]')!;
+  const label = n ? `Chat (${n} unread)` : 'Chat';
+  if (btn.ariaLabel !== label) btn.ariaLabel = btn.title = label;
+  if (!n) $('#fold-chat').classList.remove('dot'); // read elsewhere: the folded card's dot goes too
+}
+
 // Timers update in place so open panels (and a half-pressed give-up button) are not re-rendered.
 // While focusing, the focus deck replaces the dock until the player switches to room view.
 let deckHidden = false;
@@ -2228,8 +2248,7 @@ function tickTimers() {
   $('#focusChip').hidden = !f || showDeck;
   $('#deck').hidden = !showDeck;
   $('#dock').hidden = showDeck;
-  ui.querySelector('#dock [data-panel="chat"]')?.classList.toggle('unread', unread);
-  if (!unread) $('#fold-chat').classList.remove('dot'); // read elsewhere: the folded card's dot goes too
+  paintChatBadge();
   if (!f) return;
   const left = fmt(focusEnd(f) - Date.now());
   $('#timer').textContent = `${f.pausedAt ? '⏸' : '📖'} ${left}`;
@@ -3363,12 +3382,15 @@ function setPanel(name: string | null) {
   openPanel = name;
   placing = null;
   moving = null;
+  // The chat card opens on the list of conversations, never on the last thread: settle that before anything can
+  // read `viewing()` during this switch, or opening the list would mark the old thread read.
+  if (name === 'chat') chatOpen = false;
   ui.querySelectorAll<HTMLButtonElement>('#dock button').forEach((x) => x.classList.toggle('on', x.dataset.panel === name));
   $<HTMLButtonElement>('#help').classList.toggle('on', name === 'guide');
   ui.body.classList.toggle('side-open', isSide(name));
   ui.body.dataset.side = isSide(name) ? name : '';
   if (isSide(name) && folds[name]) toggleFold(name);
-  if (name === 'chat') { chatOpen = false; renderSide(); } // opens on the list of conversations
+  if (name === 'chat') renderSide(); // the list of conversations
   renderPanel();
   ui.body.classList.toggle('panel-open', !panel.hidden);
   tickTimers(); // opening a panel swaps the focus deck for the HUD timer, and closing it brings it back
@@ -3420,6 +3442,7 @@ function todoHTML(list: Todo[]) {
 // Private threads: unread counts per housemate, and the highest message id seen.
 const dmUnread: Record<string, number> = {};
 const dmSeen: Record<string, number> = {};
+let threadSeen: Record<string, number> = {}; // the server's read positions, so a reload keeps what was unread
 let dmReady = false;
 
 // Mute threads: thread -> until (0 = forever, timestamp = temporary)
@@ -3458,27 +3481,25 @@ function noteNewDms() {
   for (const [peer, list] of threads) {
     const last = list[list.length - 1];
     if (!last) continue;
-    // A brand new thread after the first load is genuinely new, so count it.
-    const seen = dmSeen[peer] ?? (dmReady ? 0 : last.id);
+    // A brand new thread after the first load is genuinely new, so count it; on a fresh load the server's read
+    // positions say what was already seen.
+    const seen = dmSeen[peer] ?? (dmReady ? 0 : threadSeen[peer] ?? last.id);
     // Remember where every thread stands, even when there is nothing new in it: otherwise the next
     // state would read a thread we already know as unseen and ping once more for old messages.
     dmSeen[peer] = last.id;
-    // On screen means read: tell the server, which keeps it on the conversation list and relays it.
-    if (viewing(peer)) markRead(peer, last.id);
+    const onScreen = viewing(peer);
+    if (onScreen) markRead(peer, last.id); // on screen means read: tell the server, which keeps it and relays it
     if (last.id <= seen) continue;
     const fresh = list.filter((c) => c.id > seen && c.from !== myId).length;
-    // Unread unless that thread is open on screen right now.
-    const onScreen = viewing(peer);
-    if (dmReady) {
-      const muted = isMuted(threadKey(peer));
-      if (!muted) countUnseen(fresh);
-      if (fresh && !onScreen) {
-        if (!muted) { pingOrHold(); const g = groupOf(peer), name = g?.name ?? person(peer)?.name ?? 'New message'; sysNotify('dm', name, `${g ? `${last.by}: ` : ''}${last.img ? attachLabel(last.img) : last.text}`); }
-        dmUnread[peer] = (dmUnread[peer] ?? 0) + fresh;
-        unread = true;
-        noteUnreadChat();
-      }
-    }
+    if (!fresh || onScreen) continue;
+    dmUnread[peer] = (dmUnread[peer] ?? 0) + fresh;
+    noteUnreadChat();
+    if (!dmReady) continue; // a fresh load shows what was missed, quietly: no ping, sound, title count or notification
+    if (isMuted(threadKey(peer))) continue;
+    countUnseen(fresh);
+    pingOrHold();
+    const g = groupOf(peer), name = g?.name ?? person(peer)?.name ?? 'New message';
+    sysNotify('dm', name, `${g ? `${last.by}: ` : ''}${last.img ? attachLabel(last.img) : last.text}`, `dm:${peer}`);
   }
   dmReady = true;
 }
@@ -3752,16 +3773,24 @@ function setReply(c: Chat) {
   renderSide();
   $<HTMLTextAreaElement>('#chatInput').focus();
 }
-const syncUnread = () => { unread = houseUnread > 0 || Object.values(dmUnread).some(Boolean); tickTimers(); };
-// Is this thread (null = the house) on screen right now?
+// Is this thread (null = the house) on screen right now? `chatOpen` is the thread view, and the side has to be
+// showing the chat card; a hidden tab is nobody's screen.
 const viewing = (peer: string | null) => chatOpen && dmPeer === peer && ui.body.dataset.side === 'chat' && !ui.hidden;
+// This thread is read: clear its count, tell the server (so a reload does not bring the badge back) and settle the
+// dock. Opening a thread, and coming back to a tab that already had it open, both go through here.
+function markThreadRead(peer: string | null) {
+  const last = threadMsgs(peer).slice(-1)[0];
+  if (last) markRead(peer, last.id);
+  if (!(peer ? dmUnread[peer] : houseUnread)) return; // already clear: nothing to repaint
+  if (peer) dmUnread[peer] = 0; else houseUnread = 0;
+  paintChatBadge();
+}
 function openThread(peer: string | null) {
   stage(null); // an attachment waiting in one conversation must never go out in another
   replyTo = null; // a reply belongs to one thread
   dmPeer = peer;
   chatOpen = true;
-  if (peer) dmUnread[peer] = 0; else houseUnread = 0;
-  syncUnread();
+  markThreadRead(peer);
   renderSide();
   scrollChat();
 }
@@ -3866,9 +3895,8 @@ function syncChatList() {
     // Start typing indicator tracking for this thread
     typingThread = { thread, users: new Map() };
     sendTyping(thread, false); // signal we're viewing
-    // Mark thread as read
-    const msgs = threadMsgs(dmPeer);
-    if (msgs.length) markRead(dmPeer, msgs[msgs.length - 1].id);
+    // On screen means read: clear the count and tell the server, which keeps it and relays it.
+    if (viewing(dmPeer)) markThreadRead(dmPeer);
     return;
   }
   const lastAt = (l: Chat[]) => l[l.length - 1]?.at ?? 0;
@@ -3913,6 +3941,7 @@ let todoSig = '', chatSig = '', noteSig = '';
 // whenever a note arrives or its "2m ago" ages: a rebuild must not eat the first tap.
 let clearArmed: 'in' | 'out' | null = null, clearArmTimer = 0;
 function renderSide() {
+  paintChatBadge(); // before the rows: the dock's count is what changed, and the card is rebuilt only when it has to
   chromeDirty();
   const list: Todo[] = [...todos, ...(me.todos ?? []).map((t) => ({ ...t, mine: true }))];
   const tSig = `${myId}|${Math.floor(Date.now() / 60_000)}|${members.map((m) => `${m.id}${m.name}`).join()}|` // the minute: so "overdue" turns on
@@ -3999,7 +4028,6 @@ function renderSide() {
     rep.hidden = true;
     q.innerHTML = '';
   }
-  if (viewing(dmPeer)) { if (dmPeer) dmUnread[dmPeer] = 0; else houseUnread = 0; }
 }
 // ---------- notes: my own notebook, notes from housemates, and the ones I left ----------
 function noteHTML() {
@@ -4832,8 +4860,29 @@ bellMenu.addEventListener('click', (e) => {
 });
 
 // A system notification while Auralis is in a background tab, if I want that kind (chosen in the sound menu).
-function sysNotify(kind: keyof typeof NOTIFY, title: string, body: string) {
-  if (document.hidden && window.Notification?.permission === 'granted' && wantsNotify(me.notify, kind)) new Notification(title, { body, icon: '/icon-192.png', tag: kind });
+// Tapping it brings the tab forward and opens what it is about, so a notification is a door rather than a label.
+function sysNotify(kind: keyof typeof NOTIFY, title: string, body: string, open?: string) {
+  if (!document.hidden || window.Notification?.permission !== 'granted' || !wantsNotify(me.notify, kind)) return;
+  const n = new Notification(title, { body, icon: '/icon-192.png', tag: kind });
+  n.onclick = () => { window.focus(); n.close(); if (open) openFromNotification(open); };
+}
+// Where a notification points, held until the house has loaded: a push can open the app before the first `state`.
+let pendingOpen: string | null = null;
+// The targets are a short, closed list — `dm:<peer>` (a person, or `g:<group>` for a group thread), `house`,
+// `todos`, `focus`, `stats`, `bell` — never a URL, so nothing in a payload can steer the app somewhere it has no
+// business going. Anything else only brings the app forward.
+function openFromNotification(spec: unknown) {
+  if (typeof spec !== 'string' || !spec || spec.length > 80) return;
+  const at = spec.indexOf(':'), what = at < 0 ? spec : spec.slice(0, at), id = at < 0 ? '' : spec.slice(at + 1);
+  if (what === 'dm' && !/^[A-Za-z0-9_:-]{1,64}$/.test(id)) return;
+  if (!myMember()) { pendingOpen = spec; return; }
+  pendingOpen = null;
+  if (what === 'dm') { openSide('chat', '#chatInput'); openThread(id); }
+  else if (what === 'house') openSide('chat', '#chatInput');
+  else if (what === 'todos') setPanel('todos');
+  else if (what === 'focus') setPanel('focus');
+  else if (what === 'stats') setPanel('stats');
+  else if (what === 'bell') toggleBell(true);
 }
 // The "Notify me about" switches, and whether this browser can show notifications at all.
 function renderNotifyPrefs() {
@@ -5215,6 +5264,14 @@ ui.querySelectorAll<HTMLElement>('#landing [data-goto]').forEach((btn) => btn.ad
   if (mode) setAuthMode(mode);
   ui.querySelector<HTMLElement>(btn.dataset.goto!)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }));
+
+// A push tapped while Auralis was closed opens the app with `?open=…`. Read the target, then take it out of the
+// address bar and of history like the reset link does; it is applied once the house arrives.
+const pushOpen = new URLSearchParams(location.search).get('open');
+if (pushOpen) {
+  pendingOpen = pushOpen;
+  history.replaceState(null, '', `${location.pathname}${location.hash}`);
+}
 
 // A reset link carries its token in the fragment (`#reset?token=…`). Taking it out of the address bar
 // after reading it keeps it out of history too.

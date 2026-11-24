@@ -887,7 +887,7 @@ setInterval(() => {
       if (sockets.has(id)) { send(sockets.get(id), { t: 'remind', text: t.text, by: t.by }); continue; }
       // Away: a push notification now, and the reminder waits for them in the app next time they log in.
       q.missed = [...(q.missed ?? []), { text: t.text, by: t.by }].slice(-10);
-      push(q, { title: '⏰ Auralis reminder', body: t.text, tag: `todo-${t.id}` }, 'todo');
+      push(q, { title: '⏰ Auralis reminder', body: t.text, tag: `todo-${t.id}`, open: 'todos' }, 'todo');
     }
   }
   if (changed) save();

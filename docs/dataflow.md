@@ -77,6 +77,10 @@ That is a **full** state: the first one a player sees for a house (connect, join
 - `me` is private and only goes to its owner. That includes `crafted`, `ready` and `tipsSeen`: what you made by hand, which waits are yours, and which Guide nudges you have had. A wait never rides in `publicPlayer`, because it belongs to a person rather than to a piece.
 - `house.watch` is the active house-wide watch party (or `null`). `me.watch` is the active private watch party for that player (DM or group, or `null`), so users can watch together even when they are in different houses. The client prefers `me.watch` when both are present. Private/group watch state is not saved; a restarted server ends watch parties.
 
+## Pushes to a device
+
+`{ title, body, tag, open }` goes through `web-push` to each subscription of a player who has no socket open — never for a muted thread, and only for a kind they want (`notify_prefs`). `tag` groups repeats in the system tray (one per sender, per group thread, per to-do or announcement). `open` names where the notification points — `dm:<peer>` (`g:<group>` for a group thread), `house`, `todos` or `bell` — and the service worker hands it to the running app as `{t:'open', open}`, or opens `/?open=…` when no window is running. The app only knows that short list and ignores anything else.
+
 ## The Guide's tour
 
 The Guide's words live in `shared/guide.js`, which both sides import. `GUIDE_SECTIONS` is the panel's content, `GUIDE_TIPS` is one line per item worth a step, `GUIDE_START` is the opening card, and `tourSteps` / `unseenTips` build the tour from what a player actually owns.

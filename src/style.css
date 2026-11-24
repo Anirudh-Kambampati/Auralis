@@ -607,16 +607,20 @@ li.done .check { background: #6fcf8a; color: #fff; }
   #chatLog .quote .qt { font-weight: 400; }
 #chatLog b { display: block; font-size: 12px; color: var(--muted); }
 #chatLog .chat-img { display: block; max-width: 100%; max-height: 200px; margin-top: 4px; border: 2px solid var(--ink); border-radius: 8px; cursor: zoom-in; }
-#dock button.unread::after {
-  content: '';
+/* Unread messages on the chat button: a count, like the bell's, rather than a bare dot. */
+#chatCount {
   position: absolute;
-  top: -4px;
-  right: -4px;
-  width: 14px;
-  height: 14px;
+  top: -6px;
+  right: -8px;
+  min-width: 20px;
+  padding: 0 4px;
+  font-size: 11px;
+  line-height: 16px;
+  text-align: center;
+  color: #fff;
   background: var(--coral);
-  border: 3px solid var(--ink);
-  border-radius: 50%;
+  border: 2px solid var(--ink);
+  border-radius: 999px;
 }
 #dock button { position: relative; }
 

@@ -136,7 +136,7 @@ export const chat = {
       pushTail(thread, msg);
       noteThread(thread, msg, [p.id, to.id]);
       announce(send, db, sockets, thread, msg);
-      if (!sockets.has(to.id) && !threadMuted(to, p.id)) push(to, { title: p.name, body: text || attachLabel(img), tag: `dm-${p.id}` }, 'dm');
+      if (!sockets.has(to.id) && !threadMuted(to, p.id)) push(to, { title: p.name, body: text || attachLabel(img), tag: `dm-${p.id}`, open: `dm:${p.id}` }, 'dm');
       save();
       return;
   },
@@ -173,7 +173,7 @@ export const chat = {
         friends.set(key, row);
         store.setFriend(row);
         if (!f) inbox(q, 'friend', p, 'wants to be friends');
-        if (!f && !sockets.has(q.id)) push(q, { title: 'Friend request', body: `${p.name} wants to be friends`, tag: `friend-${p.id}` }, 'dm');
+        if (!f && !sockets.has(q.id)) push(q, { title: 'Friend request', body: `${p.name} wants to be friends`, tag: `friend-${p.id}`, open: 'bell' }, 'dm');
         refresh(p.id, q.id);
       }).catch((err) => console.error('friend request failed', err));
       return;
@@ -195,7 +195,7 @@ export const chat = {
       if (!q || !isFriend(p.id, q.id) || !q.house || q.house === p.house) return;
       visitAsks.add(`${q.id}|${p.id}`);
       inbox(q, 'visit', p, 'wants to visit your house');
-      if (!sockets.has(q.id)) push(q, { title: 'Visit request', body: `${p.name} wants to visit your house`, tag: `visit-${p.id}` }, 'dm');
+      if (!sockets.has(q.id)) push(q, { title: 'Visit request', body: `${p.name} wants to visit your house`, tag: `visit-${p.id}`, open: 'bell' }, 'dm');
       refresh(p.id, q.id);
       return;
   },
@@ -261,7 +261,7 @@ export const chat = {
       for (const id of g.members) {
         const q = db.players[id];
         if (!q) continue;
-        if (id !== p.id && !sockets.has(id) && !threadMuted(q, thread)) push(q, { title: g.name, body: `${p.name}: ${text || attachLabel(img)}`, tag: `g-${m.g}` }, 'dm');
+        if (id !== p.id && !sockets.has(id) && !threadMuted(q, thread)) push(q, { title: g.name, body: `${p.name}: ${text || attachLabel(img)}`, tag: `g-${m.g}`, open: `dm:g:${m.g}` }, 'dm');
       }
       announce(send, db, sockets, thread, msg); // reaches members in other houses without their snapshots
       save();
@@ -310,7 +310,7 @@ export const chat = {
             if (mentionedNames.includes(player.name.toLowerCase())) {
               mentionedIds.add(id);
               inbox(player, 'chat', p, `mentioned you in house chat`);
-              if (!sockets.has(id) && !threadMuted(player, thread)) push(player, { title: `💬 @${p.name} mentioned you`, body: text || attachLabel(img), tag: `house-${h.code}` }, 'chat');
+              if (!sockets.has(id) && !threadMuted(player, thread)) push(player, { title: `💬 @${p.name} mentioned you`, body: text || attachLabel(img), tag: `house-${h.code}`, open: 'house' }, 'house');
             }
           }
         }
@@ -346,7 +346,7 @@ export const chat = {
         store.addMessage(thread, msg);
         pushTail(thread, msg);
         noteThread(thread, msg, [p.id, to.id]);
-        if (!sockets.has(to.id)) push(to, { title: `${p.name} - watch party`, body: 'started a watch party with you', tag: `dm-watch-${p.id}` }, 'dm');
+        if (!sockets.has(to.id)) push(to, { title: `${p.name} - watch party`, body: 'started a watch party with you', tag: `dm-watch-${p.id}`, open: `dm:${p.id}` }, 'dm');
         save();
         refresh(p.id, to.id);
         return;

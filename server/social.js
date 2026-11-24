@@ -240,7 +240,7 @@ export const social = {
             if (id !== p.id) {
               const member = db.players[id];
               inbox(member, 'announcement', p, `posted an announcement`);
-              if (!sockets.has(id)) push(member, { title: `📢 ${h.name} announcement`, body: `${p.name}: ${text.slice(0, 100)}`, tag: `announcement-${announcement.id}` }, 'chat');
+              if (!sockets.has(id)) push(member, { title: `📢 ${h.name} announcement`, body: `${p.name}: ${text.slice(0, 100)}`, tag: `announcement-${announcement.id}`, open: 'bell' }, 'house');
             }
           }
           return true;
@@ -348,7 +348,7 @@ export const social = {
                 const assignee = db.players[id];
                 inbox(assignee, 'todo', p, `assigned you: “${text}”`);
                 if (sockets.has(id)) send(sockets.get(id), { t: 'todo_assigned', by: p.name, text, id: newTodo.id });
-                if (!sockets.has(id)) push(assignee, { title: '📋 Task assigned', body: `${p.name} assigned you: ${text}`, tag: `todo-${newTodo.id}` }, 'todo');
+                if (!sockets.has(id)) push(assignee, { title: '📋 Task assigned', body: `${p.name} assigned you: ${text}`, tag: `todo-${newTodo.id}`, open: 'todos' }, 'todo');
               }
             }
           }
@@ -407,7 +407,7 @@ export const social = {
               const assignee = db.players[id];
               inbox(assignee, 'todo', p, `assigned you: “${text}”`);
               if (sockets.has(id)) send(sockets.get(id), { t: 'todo_assigned', by: p.name, text, id: t.id });
-              if (!sockets.has(id)) push(assignee, { title: '📋 Task assigned', body: `${p.name} assigned you: ${text}`, tag: `todo-${t.id}` }, 'todo');
+              if (!sockets.has(id)) push(assignee, { title: '📋 Task assigned', body: `${p.name} assigned you: ${text}`, tag: `todo-${t.id}`, open: 'todos' }, 'todo');
             }
           }
           if (t.all) settleTodos(h);
@@ -432,7 +432,7 @@ export const social = {
             const creator = db.players[t.byId];
             inbox(creator, 'todo', p, `completed “${t.text}”`);
             if (sockets.has(t.byId)) send(sockets.get(t.byId), { t: 'todo_completed', by: p.name, text: t.text, id: t.id });
-            if (!sockets.has(t.byId)) push(creator, { title: '✅ Task completed', body: `${p.name} completed: ${t.text}`, tag: `todo-${t.id}` }, 'todo');
+            if (!sockets.has(t.byId)) push(creator, { title: '✅ Task completed', body: `${p.name} completed: ${t.text}`, tag: `todo-${t.id}`, open: 'todos' }, 'todo');
           }
           // Handle recurring tasks: when completed, create next occurrence
           if (t.done && !wasDone && t.repeat && (!t.repeatUntil || Date.now() < t.repeatUntil)) {

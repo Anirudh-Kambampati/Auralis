@@ -19,12 +19,22 @@ self.addEventListener('fetch', (e) => {
   e.respondWith(fetch(e.request).catch(() => caches.match(OFFLINE)));
 });
 
-// Reminders pushed by the server while Auralis is closed; tapping one opens (or focuses) the app.
+// Reminders pushed by the server while Auralis is closed. `open` names where the notification points in the app
+// (`dm:<peer>`, `house`, `todos`, `bell`); tapping brings the app forward and asks it to open that place, or opens
+// it there when no window is running.
 self.addEventListener('push', (e) => {
   const d = e.data?.json() ?? {};
-  e.waitUntil(self.registration.showNotification(d.title ?? 'Auralis', { body: d.body, tag: d.tag, icon: '/icon-192.png', badge: '/icon-192.png' }));
+  e.waitUntil(self.registration.showNotification(d.title ?? 'Auralis', {
+    body: d.body, tag: d.tag, icon: '/icon-192.png', badge: '/icon-192.png', data: { open: d.open ?? '' },
+  }));
 });
 self.addEventListener('notificationclick', (e) => {
   e.notification.close();
-  e.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((list) => (list[0] ? list[0].focus() : self.clients.openWindow('/'))));
+  const open = e.notification.data?.open ?? '';
+  e.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((list) => {
+    const app = list.find((c) => c.focused) ?? list[0];
+    if (!app) return self.clients.openWindow(open ? `/?open=${encodeURIComponent(open)}` : '/');
+    app.postMessage({ t: 'open', open });
+    return app.focus();
+  }));
 });
