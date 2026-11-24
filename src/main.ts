@@ -4267,6 +4267,8 @@ $('#noteList').addEventListener('click', (e) => {
     const side = foldBtn.dataset.noteFold as 'in' | 'out';
     noteFold[side] = !noteFold[side];
     renderSide(); // the fold is part of the list's signature, so this redraws it
+    // The redraw replaces the heading: put focus back on it, or a keyboard toggle would drop the caret to the page.
+    $<HTMLButtonElement>(`button[data-note-fold="${side}"]`)?.focus();
     return;
   }
   const clear = target.closest<HTMLButtonElement>('button[data-note-clear]');
