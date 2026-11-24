@@ -1340,7 +1340,11 @@ function tapAt(e: PointerEvent) {
 const zoomInBtn = $<HTMLButtonElement>('#zoomIn'), zoomOutBtn = $<HTMLButtonElement>('#zoomOut');
 function setZoom(next: number) {
   // Zoom only ever changes because someone asked for it: two steps in, and out only as far as the whole house fits.
-  zoom = Math.max(outLimit, Math.min(2, next));
+  const clamped = Math.max(outLimit, Math.min(2, next));
+  // A zoom re-frames on my character (or the room, zoomed out), so drop any drag left over from before it;
+  // otherwise that stale pan is added to the player and the view lands off them.
+  if (clamped !== zoom) camPan.x = camPan.y = 0;
+  zoom = clamped;
   localStorage.setItem('auralis.zoom', String(zoom));
   zoomInBtn.disabled = zoom >= 2;
   zoomOutBtn.disabled = zoom <= outLimit;
@@ -1573,7 +1577,11 @@ function render(t: number, dt: number) {
   const centred = decorating || ((zoom <= 0) && fits);
   const bx = centred ? (o.x - 1) * T + roomW / 2 : me_.x * T + 8, by = centred ? (o.y - WALL_H) * T + roomH / 2 : me_.y * T + 8;
   const tx = follow(bx + camPan.x, vw, grid.w * T), ty = follow(by + camPan.y, vh, grid.h * T);
-  camPan.x = tx - bx; camPan.y = ty - by; // dragging past the edge of the house doesn't pile up
+  // Keep a drag from piling up past the house edge, but on an axis where the whole house already fits there is
+  // nothing to pan, so drop the offset instead of banking it — otherwise it rides along when we zoom in and
+  // follow the player, leaving them off centre.
+  camPan.x = grid.w * T + T <= vw ? 0 : tx - bx;
+  camPan.y = grid.h * T + T <= vh ? 0 : ty - by;
   if (!cam || cam.scale !== scale || cam.z !== zoom) cam = { x: tx, y: ty, scale, z: zoom };
   const ease = pan?.moved ? 1 : 1 - Math.exp(-dt * 8); // glide when moving to another room (same pace at any frame rate); stick to the finger while dragging
   cam.x += (tx - cam.x) * ease;
