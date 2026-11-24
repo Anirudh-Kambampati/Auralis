@@ -37,7 +37,7 @@ type Focus = { minutes: number; endsAt: number; tag?: string; pausedAt?: number 
 type Session = { at: number; minutes: number; tag: string; early?: boolean };
 type Inbox = { kind: string; from?: string; by?: string; text: string; at: number; n?: number };
 type Friend = { id: string; name: string; look: Look; online: boolean; focus: boolean; status: 'friend' | 'incoming' | 'outgoing'; here?: boolean; visit?: boolean; asked?: boolean; presence?: Presence };
-type Me = { id: string; home?: string; visited?: { code: string; ownerName: string | null; online: number }[]; banned?: { id: string; name: string }[]; coins: number; discount?: boolean; notes?: { from: string; text: string; at: number }[]; inbox?: Inbox[]; inboxSeen?: number; tipsSeen?: string[]; events?: CalEvent[]; pushKey?: string; notify?: Record<string, boolean>; groups?: Record<string, { name: string; members: string[]; msgs: Chat[] }>; friends?: Friend[]; inventory: Record<string, number>; crafted?: { item: string; col: string }[]; sessions: Session[]; subjects: string[]; hiddenSubjects: string[]; todos: Todo[]; dm: Record<string, Chat[]>; petAccs?: string[]; watch?: Watch | null };
+type Me = { id: string; home?: string; visited?: { code: string; ownerName: string | null; online: number }[]; banned?: { id: string; name: string }[]; coins: number; discount?: boolean; notes?: { id: number; from: string; text: string; at: number; seen?: boolean }[]; sentNotes?: { id: number; toName: string; text: string; at: number }[]; scratch?: { id: number; text: string; at: number; editedAt?: number }[]; inbox?: Inbox[]; inboxSeen?: number; tipsSeen?: string[]; events?: CalEvent[]; pushKey?: string; notify?: Record<string, boolean>; groups?: Record<string, { name: string; members: string[]; msgs: Chat[] }>; friends?: Friend[]; inventory: Record<string, number>; crafted?: { item: string; col: string }[]; sessions: Session[]; subjects: string[]; hiddenSubjects: string[]; todos: Todo[]; dm: Record<string, Chat[]>; petAccs?: string[]; watch?: Watch | null };
 type Board = { metric?: string; scope: string; period: string; rows: { name: string; me: boolean; minutes?: number; coins?: number; members?: number }[] };
 type Avatar = { x: number; y: number; tx: number; ty: number; up: boolean; dist: number; use?: string };
 type ItemKey = keyof typeof ITEMS;
@@ -85,12 +85,14 @@ let houseCode = '';
 let houseOwnerName = ''; // whose home this house is (empty for old shared houses with no owner)
 let lastHouseCode = ''; // detect entering a different house to show unseen items once
 let focusSeen: Set<string> | null = null; // housemates who were studying at the last state; null until the first one
-let notesSeen = 0; // newest desk note already shown
+let notesSeen = (() => { try { return Number(localStorage.getItem('auralis.notesSeen')) || 0; } catch { return 0; } })(); // newest desk note already shown
 let noteTo: string | null = null; // housemate I'm writing a desk note for
 // One desk note every seven seconds. The field waits with a countdown, rather than accepting a second note's first
 // few letters and then dropping the note it was for.
 const NOTE_COOL_MS = 7000;
 let noteCoolUntil = 0, noteTimer = 0;
+let sideTab: 'todos' | 'notes' = 'todos'; // which tab the To-dos card shows
+let scratchEdit: number | null = null; // the private note the form is editing
 let finishedSession = false; // the session that just ended ran to the end (not given up): take a break
 let missed = 0; // messages that arrived while I was focusing, quietly
 const cheers = new Map<string, { text: string; at: number; hop?: boolean }>(); // 👏 or ✋ floating up over a player (hop: a little jump too)
@@ -339,12 +341,14 @@ function onMessage(m: any) {
       for (const k of [...petSeat.keys(), ...petSunAt.keys()]) if (k.startsWith(`${myId}:`)) { petSeat.delete(k); petSunAt.delete(k); }
     }
     focusSeen = new Set(members.filter((o) => o.focus).map((o) => o.id));
-    const notes = (me.notes ?? []).filter((n) => n.at > notesSeen);
+    // A note I have not been shown yet: say so once, and let the tap open the Notes tab. The Notes tab itself is
+    // what marks it read, so a closed card never loses one just because the toast went by.
+    const notes = (me.notes ?? []).filter((n) => !n.seen && n.at > notesSeen);
     if (notes.length) {
       notesSeen = Math.max(...notes.map((n) => n.at));
+      try { localStorage.setItem('auralis.notesSeen', String(notesSeen)); } catch { /* private mode */ }
       notify(chime);
-      for (const n of notes) toast(`📝 Note from <b>${esc(n.from)}</b>: ${esc(n.text)}`, 'reward');
-      send({ t: 'notes_read' });
+      for (const n of notes) toast(`📝 Note from <b>${esc(n.from)}</b>: ${esc(n.text)}`, 'reward', { onClick: () => { showSideTab('notes'); setPanel('todos'); } });
     }
     // Something I own has something to teach and I have not been shown it yet: that is the tour's cue.
     if (!tourRows.length) {
@@ -1836,8 +1840,10 @@ function render(t: number, dt: number) {
         x.goal = spotNear(guestA, 1.5); // a guest it has fussed over often: come over
       } else if (here && Math.random() < 0.0015 * (1 + bondLevel(p.bond)) * dt * 60) x.goal = spotNear(here, 1.6); // the owner, now and then
     }
-    // A pet that likes you enough shows off: a little spin and a hop, close by.
-    if (!x.goal && myLvl >= 2 && guestA && (petTrickAt.get(key) ?? 0) < now && Math.random() < 0.008 * dt * 60
+    // A pet that likes you enough shows off now and then: a little spin and a hop, close by. "Now and then" is about
+    // once a minute — at 0.008 a frame it began a 1.6 s trick roughly every two seconds, so a bonded pet spent three
+    // quarters of its time hopping and flipping, which read as a pet spinning like a top.
+    if (!x.goal && myLvl >= 2 && guestA && (petTrickAt.get(key) ?? 0) < now && Math.random() < 0.0003 * dt * 60
       && Math.hypot(guestA.x - x.pos.x, guestA.y - x.pos.y) < 3) { petTrickAt.set(key, now + 1600); petNameAt.set(key, now + 5500); }
     // A pet near someone singing stops to watch, or bounces along on the beat. Which one is a pure function
     // of the pet's seed and the clock; a second microphone nearby makes pets prefer the quiet watch.
@@ -2689,11 +2695,17 @@ function statsBody() {
       <div class="stat"><b>${c.count}</b><small>sessions</small></div>
       <div class="stat"><b>${streak(me.sessions)}</b><small>day streak</small></div></div>
     <div class="chart" style="--n:${c.values.length}"><span class="ymax">${hm(max === 1 && !c.total ? 0 : max)}</span>
-      ${c.values.map((v, i) => `<div class="col" title="${hm(v)}"><i style="height:${(v / max) * 100}%"></i><span>${c.labels[i]}</span></div>`).join('')}</div>
+      ${c.values.map((v, i) => {
+        // One segment per subject, in the same order (and colour) as the list below: the bar is the period's
+        // minutes divided by subject, not just a total.
+        const parts = c.stacks[i].map((m, t) => (m ? `<i style="height:${(m / v) * 100}%;background:${TAG_COLORS[t % TAG_COLORS.length]}"></i>` : '')).join('');
+        const split = c.stacks[i].map((m, t) => (m ? `${c.tags[t].tag} ${hm(m)}` : '')).filter(Boolean).join(' · ');
+        return `<div class="col" title="${hm(v)}${split ? ` — ${esc(split)}` : ''}"><div class="stack" style="height:${(v / max) * 100}%">${parts}</div><span>${c.labels[i]}</span></div>`;
+      }).join('')}</div>
     <h3>Subjects</h3>
     ${c.tags.length ? `<ul class="tags">${c.tags.map((t, i) => `<li><span class="sw" style="background:${TAG_COLORS[i % TAG_COLORS.length]}"></span>
         <b>${esc(t.tag)}</b><span class="tbar"><i style="width:${t.pct}%;background:${TAG_COLORS[i % TAG_COLORS.length]}"></i></span><small>${t.pct}% · ${hm(t.minutes)}</small></li>`).join('')}</ul>`
-      : '<p class="hint">No finished sessions in this period yet.</p>'}`;
+      : '<p class="hint">No finished sessions in this period yet.</p>'}${c.tags.length ? '<p class="hint">Each bar is divided the same way, in these colours.</p>' : ''}`;
 }
 
 let lastTag = localStorage.getItem('auralis.tag') ?? '';
@@ -3896,7 +3908,10 @@ function syncChatList() {
 
 // The to-dos and the chat log are only rebuilt when what they show really changed: a house state arrives on
 // every action in the house, and rewriting fifty chat lines each time is wasted work (and loses the scroll).
-let todoSig = '', chatSig = '';
+let todoSig = '', chatSig = '', noteSig = '';
+// Which side's Clear is waiting for its second tap. It lives here, not on the button, because the list is rebuilt
+// whenever a note arrives or its "2m ago" ages: a rebuild must not eat the first tap.
+let clearArmed: 'in' | 'out' | null = null, clearArmTimer = 0;
 function renderSide() {
   chromeDirty();
   const list: Todo[] = [...todos, ...(me.todos ?? []).map((t) => ({ ...t, mine: true }))];
@@ -3905,6 +3920,34 @@ function renderSide() {
   if (tSig !== todoSig) {
     todoSig = tSig;
     $('#todoList').innerHTML = todoHTML(list);
+  }
+  // The card's two tabs: To-dos, or Notes. Opening Notes marks what has arrived as read; the tab keeps a dot
+  // until then, so a note is never missed just because the card was closed.
+  const notesOpen = sideTab === 'notes';
+  $<HTMLElement>('.side-card.todos').classList.toggle('notes-tab', notesOpen);
+  const tab = (sel: string, on: boolean) => {
+    const b = $<HTMLButtonElement>(sel);
+    b.classList.toggle('on', on);
+    b.classList.toggle('off', !on);
+    b.setAttribute('aria-selected', String(on));
+  };
+  tab('#sideTabTodos', !notesOpen);
+  tab('#sideTabNotes', notesOpen);
+  let unreadNotes = (me.notes ?? []).filter((n) => !n.seen).length;
+  if (notesOpen && unreadNotes) {
+    me.notes = (me.notes ?? []).map((n) => ({ ...n, seen: true }));
+    unreadNotes = 0;
+    send({ t: 'notes_read' });
+  }
+  $<HTMLElement>('#noteDot').hidden = !unreadNotes;
+  const nSig = `${notesOpen}|${Math.floor(Date.now() / 60_000)}|` // the minute: so "2m ago" moves on
+    + (me.scratch ?? []).map((n) => `${n.id}:${n.text}`).join()
+    + '|' + (me.notes ?? []).map((n) => `${n.id}:${n.seen ? 1 : 0}`).join()
+    + '|' + (me.sentNotes ?? []).map((n) => n.id).join()
+    + `|${clearArmed ?? ''}`;
+  if (nSig !== noteSig) {
+    noteSig = nSig;
+    $('#noteList').innerHTML = noteHTML();
   }
   syncChatList();
   const log = $('#chatLog');
@@ -3958,6 +4001,47 @@ function renderSide() {
   }
   if (viewing(dmPeer)) { if (dmPeer) dmUnread[dmPeer] = 0; else houseUnread = 0; }
 }
+// ---------- notes: my own notebook, notes from housemates, and the ones I left ----------
+function noteHTML() {
+  const mine = [...(me.scratch ?? [])].reverse();
+  const from = [...(me.notes ?? [])].reverse();
+  const sent = [...(me.sentNotes ?? [])].reverse();
+  const when = (at: number) => (ago(at) === 'now' ? 'just now' : `${ago(at)} ago`);
+  const card = (n: { text: string; at: number; meta: string; unread?: boolean; id?: number; mine?: boolean }) =>
+    `<li class="note-card${n.unread ? ' unread' : ''}"><span class="note-text">${esc(n.text)}<small>${esc(n.meta)} · ${when(n.at)}</small></span>`
+    + (n.mine ? `<button class="del" data-note="edit" data-id="${n.id}" aria-label="Edit note" title="Edit">✎</button><button class="del" data-note="del" data-id="${n.id}" aria-label="Delete note" title="Delete">✕</button>` : '')
+    + '</li>';
+  const section = (title: string, side: 'in' | 'out' | null, rows: string[]) =>
+    `<h4 class="note-sec">${title} <b>${rows.length}</b>${side ? `<button type="button" class="clear${clearArmed === side ? ' armed' : ''}" data-note-clear="${side}" title="Clear these from my side">${clearArmed === side ? 'Tap again' : 'Clear'}</button>` : ''}</h4><ul class="note-cards">${rows.join('')}</ul>`;
+  return [
+    mine.length ? section('To myself', null, mine.map((n) => card({ id: n.id, text: n.text, at: n.at, meta: n.editedAt ? 'edited' : 'just you', mine: true }))) : '',
+    from.length ? section('From housemates', 'in', from.map((n) => card({ text: n.text, at: n.at, meta: n.from, unread: !n.seen }))) : '',
+    sent.length ? section('Left by me', 'out', sent.map((n) => card({ text: n.text, at: n.at, meta: `to ${n.toName}` }))) : '',
+  ].join('') || '<p class="note-empty">Nothing yet. Write yourself something above — or leave a housemate a note from their desk. 📝</p>';
+}
+
+function showSideTab(tab: 'todos' | 'notes') {
+  sideTab = tab;
+  renderSide();
+}
+function resetNoteForm() {
+  scratchEdit = null;
+  $<HTMLTextAreaElement>('#noteInput').value = '';
+  $('#noteHint').textContent = 'Only you can see this.';
+  $('#noteSave').textContent = 'Keep';
+  $<HTMLButtonElement>('#noteCancel').hidden = true;
+}
+function editScratch(id: number) {
+  const note = (me.scratch ?? []).find((n) => n.id === id);
+  if (!note) return;
+  scratchEdit = id;
+  $<HTMLTextAreaElement>('#noteInput').value = note.text;
+  $('#noteHint').textContent = 'Editing a note to yourself.';
+  $('#noteSave').textContent = 'Save';
+  $<HTMLButtonElement>('#noteCancel').hidden = false;
+  $<HTMLTextAreaElement>('#noteInput').focus();
+}
+
 const scrollChat = () => { const log = $('#chatLog'); log.scrollTop = log.scrollHeight; };
 // Picture links are short-lived, so each is asked for when shown and reused for 50 minutes.
 const imgLinks = new Map<string, { url: string; at: number }>();
@@ -4111,6 +4195,41 @@ $('#todoList').addEventListener('click', (e) => {
   const b = target.closest<HTMLButtonElement>('button[data-todo]');
   if (b?.dataset.todo === 'edit') return openTodoModal(todos.find((t) => t.id === Number(b.dataset.id)));
   if (b) send({ t: `${b.dataset.mine ? 'ptodo' : 'todo'}_${b.dataset.todo}`, id: Number(b.dataset.id) });
+});
+
+// The Notes tab: my notebook (add, edit, delete), what arrived, and what I left.
+$('#sideTabTodos').addEventListener('click', () => showSideTab('todos'));
+$('#sideTabNotes').addEventListener('click', () => showSideTab('notes'));
+$('#noteCancel').addEventListener('click', resetNoteForm);
+$('#noteForm').addEventListener('submit', (e) => {
+  e.preventDefault();
+  const text = $<HTMLTextAreaElement>('#noteInput').value.trim();
+  if (!text) return;
+  send(scratchEdit ? { t: 'scratch_edit', id: scratchEdit, text } : { t: 'scratch_add', text });
+  resetNoteForm();
+});
+$('#noteList').addEventListener('click', (e) => {
+  const target = e.target as HTMLElement;
+  const clear = target.closest<HTMLButtonElement>('button[data-note-clear]');
+  if (clear) {
+    // Two taps, like selling a room: the first one only arms that side, for three seconds.
+    const side = clear.dataset.noteClear as 'in' | 'out';
+    clearTimeout(clearArmTimer);
+    if (clearArmed !== side) {
+      clearArmed = side;
+      clearArmTimer = window.setTimeout(() => { clearArmed = null; noteSig = ''; renderSide(); }, 3000);
+    } else {
+      clearArmed = null;
+      send({ t: 'notes_clear', side });
+    }
+    noteSig = ''; // redraw from the state above, so the list and the button agree
+    renderSide();
+    return;
+  }
+  const b = target.closest<HTMLButtonElement>('button[data-note]');
+  if (!b) return;
+  if (b.dataset.note === 'edit') return editScratch(Number(b.dataset.id));
+  if (b.dataset.note === 'del') send({ t: 'scratch_del', id: Number(b.dataset.id) });
 });
 // The new to-do modal: what, when (for a reminder), and who it's for.
 const todoModal = $<HTMLDialogElement>('#todoModal');

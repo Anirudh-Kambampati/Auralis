@@ -2,6 +2,9 @@
 import { canRotate, skyProgress, skyColor, tintAlpha, moonPhase, nightBrightness, weatherIntensity } from '../shared/game.js';
 export const T = 16;
 export const OUT = '#3a2633';
+// A soft contact shadow for art that sits on something else — a wall piece on the wallpaper — so it reads on any
+// colour under it without becoming a second outline.
+const INK_SHADOW = 'rgba(43,37,48,0.10)';
 
 type Ctx = CanvasRenderingContext2D;
 export type Look = { skin: string; hair: string; shirt: string; style?: string; face?: string; outfit?: string; body?: string; accs?: string[]; size?: string; color?: Record<string, string> };
@@ -3205,7 +3208,7 @@ ALT.rug.push(
 // Most of the catalog is described as a short list of shapes instead of hand-written draw code.
 // [overhang, default colour, shapes]. Shapes are 'kind x,y,...,colour' joined by '|', relative to the top of the sprite:
 // b box, r rect, d disc, o outlined disc, h heart, f blinking rect, s sliding rect.
-// Colours: '$' = the owner's colour ($d/$D darker, $l lighter), O = outline, or a hex colour.
+// Colours: '$' = the owner's colour ($d/$D darker, $l lighter), O = outline, I = a faint ink shadow, or a hex colour.
 const RECIPES: Record<string, [number, string, string]> = {
   rockingChair: [8, '#f4a6b8', 'b3,0,10,12,$|r5,2,6,1,$l|r4,12,1,10,#8a5a3c|r11,12,1,10,#8a5a3c|b2,10,12,6,$d|r1,22,14,1,#8a5a3c|r0,21,1,1,#8a5a3c|r15,21,1,1,#8a5a3c'],
   bench: [6, '#b07a4e', 'r2,0,28,2,$d|r2,4,28,2,$d|r3,0,2,14,$D|r27,0,2,14,$D|b1,10,30,5,$|r3,15,2,7,$D|r27,15,2,7,$D'],
@@ -3407,8 +3410,11 @@ const RECIPES: Record<string, [number, string, string]> = {
   deskCalendar: [0, '', 'b3,4,10,10,#fffaf3|r3,4,10,3,#e06a5a|r5,2,1,3,#3a3448|r10,2,1,3,#3a3448|r5,9,1,1,#a8a0b8|r7,9,1,1,#a8a0b8|r9,9,1,1,#e06a5a|r5,11,1,1,#a8a0b8|r7,11,1,1,#a8a0b8|r9,11,1,1,#a8a0b8'],
   projectorScreen: [0, '#c58b5a', 'b0,0,48,16,$|b2,2,44,12,#ffffff|r4,4,10,4,#e8e3dc|r18,4,10,4,#e8e3dc|r4,10,10,4,#e8e3dc|r18,10,10,4,#e8e3dc|b0,12,48,2,$d|r2,14,2,1,#8a5a3c|r44,14,2,1,#8a5a3c'],
   // The air conditioner hangs on the wall: a wide white body, two louver slats across the front, a cool readout and
-  // a single mint standby light. Trades its colour with the room like any other pastel piece.
-  aircon: [0, '#fdf4eb', 'b2,1,28,12,$|r5,6,22,1,$d|r5,8,22,1,#b9aebd|r5,10,22,1,#b9aebd|r21,3,4,1,#9db4ee|r22,4,2,1,$l|r26,4,1,1,#7de0b0'],
+  // a single mint standby light. Trades its colour with the room like any other pastel piece. Its body is inset
+  // inside the two wall tiles (4 px at the sides, 3 px above in the lower row and clear of the crown in the upper
+  // one, and the wall's whole bottom trim left clear below), with a soft shadow on the paper under it, so the
+  // wallpaper and the wall's base stay visible on every side and the unit never sits flush against the ceiling.
+  aircon: [0, '#fdf4eb', 'b4,3,24,8,$|r6,4,12,1,$l|r21,4,4,1,#9db4ee|r26,4,1,1,#7de0b0|r22,5,2,1,$l|r6,6,20,1,$d|r6,8,20,1,#b9aebd|r5,11,22,1,I'],
 };
 type Shape = { k: string; n: number[]; col: string };
 const parsed = new Map<string, Shape[]>();
@@ -3423,7 +3429,7 @@ function recipeDraw(item: string): Draw | undefined {
   }
   return (c, x, y, t, col = base || '#f2b48a') => {
     const Y = y - up;
-    const paint = (s: string) => (s === '$' ? col : s === '$d' ? shade(col, -0.15) : s === '$D' ? shade(col, -0.3) : s === '$l' ? shade(col, 0.15) : s === 'O' ? OUT : s);
+    const paint = (s: string) => (s === '$' ? col : s === '$d' ? shade(col, -0.15) : s === '$D' ? shade(col, -0.3) : s === '$l' ? shade(col, 0.15) : s === 'O' ? OUT : s === 'I' ? INK_SHADOW : s);
     for (const { k, n, col: sc } of shapes!) {
       const fill = paint(sc);
       if (k === 'b') box(c, x + n[0], Y + n[1], n[2], n[3], fill);

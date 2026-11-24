@@ -7,7 +7,9 @@
 //
 // server/handlers.test.js checks that list against every method and against index.js.
 
-export const ctxKeys = ["CLAW_COOLDOWN_MS","CLAW_COST","CRAFT","CRAFT_COOLDOWN_MS","DRINKS","EXPAND_COST","FLOORS","FLOOR_STYLES","GIFT_COINS","GUEST_BOND_STEP","ITEMS","LIGHTS","MAX_PETS","MAX_ROOMS","PETS","PET_ACCS","ROOM_COST","WALLPAPERS","WALL_PATTERNS","addGuestBond","guestBond","broadcastHouse","canPlace","canRotate","cheerCount","clawPrize","cleanText","colorsFor","craftColour","craftItem","craftedPrice","db","discounted","has","inbox","isPlant","lastCheer","lastInvite","m","newRoom","nextRot","p","petLine","petWord","pick","pieceReadyAt","placeSwaps","readyKey","room","save","sellPrice","send","setPieceReady","sockets"];
+import { MAX_NOTES } from '../shared/game.js';
+
+export const ctxKeys = ["CLAW_COOLDOWN_MS","CLAW_COST","CRAFT","CRAFT_COOLDOWN_MS","DRINKS","EXPAND_COST","FLOORS","FLOOR_STYLES","GIFT_COINS","GUEST_BOND_STEP","ITEMS","LIGHTS","MAX_PETS","MAX_ROOMS","PETS","PET_ACCS","ROOM_COST","WALLPAPERS","WALL_PATTERNS","addGuestBond","guestBond","broadcastHouse","canPlace","canRotate","cheerCount","clawPrize","cleanText","colorsFor","craftColour","craftItem","craftedPrice","db","discounted","has","inbox","isPlant","lastCheer","lastInvite","m","newId","newRoom","nextRot","p","petLine","petWord","pick","pieceReadyAt","placeSwaps","readyKey","room","save","sellPrice","send","setPieceReady","sockets"];
 
 // A nap points at a piece by its owner and slot in that owner's room, so any change to the room's furniture list
 // has to carry the nap with it — for every pet in the house, not just the owner's: a guest's pet may be asleep on
@@ -170,12 +172,15 @@ export const world = {
   },
 
   async note(ctx) {
-    const { db, p, m, cleanText, send, sockets, inbox } = ctx;
+    const { db, p, m, cleanText, newId, send, sockets, inbox } = ctx;
     { // leave a note on a housemate's desk; they see it now, or next time they log in
           const them = db.houses[p.house].members.includes(m.to) && m.to !== p.id ? db.players[m.to] : null;
           const text = cleanText(m.text, 140);
           if (!them || !text) return;
-          them.notes = [...(them.notes ?? []), { from: p.name, text, at: Date.now() }].slice(-10);
+          // One id for both copies: the sender's "Left by me" list and the recipient's desk stay in step.
+          const id = newId(), at = Date.now();
+          them.notes = [...(them.notes ?? []), { id, from: p.name, text, at, seen: false }].slice(-MAX_NOTES);
+          p.sentNotes = [...(p.sentNotes ?? []), { id, toName: them.name, text, at }].slice(-MAX_NOTES);
           send(sockets.get(p.id), { t: 'reward', text: `📝 Left a note on ${them.name}'s desk.` });
           inbox(them, 'note', p, `left a note on your desk: “${text}”`);
           return true;

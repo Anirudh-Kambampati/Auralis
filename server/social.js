@@ -7,6 +7,8 @@
 //
 // server/handlers.test.js checks that list against every method and against index.js.
 
+import { MAX_NOTES } from '../shared/game.js';
+
 export const ctxKeys = ["ACCESSORIES","BODIES","FACES","HAIRS","ITEMS","MAX_EVENTS","NOTIFY","OUTFITS","SCAR_COLOURS","SCAR_KEYS","SHIRTS","SIZES","SKINS","STYLES","USES","boardMinutes","broadcastHouse","canSee","cleanText","db","ensureHome","friendList","goHome","has","inbox","leaveHouse","m","newId","nextOccurrence","okPushSub","p","pick","positions","push","refresh","remember","save","send","settleTodos","sockets","store","todoFor","usernameProblem","wantsNotify"];
 
 export const social = {
@@ -280,7 +282,43 @@ export const social = {
 
   async notes_read(ctx) {
     const { p } = ctx;
-    p.notes = [];
+    // Seen, not gone: the Notes tab keeps what arrived, and only its Clear removes it.
+    p.notes = (p.notes ?? []).map((n) => (n.seen ? n : { ...n, seen: true }));
+          return true;
+  },
+
+  async notes_clear(ctx) {
+    const { p, m } = ctx;
+    if (m.side === 'out') p.sentNotes = [];
+    else p.notes = [];
+          return true;
+  },
+
+  async scratch_add(ctx) {
+    const { p, m, cleanText, newId } = ctx;
+    { // a note in my own notebook: private, and capped like a desk
+          const text = cleanText(m.text, 280);
+          if (!text) return;
+          p.scratch = [...(p.scratch ?? []), { id: newId(), text, at: Date.now() }].slice(-MAX_NOTES);
+          return true;
+        }
+  },
+
+  async scratch_edit(ctx) {
+    const { p, m, cleanText } = ctx;
+    { // only my own notes, and only the text; the id and the day it was started stay
+          const text = cleanText(m.text, 280);
+          const note = (p.scratch ?? []).find((n) => n.id === m.id);
+          if (!note || !text) return;
+          note.text = text;
+          note.editedAt = Date.now();
+          return true;
+        }
+  },
+
+  async scratch_del(ctx) {
+    const { p, m } = ctx;
+    p.scratch = (p.scratch ?? []).filter((n) => n.id !== m.id);
           return true;
   },
 

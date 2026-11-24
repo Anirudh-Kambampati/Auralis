@@ -44,6 +44,8 @@ export interface MeState {
   coins: number;
   discount?: boolean;
   notes: Note[];
+  sentNotes?: SentNote[];
+  scratch?: ScratchNote[];
   inbox: InboxItem[];
   inboxSeen: number;
   tipsSeen?: string[]; // item/tip ids this player has already been shown, private to them, never repeated
@@ -256,10 +258,27 @@ export interface InboxItem {
 }
 
 // Note types
+// A desk note as its recipient keeps it: `seen` is set the first time the Notes tab shows it.
 export interface Note {
+  id: number;
   from: string;
   text: string;
   at: number;
+  seen: boolean;
+}
+// A copy of a desk note in the sender's list, so "Left by me" can say who it was for.
+export interface SentNote {
+  id: number;
+  toName: string;
+  text: string;
+  at: number;
+}
+// A private note in the player's own notebook. `editedAt` only exists once it has been edited.
+export interface ScratchNote {
+  id: number;
+  text: string;
+  at: number;
+  editedAt?: number;
 }
 
 // Friend types
@@ -352,6 +371,10 @@ export interface ClientMessages {
   exam_del: { t: 'exam_del'; index: number };
   // Notes
   note: { t: 'note'; to: string; text: string };
+  notes_clear: { t: 'notes_clear'; side: 'in' | 'out' };
+  scratch_add: { t: 'scratch_add'; text: string };
+  scratch_edit: { t: 'scratch_edit'; id: number; text: string };
+  scratch_del: { t: 'scratch_del'; id: number };
   // Look/pet
   look: { t: 'look'; name: string; look: Look };
   pet_style: { t: 'pet_style'; slot: number; name?: string; away?: boolean; follow?: boolean; coat?: number; acc?: string };

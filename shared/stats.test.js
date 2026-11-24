@@ -30,6 +30,16 @@ test('day, month and year charts', () => {
   assert.equal(year.values[10], 45);
 });
 
+test('each bar is divided by subject, in the subject list\'s order', () => {
+  const c = chart(sessions, 'week', at(2026, 9, 28));
+  assert.deepEqual(c.tags.map((t) => t.tag), ['Reading', 'Maths', 'Study']);
+  assert.deepEqual(c.stacks[4], [60, 25, 0]); // Thu: Reading 60, Maths 25
+  assert.deepEqual(c.stacks[6], [0, 0, 15]); // Sat: a session with no tag is Study
+  c.stacks.forEach((row, i) => assert.equal(row.reduce((a, b) => a + b, 0), c.values[i]));
+  // A bucket with no sessions has no segments at all.
+  assert.deepEqual(c.stacks[0], [0, 0, 0]);
+});
+
 test('a rolled-up day counts as the sessions it stands for', () => {
   const c = chart([{ at: at(2026, 9, 27), minutes: 120, tag: 'Maths', n: 4 }], 'month', at(2026, 9, 5));
   assert.equal(c.total, 120);

@@ -637,6 +637,8 @@ export const discounted = (price, discount) => (discount ? Math.ceil(price * 0.9
 export const sellPrice = (item) => Math.floor((ITEMS[item]?.price ?? 0) / 2);
 // Gifts between housemates: a fixed amount, as often as the sender can afford, so coins only ever move.
 export const GIFT_COINS = 10;
+// Notes: the desk notes a player keeps, the copies they left, and their own notebook are each capped.
+export const MAX_NOTES = 40;
 
 // Notifications each player can switch on or off (system ones in a background tab, and pushes with Auralis closed).
 export const NOTIFY = {

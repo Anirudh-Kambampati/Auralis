@@ -319,9 +319,19 @@
     <section id="panel" hidden></section>
     <aside id="side">
       <section class="side-card todos">
-        <header class="side-head"><img id="todoIcon" alt="" /><h2>To-dos</h2><button class="fold" id="fold-todos" aria-expanded="true" aria-controls="todoList" aria-label="Collapse to-dos">▾</button><button class="close" id="closeSide" aria-label="Close">✕</button></header>
-        <ul id="todoList"></ul>
+        <header class="side-head"><img id="todoIcon" alt="" /><div class="seg small side-seg" role="tablist" aria-label="To-dos or notes">
+          <button type="button" class="on" id="sideTabTodos" role="tab" aria-selected="true" aria-controls="todoList">To-dos</button>
+          <button type="button" class="off" id="sideTabNotes" role="tab" aria-selected="false" aria-controls="notePanel">Notes<span class="tab-dot" id="noteDot" hidden aria-hidden="true"></span></button>
+        </div><button class="fold" id="fold-todos" aria-expanded="true" aria-controls="todoList" aria-label="Collapse to-dos">▾</button><button class="close" id="closeSide" aria-label="Close">✕</button></header>
+        <ul id="todoList" aria-label="To-dos"></ul>
         <button id="todoNewBtn" class="new-todo">＋ New to-do</button>
+        <section id="notePanel" class="note-panel" aria-label="Notes">
+          <form id="noteForm" class="note-form">
+            <textarea id="noteInput" rows="2" maxlength="280" placeholder="Note to yourself…" aria-label="Note to yourself"></textarea>
+            <div class="note-form-row"><small id="noteHint">Only you can see this.</small><button type="button" class="off small" id="noteCancel" hidden>Cancel</button><button type="submit" id="noteSave">Keep</button></div>
+          </form>
+          <div id="noteList" class="note-list"></div>
+        </section>
       </section>
 
       <section class="side-card chat">

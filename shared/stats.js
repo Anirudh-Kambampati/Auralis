@@ -42,19 +42,24 @@ export function chart(sessions, range, anchor) {
   }
   const values = labels.map(() => 0);
   const byTag = {};
+  const buckets = labels.map(() => ({})); // each label's own minutes per subject
   let total = 0, count = 0;
   for (const s of sessions) {
     if (s.at < from.getTime() || s.at >= to.getTime()) continue;
-    values[index(new Date(s.at))] += s.minutes;
-    const tag = s.tag || 'Study';
+    const i = index(new Date(s.at)), tag = s.tag || 'Study';
+    values[i] += s.minutes;
     byTag[tag] = (byTag[tag] ?? 0) + s.minutes;
+    buckets[i][tag] = (buckets[i][tag] ?? 0) + s.minutes;
     total += s.minutes;
     count += s.n ?? 1; // a rolled-up day stands for the sessions it folded in
   }
   const tags = Object.entries(byTag)
     .sort((a, b) => b[1] - a[1])
     .map(([tag, minutes]) => ({ tag, minutes, pct: Math.round((minutes / total) * 100) }));
-  return { from, to, labels, values, total, count, tags };
+  // Every bar is the same period divided by subject: one number per tag, in the order `tags` lists them,
+  // so the subject list under the chart doubles as its key.
+  const stacks = buckets.map((b) => tags.map((t) => b[t.tag] ?? 0));
+  return { from, to, labels, values, total, count, tags, stacks };
 }
 
 export function rangeTitle(range, from) {
