@@ -82,7 +82,7 @@ A trick is a hop with a side-to-side spin and three gold sparkles (`act: 'trick'
 ## Camera
 
 - The zoom is the largest whole number at which the current room (with walls) fits the space the HUD, dock, side bar and panels leave free. Whole numbers keep the pixels crisp.
-- Zooming out keeps stepping down until the scale is one screen pixel per art pixel, and no further: a room fitted at `AV` has one step left, while one fitted larger has more. Zooming in goes at most two steps past that fitted view. How far out the zoom may go follows the fitted scale as you move between rooms; nothing else changes the zoom — only the buttons, pinch, Ctrl/Cmd + wheel and the `+`/`-` keys do.
+- Zooming out stops at the whole house: each step is allowed only while the house is still bigger than the space on screen, so the furthest out is the step that first fits every room — a house that already fits the fitted room's view has nowhere to go. Zooming in goes at most two steps past that fitted view. The step limits follow the fitted room as you move between rooms; nothing else changes the zoom — only the buttons, pinch, Ctrl/Cmd + wheel and the `+`/`-` keys do.
 - If the room fits, the camera centres on the room. Otherwise it follows the player. Either way it stops at the edges of the house, so the screen never shows empty space beyond it. It eases between rooms.
 - In Decorate the camera is held on the room being decorated (`editRoom`), not on the player: the panel is about a room, and your character may have wandered into a housemate's. It centres that room even when the zoom is too close for the whole room to fit — following the character instead is what used to leave the view on them. Closing the panel hands the camera back to whoever you are standing as.
 

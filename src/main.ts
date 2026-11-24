@@ -170,12 +170,12 @@ let view = { ox: 0, oy: 0, scale: 1 };
 // Extra scale steps (of AV) on top of the fitted view (+ zooms in, - zooms out).
 // Phones start one step closer, so faces and small things are easier to see; pinch or +/- changes it.
 const MAX_SCALE = 5 * AV;
-const DEEPEST_OUT = Math.floor((1 - MAX_SCALE) / AV); // the step that lands on one screen pixel per art pixel
+const DEEPEST_OUT = -Math.ceil(MAX_SCALE / AV); // the deepest step any house can ask for, so a saved zoom is never lost
 const savedZoom = localStorage.getItem('auralis.zoom');
 let zoom = Math.max(DEEPEST_OUT, Math.min(2, savedZoom !== null ? Number(savedZoom) || 0 : innerWidth < 600 ? 1 : 0));
-let fitBase = 0; // the fitted scale the render loop works out; until the first frame it doesn't limit the zoom
-// Zooming out stops at one screen pixel per art pixel: a room fitted at AV has one step left, a larger fit more.
-const outLimit = () => (fitBase ? Math.floor((1 - fitBase) / AV) : DEEPEST_OUT);
+// Set by the render loop: the lowest zoom step that still shows the whole house. Until the first frame the saved zoom
+// is not limited.
+let outLimit = DEEPEST_OUT;
 let cam: { x: number; y: number; scale: number } | null = null; // camera target in art pixels, eased
 let camRoom = 0;
 
@@ -1339,12 +1339,11 @@ function tapAt(e: PointerEvent) {
 // Zoom: the buttons, Ctrl/Cmd + wheel, or + and - on the keyboard.
 const zoomInBtn = $<HTMLButtonElement>('#zoomIn'), zoomOutBtn = $<HTMLButtonElement>('#zoomOut');
 function setZoom(next: number) {
-  // Zoom only ever changes because someone asked for it: two steps in, and out until the scale is one screen
-  // pixel per art pixel.
-  zoom = Math.max(outLimit(), Math.min(2, next));
+  // Zoom only ever changes because someone asked for it: two steps in, and out only as far as the whole house fits.
+  zoom = Math.max(outLimit, Math.min(2, next));
   localStorage.setItem('auralis.zoom', String(zoom));
   zoomInBtn.disabled = zoom >= 2;
-  zoomOutBtn.disabled = zoom <= outLimit();
+  zoomOutBtn.disabled = zoom <= outLimit;
 }
 zoomInBtn.addEventListener('click', () => setZoom(zoom + 1));
 zoomOutBtn.addEventListener('click', () => setZoom(zoom - 1));
@@ -1553,11 +1552,14 @@ function render(t: number, dt: number) {
   const fit = Math.max(1, Math.floor(Math.min(aw / (roomW + T), ah / (roomH + T / 2))));
   // Characters and redrawn furniture have AV times the detail, so keep the scale a multiple of AV: crisp half-pixels.
   const base = Math.max(AV, Math.floor(fit / AV) * AV);
-  // Out past that the scale drops to one screen pixel per art pixel, so a whole house can still be seen.
-  if (base !== fitBase) {
-    fitBase = base; // the fitted room changed: so did how far out the zoom can go
-    if (zoom < outLimit()) setZoom(outLimit());
-    else zoomOutBtn.disabled = zoom <= outLimit();
+  // Out stops at the whole house: the first step that fits every room, and never a step past it, so the camera
+  // cannot drift off into empty paper. A house already inside the fitted room's view has nowhere to go.
+  const houseFit = Math.min(aw / (grid.w * T + T), ah / (grid.h * T + T / 2));
+  const limit = -Math.max(0, Math.ceil((base - houseFit) / AV));
+  if (limit !== outLimit) {
+    outLimit = limit; // the house or the free space changed: so did how far out the zoom may go
+    if (zoom < outLimit) setZoom(outLimit); // a bigger house pulls the view back in to what still fits
+    else zoomOutBtn.disabled = zoom <= outLimit;
   }
   const scale = Math.min(MAX_SCALE, Math.max(1, base + zoom * AV));
   const vw = aw / scale, vh = ah / scale;
