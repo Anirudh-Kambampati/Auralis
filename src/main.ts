@@ -169,8 +169,13 @@ let lastDoneTry = 0; // when we last told the server a finished session is done
 let view = { ox: 0, oy: 0, scale: 1 };
 // Extra scale steps (of AV) on top of the fitted view (+ zooms in, - zooms out).
 // Phones start one step closer, so faces and small things are easier to see; pinch or +/- changes it.
+const MAX_SCALE = 5 * AV;
+const DEEPEST_OUT = Math.floor((1 - MAX_SCALE) / AV); // the step that lands on one screen pixel per art pixel
 const savedZoom = localStorage.getItem('auralis.zoom');
-let zoom = Math.max(-2, Math.min(2, savedZoom !== null ? Number(savedZoom) || 0 : innerWidth < 600 ? 1 : 0));
+let zoom = Math.max(DEEPEST_OUT, Math.min(2, savedZoom !== null ? Number(savedZoom) || 0 : innerWidth < 600 ? 1 : 0));
+let fitBase = 0; // the fitted scale the render loop works out; until the first frame it doesn't limit the zoom
+// Zooming out stops at one screen pixel per art pixel: a room fitted at AV has one step left, a larger fit more.
+const outLimit = () => (fitBase ? Math.floor((1 - fitBase) / AV) : DEEPEST_OUT);
 let cam: { x: number; y: number; scale: number } | null = null; // camera target in art pixels, eased
 let camRoom = 0;
 
@@ -1334,11 +1339,12 @@ function tapAt(e: PointerEvent) {
 // Zoom: the buttons, Ctrl/Cmd + wheel, or + and - on the keyboard.
 const zoomInBtn = $<HTMLButtonElement>('#zoomIn'), zoomOutBtn = $<HTMLButtonElement>('#zoomOut');
 function setZoom(next: number) {
-  // Zoom only ever changes because someone asked for it: two steps either side of the fitted room.
-  zoom = Math.max(-2, Math.min(2, next));
+  // Zoom only ever changes because someone asked for it: two steps in, and out until the scale is one screen
+  // pixel per art pixel.
+  zoom = Math.max(outLimit(), Math.min(2, next));
   localStorage.setItem('auralis.zoom', String(zoom));
   zoomInBtn.disabled = zoom >= 2;
-  zoomOutBtn.disabled = zoom <= -2;
+  zoomOutBtn.disabled = zoom <= outLimit();
 }
 zoomInBtn.addEventListener('click', () => setZoom(zoom + 1));
 zoomOutBtn.addEventListener('click', () => setZoom(zoom - 1));
@@ -1546,7 +1552,14 @@ function render(t: number, dt: number) {
   const roomW = (size.w + 2) * T, roomH = (size.h + WALL_H + 1) * T; // room plus its walls
   const fit = Math.max(1, Math.floor(Math.min(aw / (roomW + T), ah / (roomH + T / 2))));
   // Characters and redrawn furniture have AV times the detail, so keep the scale a multiple of AV: crisp half-pixels.
-  const scale = Math.min(5 * AV, Math.max(AV, (Math.floor(fit / AV) + zoom) * AV));
+  const base = Math.max(AV, Math.floor(fit / AV) * AV);
+  // Out past that the scale drops to one screen pixel per art pixel, so a whole house can still be seen.
+  if (base !== fitBase) {
+    fitBase = base; // the fitted room changed: so did how far out the zoom can go
+    if (zoom < outLimit()) setZoom(outLimit());
+    else zoomOutBtn.disabled = zoom <= outLimit();
+  }
+  const scale = Math.min(MAX_SCALE, Math.max(1, base + zoom * AV));
   const vw = aw / scale, vh = ah / scale;
   // Centre the whole room when it fits on screen; otherwise follow the player. Decorate is the exception: it always
   // centres the room it is decorating, even zoomed in past fitting, instead of following me out of it.
@@ -3940,6 +3953,9 @@ let todoSig = '', chatSig = '', noteSig = '';
 // Which side's Clear is waiting for its second tap. It lives here, not on the button, because the list is rebuilt
 // whenever a note arrives or its "2m ago" ages: a rebuild must not eat the first tap.
 let clearArmed: 'in' | 'out' | null = null, clearArmTimer = 0;
+// "From housemates" and "Left by me" fold away under their counted headings, like finished to-dos: the count still
+// says what is behind the fold, and the fold lasts for the session.
+const noteFold = { in: false, out: false };
 function renderSide() {
   paintChatBadge(); // before the rows: the dock's count is what changed, and the card is rebuilt only when it has to
   chromeDirty();
@@ -3973,7 +3989,7 @@ function renderSide() {
     + (me.scratch ?? []).map((n) => `${n.id}:${n.text}`).join()
     + '|' + (me.notes ?? []).map((n) => `${n.id}:${n.seen ? 1 : 0}`).join()
     + '|' + (me.sentNotes ?? []).map((n) => n.id).join()
-    + `|${clearArmed ?? ''}`;
+    + `|${noteFold.in ? 1 : 0}${noteFold.out ? 1 : 0}|${clearArmed ?? ''}`;
   if (nSig !== noteSig) {
     noteSig = nSig;
     $('#noteList').innerHTML = noteHTML();
@@ -4039,8 +4055,14 @@ function noteHTML() {
     `<li class="note-card${n.unread ? ' unread' : ''}"><span class="note-text">${esc(n.text)}<small>${esc(n.meta)} · ${when(n.at)}</small></span>`
     + (n.mine ? `<button class="del" data-note="edit" data-id="${n.id}" aria-label="Edit note" title="Edit">✎</button><button class="del" data-note="del" data-id="${n.id}" aria-label="Delete note" title="Delete">✕</button>` : '')
     + '</li>';
-  const section = (title: string, side: 'in' | 'out' | null, rows: string[]) =>
-    `<h4 class="note-sec">${title} <b>${rows.length}</b>${side ? `<button type="button" class="clear${clearArmed === side ? ' armed' : ''}" data-note-clear="${side}" title="Clear these from my side">${clearArmed === side ? 'Tap again' : 'Clear'}</button>` : ''}</h4><ul class="note-cards">${rows.join('')}</ul>`;
+  const section = (title: string, side: 'in' | 'out' | null, rows: string[]) => {
+    const folded = side ? noteFold[side] : false;
+    // Received and sent notes fold under their heading; the count stays on it either way, and Clear stays beside it.
+    const head = side
+      ? `<button type="button" class="note-fold" data-note-fold="${side}" aria-expanded="${!folded}" aria-label="${folded ? 'Show' : 'Hide'} ${title.toLowerCase()}"><span class="chev">${folded ? '▸' : '▾'}</span>${title} <b>${rows.length}</b></button>`
+      : `${title} <b>${rows.length}</b>`;
+    return `<h4 class="note-sec">${head}${side ? `<button type="button" class="clear${clearArmed === side ? ' armed' : ''}" data-note-clear="${side}" title="Clear these from my side">${clearArmed === side ? 'Tap again' : 'Clear'}</button>` : ''}</h4><ul class="note-cards"${folded ? ' hidden' : ''}>${rows.join('')}</ul>`;
+  };
   return [
     mine.length ? section('To myself', null, mine.map((n) => card({ id: n.id, text: n.text, at: n.at, meta: n.editedAt ? 'edited' : 'just you', mine: true }))) : '',
     from.length ? section('From housemates', 'in', from.map((n) => card({ text: n.text, at: n.at, meta: n.from, unread: !n.seen }))) : '',
@@ -4238,6 +4260,13 @@ $('#noteForm').addEventListener('submit', (e) => {
 });
 $('#noteList').addEventListener('click', (e) => {
   const target = e.target as HTMLElement;
+  const foldBtn = target.closest<HTMLButtonElement>('button[data-note-fold]');
+  if (foldBtn) {
+    const side = foldBtn.dataset.noteFold as 'in' | 'out';
+    noteFold[side] = !noteFold[side];
+    renderSide(); // the fold is part of the list's signature, so this redraws it
+    return;
+  }
   const clear = target.closest<HTMLButtonElement>('button[data-note-clear]');
   if (clear) {
     // Two taps, like selling a room: the first one only arms that side, for three seconds.
