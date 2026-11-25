@@ -1157,7 +1157,10 @@ button.ghost.small { padding: 8px 14px; font-size: 15px; box-shadow: 0 3px 0 var
 
 /* Watch party (/watch <link> in chat): a floating screen the whole house shares. */
 .theater { position: fixed; top: 76px; right: 16px; z-index: 40; width: min(480px, calc(100vw - 24px)); background: var(--paper); border: 3px solid var(--ink); border-radius: 14px; box-shadow: 0 4px 0 var(--ink); overflow: hidden; }
-.theater-bar { display: flex; align-items: center; gap: 8px; padding: 6px 8px 6px 12px; background: #ddd3ef; border-bottom: 3px solid var(--ink); }
+/* The bar is the handle: drag the watch party off whatever it covers. */
+.theater-bar { display: flex; align-items: center; gap: 8px; padding: 6px 8px 6px 12px; background: #ddd3ef; border-bottom: 3px solid var(--ink); cursor: grab; user-select: none; touch-action: none; }
+.theater-bar.dragging { cursor: grabbing; }
+.theater-bar button { cursor: var(--point); }
 .theater-bar span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: 13px; }
 .theater-bar button { padding: 4px 10px; box-shadow: 0 2px 0 var(--ink); }
 .theater-screen { position: relative; aspect-ratio: 16 / 9; background: #000; }

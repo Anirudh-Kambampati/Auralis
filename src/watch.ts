@@ -8,6 +8,8 @@ type Send = (m: object) => void;
 let key = '', lastAt = 0, closed = false;
 let base = { playing: false, pos: 0, t0: 0 }; // the shared position, measured on our own clock
 let panel: HTMLElement | null = null, player: Player | null = null, timer = 0, stuck = 0, lastSeek = 0;
+// Where the bar was dragged to, in screen pixels. Kept for the session, so a new party opens where the last one was put.
+let spot: { x: number; y: number } | null = null;
 let scope: 'house' | 'dm' | 'group' = 'house', withId: string | undefined, groupId: string | undefined;
 // Commands we gave our own player, waiting for the event they cause (times in ms), so that event isn't shared as news.
 type Kind = 'play' | 'pause' | 'seek';
@@ -68,6 +70,8 @@ function open(w: NonNullable<Watch>, starter: boolean) {
   // Browsers only allow sound after a click, so everyone but the starter (who just pressed Enter) clicks to join.
   join.addEventListener('click', () => { join.remove(); start(w.src); });
   document.body.append(panel);
+  place();
+  dragBar(panel);
   if (starter) { join.remove(); start(w.src); }
 }
 
@@ -90,6 +94,41 @@ function needClick() {
   b.addEventListener('click', () => { b.remove(); stuck = 0; expect('play'); player?.play(); });
   panel.querySelector('.theater-screen')!.append(b);
 }
+
+// The panel floats over the right-hand cards (to-dos and chat), so its bar is a handle: drag it anywhere on screen and
+// it stays there. Kept on screen whatever the window size.
+function place() {
+  if (!panel || !spot) return;
+  const w = panel.offsetWidth, h = panel.offsetHeight;
+  spot.x = Math.max(0, Math.min(innerWidth - w, spot.x));
+  spot.y = Math.max(0, Math.min(innerHeight - h, spot.y));
+  panel.style.left = `${spot.x}px`;
+  panel.style.top = `${spot.y}px`;
+  panel.style.right = 'auto';
+}
+
+function dragBar(el: HTMLElement) {
+  const bar = el.querySelector<HTMLElement>('.theater-bar');
+  if (!bar) return;
+  bar.addEventListener('pointerdown', (e) => {
+    if ((e.target as HTMLElement).closest('button')) return; // the x is a button, not a handle
+    const r = el.getBoundingClientRect();
+    const dx = e.clientX - r.left, dy = e.clientY - r.top;
+    bar.setPointerCapture(e.pointerId);
+    bar.classList.add('dragging');
+    const move = (ev: PointerEvent) => { spot = { x: ev.clientX - dx, y: ev.clientY - dy }; place(); };
+    const up = () => {
+      bar.classList.remove('dragging');
+      bar.removeEventListener('pointermove', move);
+      bar.removeEventListener('pointerup', up);
+      bar.removeEventListener('pointercancel', up);
+    };
+    bar.addEventListener('pointermove', move);
+    bar.addEventListener('pointerup', up);
+    bar.addEventListener('pointercancel', up);
+  });
+}
+addEventListener('resize', () => place());
 
 // Bring our player in line with the shared state: seek if we've drifted, and match play/pause.
 async function apply() {

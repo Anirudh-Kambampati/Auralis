@@ -9,7 +9,7 @@
 
 import { MAX_NOTES } from '../shared/game.js';
 
-export const ctxKeys = ["ACCESSORIES","BODIES","FACES","HAIRS","ITEMS","MAX_EVENTS","NOTIFY","OUTFITS","SCAR_COLOURS","SCAR_KEYS","SHIRTS","SIZES","SKINS","STYLES","USES","boardMinutes","broadcastHouse","canSee","cleanText","db","ensureHome","friendList","goHome","has","inbox","leaveHouse","m","newId","nextOccurrence","okPushSub","p","pick","positions","push","refresh","remember","save","send","settleTodos","sockets","store","todoFor","usernameProblem","wantsNotify"];
+export const ctxKeys = ["ACCESSORIES","BODIES","FACES","HAIRS","ITEMS","MAX_EVENTS","NOTIFY","OUTFITS","SCAR_COLOURS","SCAR_KEYS","SHIRTS","SIZES","SKINS","STYLES","USES","addTodoRef","boardMinutes","broadcastHouse","cleanText","db","dropTodoRef","ensureHome","friendList","goHome","has","inbox","leaveHouse","m","newId","nextOccurrence","okPushSub","p","pick","positions","push","refresh","remember","save","send","settleTodos","sockets","store","todoFor","todoView","usernameProblem","wantsNotify"];
 
 export const social = {
   async look(ctx) {
@@ -323,26 +323,29 @@ export const social = {
   },
 
   async todo_add(ctx) {
-    const { db, p, cleanText, m, send, sockets, newId, inbox, push } = ctx;
-    {
+    const { db, p, cleanText, m, send, sockets, newId, inbox, push, addTodoRef } = ctx;
+    { // it is mine, so it lives on my row and comes with me to the next house
           const h = db.houses[p.house];
           const text = cleanText(m.text, 120);
-          h.todos ??= [];
+          p.todos ??= [];
           if (!text) return;
-          if (h.todos.length >= 60) return send(sockets.get(p.id), { t: 'error', text: 'The house list is full (60). Clear some done ones first.' });
+          if (p.todos.length >= 60) return send(sockets.get(p.id), { t: 'error', text: 'Your list is full (60). Clear some done ones first.' });
           // Optional reminder time (ms), and who it's for: everyone, or picked housemates (just me if nobody was picked).
           const at = Number.isFinite(m.at) && m.at > Date.now() - 60_000 && m.at < Date.now() + 2 * 365 * 86_400_000 ? m.at : undefined;
-          const to = m.all ? undefined : [...new Set(Array.isArray(m.to) ? m.to : [])].filter((id) => h.members.includes(id));
-          if (to && !to.length) to.push(p.id);
+          // The people it is for are fixed now — an "everyone" one names the house as it stands — so it keeps
+          // meaning the same people after anyone moves, and each of them keeps it on their own list.
+          const to = m.all ? [...h.members] : [...new Set(Array.isArray(m.to) ? m.to : [])].filter((id) => h.members.includes(id));
+          if (!to.length) to.push(p.id);
           // Recurrence: daily, weekly, monthly
           const repeat = ['daily', 'weekly', 'monthly'].includes(m.repeat) ? m.repeat : undefined;
           const repeatUntil = Number.isFinite(m.repeatUntil) && m.repeatUntil > Date.now() ? m.repeatUntil : undefined;
           // Priority: low, medium, high
           const priority = ['low', 'medium', 'high'].includes(m.priority) ? m.priority : undefined;
-          const newTodo = { id: newId(), text, done: false, by: p.name, byId: p.id, ticks: [], ...(m.all ? { all: true } : { to }), ...(at ? { at } : {}), ...(repeat ? { repeat } : {}), ...(repeatUntil ? { repeatUntil } : {}), ...(priority ? { priority } : {}) };
-          h.todos.push(newTodo);
+          const newTodo = { id: newId(), text, done: false, by: p.name, byId: p.id, ticks: [], to, ...(m.all ? { all: true } : {}), ...(at ? { at } : {}), ...(repeat ? { repeat } : {}), ...(repeatUntil ? { repeatUntil } : {}), ...(priority ? { priority } : {}) };
+          p.todos.push(newTodo);
+          for (const id of to) addTodoRef(id, p.id, newTodo.id); // their half of it: the task follows them, not my house
           // Notify assignees (but not the creator)
-          if (to) {
+          {
             for (const id of to) {
               if (id !== p.id) {
                 const assignee = db.players[id];
@@ -376,13 +379,13 @@ export const social = {
   },
 
   async todo_edit(ctx) {
-    const { db, p, m, cleanText, todoFor, inbox, sockets, send, push, settleTodos } = ctx;
+    const { db, p, m, cleanText, todoFor, addTodoRef, dropTodoRef, broadcastHouse, inbox, sockets, send, push, settleTodos } = ctx;
     { // only whoever made it: new words, time, or people (people who stay on keep their ticks)
-          const h = db.houses[p.house], t = h.todos?.find((x) => x.id === m.id), text = cleanText(m.text, 120);
-          if (!t || t.byId !== p.id || !text) return;
+          const h = db.houses[p.house], t = (p.todos ?? []).find((x) => x.id === m.id), text = cleanText(m.text, 120);
+          if (!t || !text) return; // my row holds only what I made, so this is the maker's check
           const at = m.at === t.at || (Number.isFinite(m.at) && m.at > Date.now() - 60_000 && m.at < Date.now() + 2 * 365 * 86_400_000) ? m.at : undefined;
           if (at !== t.at) delete t.reminded; // a new time gets its own reminder
-          const oldAssignees = t.to ? [...t.to] : [];
+          const before = todoFor(t, h); // who it was for before this edit
           t.text = text;
           if (at) t.at = at; else delete t.at;
           // Recurrence
@@ -393,15 +396,19 @@ export const social = {
           // Priority
           if (['low', 'medium', 'high'].includes(m.priority)) t.priority = m.priority;
           else if (m.priority === null) delete t.priority;
-          if (m.all) { t.all = true; delete t.to; }
+          if (m.all) { t.all = true; t.to = [...h.members]; } // "everyone" names the house as it stands now
           else {
             const to = [...new Set(Array.isArray(m.to) ? m.to : [])].filter((id) => h.members.includes(id));
             t.to = to.length ? to : [p.id];
             delete t.all;
           }
           t.ticks = (t.ticks ?? []).filter((id) => todoFor(t, h).includes(id));
+          const after = todoFor(t, h);
+          for (const id of after) addTodoRef(id, p.id, t.id); // everyone it is for keeps it on their own list
+          for (const id of before) if (!after.includes(id)) dropTodoRef(id, t.id);
+          for (const id of after) { const home = db.players[id]?.house; if (home && home !== p.house) broadcastHouse(home); } // the ones who live elsewhere
           // Notify newly added assignees
-          const newAssignees = t.to ? t.to.filter((id) => !oldAssignees.includes(id)) : [];
+          const newAssignees = after.filter((id) => !before.includes(id));
           for (const id of newAssignees) {
             if (id !== p.id) {
               const assignee = db.players[id];
@@ -411,22 +418,24 @@ export const social = {
             }
           }
           if (t.all) settleTodos(h);
-          else t.done = todoFor(t, h).every((id) => t.ticks.includes(id));
+          else t.done = after.every((id) => t.ticks.includes(id));
           return true;
         }
   },
 
   async todo_toggle(ctx) {
-    const { db, p, m, canSee, todoFor, settleTodos, inbox, sockets, send, push, nextOccurrence, newId } = ctx;
-    { // each person it's for ticks their own part; it's done once they all have
-          const h = db.houses[p.house], t = h.todos?.find((x) => x.id === m.id);
-          if (!t || !canSee(t, h, p.id)) return;
+    const { db, p, m, todoFor, todoView, addTodoRef, settleTodos, broadcastHouse, inbox, sockets, send, push, nextOccurrence, newId } = ctx;
+    { // each person it's for ticks their own part; it's done once they all have, wherever they live now
+          const h = db.houses[p.house], t = todoView(h, p.id).find((x) => x.id === m.id);
+          if (!t) return;
           if (!t.all && !t.to) { t.done = !t.done; return true; } // older shared to-dos: one tick for everyone
-          if (!todoFor(t, h).includes(p.id)) return;
+          const forWhom = todoFor(t, h);
+          if (!forWhom.includes(p.id)) return;
           const wasDone = t.done;
           t.ticks = t.ticks.includes(p.id) ? t.ticks.filter((id) => id !== p.id) : [...t.ticks, p.id];
-          if (t.all) settleTodos(h);
-          else t.done = todoFor(t, h).every((id) => t.ticks.includes(id));
+          t.done = forWhom.every((id) => t.ticks.includes(id));
+          if (t.all) settleTodos(h); // the house reward, where it can see the task at all
+          { const home = db.players[t.byId]?.house; if (home && home !== p.house) broadcastHouse(home); } // the maker's screen sees the tick too
           // Notify creator when task is completed (not when undone)
           if (t.done && !wasDone && t.byId && t.byId !== p.id) {
             const creator = db.players[t.byId];
@@ -438,8 +447,12 @@ export const social = {
           if (t.done && !wasDone && t.repeat && (!t.repeatUntil || Date.now() < t.repeatUntil)) {
             const nextAt = t.at ? nextOccurrence(t.at, t.repeat) : undefined;
             if (nextAt && (!t.repeatUntil || nextAt < t.repeatUntil)) {
-              const nextTodo = { id: newId(), text: t.text, done: false, by: t.by, byId: t.byId, ticks: [], ...(t.all ? { all: true } : { to: t.to }), ...(nextAt ? { at: nextAt } : {}), repeat: t.repeat, repeatUntil: t.repeatUntil, parentId: t.id };
-              h.todos.push(nextTodo);
+              const nextTodo = { id: newId(), text: t.text, done: false, by: t.by, byId: t.byId, ticks: [], ...(t.all ? { all: true } : {}), to: t.to, ...(nextAt ? { at: nextAt } : {}), repeat: t.repeat, repeatUntil: t.repeatUntil, parentId: t.id };
+              const maker = db.players[t.byId];
+              if (maker && !maker.__stub) {
+                (maker.todos ??= []).push(nextTodo); // the next one is theirs too
+                for (const id of t.to ?? []) addTodoRef(id, t.byId, nextTodo.id);
+              }
             }
           }
           return true;
@@ -447,10 +460,19 @@ export const social = {
   },
 
   async todo_del(ctx) {
-    const { db, p, m } = ctx;
-    { // only whoever made it (older ones without a maker: anyone)
-          const h = db.houses[p.house];
-          h.todos = (h.todos ?? []).filter((x) => x.id !== m.id || (x.byId && x.byId !== p.id));
+    const { db, p, m, todoFor, dropTodoRef, broadcastHouse } = ctx;
+    { // one I made goes for everyone it was for; one that was given to me only leaves my own list
+          const mine = (p.todos ?? []).find((x) => x.id === m.id);
+          if (mine) {
+            for (const id of todoFor(mine, db.houses[p.house])) if (id !== p.id) {
+              dropTodoRef(id, mine.id);
+              const home = db.players[id]?.house;
+              if (home && home !== p.house) broadcastHouse(home); // it goes from their screen at once
+            }
+            p.todos = (p.todos ?? []).filter((x) => x.id !== m.id);
+            return true;
+          }
+          p.todoRefs = (p.todoRefs ?? []).map((r) => (r.id === m.id ? { ...r, left: true } : r));
           return true;
         }
   },

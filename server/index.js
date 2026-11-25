@@ -62,7 +62,7 @@ async function hydrate(idOrPlayer) {
   if (!current || !current.__stub) return current;
   try {
     const row = await Promise.resolve(store.player?.(id));
-    if (row) { db.players[id] = row; return row; }
+    if (row) { db.players[id] = row; adoptTodos(row); return row; }
   } catch (err) { console.error('player load failed', id, err); }
   return current; // keep the stub: a thin state beats none, and the next read tries again
 }
@@ -73,6 +73,7 @@ async function hydrateFor(id) {
   await Promise.all((db.houses[db.players[id]?.house ?? stub?.house]?.members ?? []).map((mid) => hydrate(mid)));
   await Promise.all([...friends.values()].filter((f) => f.a === id || f.b === id)
     .map((f) => hydrate(f.a === id ? f.b : f.a)));
+  claimTodos(db.players[id]); // tasks written for me while I was away name me on their own rows
   return db.players[id];
 }
 
@@ -204,6 +205,46 @@ for (const p of Object.values(db.players)) {
   cleanedAcc = true;
 }
 if (cleanedAcc) store.saveAll();
+// Shared to-dos used to be saved on the house row. They belong to whoever made them now (see `houseTodos`),
+// so the one-time move puts each on its maker's row. A house keeps the ones whose maker is not loaded yet;
+// `adoptTodos` moves those when the player is read.
+let movedTodos = 0;
+for (const h of Object.values(db.houses)) {
+  if (!h.todos?.length) continue;
+  const keep = [];
+  for (const t of h.todos) {
+    const makerId = t.byId ?? h.members.find((id) => db.players[id] && !db.players[id].__stub);
+    const maker = makerId && db.players[makerId];
+    if (!maker || maker.__stub) { keep.push(t); continue; }
+    t.byId ??= makerId;
+    if (!t.all && !t.to) t.all = true; // it was a house-wide task when houses owned it
+    (maker.todos ??= []).push(t);
+    movedTodos++;
+  }
+  if (keep.length !== h.todos.length) h.todos = keep;
+}
+if (movedTodos) { console.log(`To-dos: ${movedTodos} moved from houses onto the people who made them`); store.saveAll(); }
+// Every shared to-do names the people it is for, fixed when it is written, so it still means the same people
+// after anyone moves; each of them also gets a reference on their own row, which is what keeps the task on
+// their list once its maker lives elsewhere. An "everyone" one made before this names its house as it stands.
+let namedTodos = 0, todoRefs = 0;
+for (const maker of Object.values(db.players)) {
+  if (maker.__stub || !maker.todos?.length) continue;
+  for (const t of maker.todos) {
+    if (!t.all && !t.to?.length) continue; // private: it is only ever their own
+    if (!t.to?.length) {
+      const h = db.houses[maker.house];
+      if (!h) continue;
+      t.to = [...h.members];
+      namedTodos++;
+    }
+    for (const id of t.to) if (addTodoRef(id, maker.id, t.id)) todoRefs++;
+  }
+}
+if (namedTodos || todoRefs) {
+  console.log(`To-dos: ${namedTodos} "everyone" tasks now name the people they were written for, ${todoRefs} references made`);
+  store.saveAll();
+}
 let saveTimer = null;
 const save = () => {
   clearTimeout(saveTimer);
@@ -474,26 +515,105 @@ function leaveHouse(p) {
 
 // "Everyone" to-dos are done once everybody in the house right now has ticked them. The first time one is finished
 // with two or more people, each of them gets coins and money off their next shop buy (capped per day, so it can't be farmed).
-// Who a to-do is for: everyone (an "everyone" one, or one made before assigning existed), or its assignees still in the house.
-// Only they and whoever made it can see it.
-const todoFor = (t, h) => (t.all || !t.to ? h.members : t.to.filter((id) => h.members.includes(id)));
+// Who a to-do is for: the people it names, fixed when it is written (an "everyone" one names the house as it
+// stood then), so it keeps meaning the same after anyone moves. An older one that only has `all` falls back to
+// the members of the house it is in.
+const todoFor = (t, h) => (t.to?.length ? t.to : t.all && h ? h.members : t.byId ? [t.byId] : []);
 const canSee = (t, h, id) => t.byId === id || todoFor(t, h).includes(id);
 
+// A to-do belongs to the person who made it, so it lives on their row and follows them from house to house.
+// Sharing names people rather than a place, and every one of them keeps a reference on their own row
+// (`todoRefs`), which is what keeps the task on their list after its maker moves out. The viewer's own
+// private list still rides in `me.todos`.
+function houseTodos(h, viewer) { // viewer null: every shared one (the reminder sweep wants them all)
+  const out = [];
+  for (const id of h.members) {
+    const maker = db.players[id];
+    if (!maker || maker.__stub) continue;
+    for (const t of maker.todos ?? []) if ((t.all || t.to) && (viewer === null || canSee(t, h, viewer))) out.push(t);
+  }
+  return out;
+}
+
+// A reference is the assignee's own half of a shared task: it names the task and who made it, and `left` when
+// they took it off their list. Nothing else is copied, so ticks and edits stay on the one task its maker holds.
+function addTodoRef(playerId, makerId, todoId) {
+  const q = db.players[playerId];
+  if (!q || q.__stub || playerId === makerId) return false;
+  q.todoRefs ??= [];
+  if (q.todoRefs.some((r) => r.id === todoId)) return false;
+  q.todoRefs.push({ id: todoId, byId: makerId });
+  return true;
+}
+function dropTodoRef(playerId, todoId) {
+  const q = db.players[playerId];
+  if (!q || q.__stub || !q.todoRefs) return;
+  q.todoRefs = q.todoRefs.filter((r) => r.id !== todoId);
+}
+
+// Everything the viewer can see: the shared to-dos of the house they are in, plus the ones made elsewhere that
+// name them. A reference whose task has gone, or that names someone its maker has taken off it, drops itself.
+function todoView(h, viewer) {
+  const me = db.players[viewer];
+  const resolved = new Map();
+  const refs = (me?.todoRefs ?? []).filter((r) => {
+    const maker = db.players[r.byId];
+    if (!maker || maker.__stub) return true; // keep it: nothing to show until the maker is loaded
+    const t = (maker.todos ?? []).find((x) => x.id === r.id);
+    if (!t || !canSee(t, h, viewer)) return !!r.left; // gone, or no longer for me: forget it (unless I left it)
+    resolved.set(r.id, t);
+    return true;
+  });
+  if (me) me.todoRefs = refs;
+  const left = new Set(refs.filter((r) => r.left).map((r) => r.id));
+  const out = houseTodos(h, viewer).filter((t) => !left.has(t.id));
+  const seen = new Set(out.map((t) => t.id));
+  for (const [id, t] of resolved) if (!left.has(id) && !seen.has(id)) { out.push(t); seen.add(id); }
+  return out;
+}
+
+// To-dos used to sit on the house row. A lazy boot only reads a player when someone needs them, so one whose
+// maker is still a stub moves onto their row the moment they are loaded.
+function adoptTodos(p) {
+  if (!p || p.__stub) return;
+  for (const h of Object.values(db.houses)) {
+    const mine = (h.todos ?? []).filter((t) => t.byId === p.id);
+    if (!mine.length) continue;
+    h.todos = h.todos.filter((t) => t.byId !== p.id);
+    p.todos = [...(p.todos ?? []), ...mine];
+  }
+}
+
+// A task written while I was away still names me: its reference is made when my row is first read.
+function claimTodos(p) {
+  if (!p || p.__stub) return;
+  for (const maker of Object.values(db.players)) {
+    if (maker.__stub) continue;
+    for (const t of maker.todos ?? []) if ((t.all || t.to?.length) && t.to?.includes(p.id)) addTodoRef(p.id, maker.id, t.id);
+  }
+}
+
 function settleTodos(h) {
-  for (const t of h.todos ?? []) {
-    if (!t.all) continue;
-    t.done = h.members.every((id) => t.ticks?.includes(id));
-    if (!t.done || t.rewarded || h.members.length < 2) continue;
-    t.rewarded = true;
-    const day = new Date().toDateString();
-    for (const id of h.members) {
-      const q = db.players[id];
-      if (q.taskDay !== day) { q.taskDay = day; q.taskRewards = 0; }
-      if (q.taskRewards >= TASK_REWARDS_PER_DAY) continue;
-      q.taskRewards++;
-      q.coins += TASK_COINS;
-      q.discount = true;
-      send(sockets.get(id), { t: 'reward', text: `Everyone finished "${t.text}"! +${TASK_COINS} coins and 10% off your next shop buy.` });
+  for (const id of h.members) { // every shared to-do the house can see is on its maker's row
+    const maker = db.players[id];
+    if (!maker || maker.__stub) continue;
+    for (const t of maker.todos ?? []) {
+      if (!t.all) continue;
+      const forWhom = todoFor(t, h);
+      t.done = forWhom.every((mid) => t.ticks?.includes(mid));
+      if (!t.done || t.rewarded || forWhom.length < 2) continue;
+      t.rewarded = true;
+      const day = new Date().toDateString();
+      for (const mid of forWhom) { // the people it was written for, wherever they live now
+        const q = db.players[mid];
+        if (!q || q.__stub) continue; // not loaded: paid when they are (syncCoins) rather than erasing them
+        if (q.taskDay !== day) { q.taskDay = day; q.taskRewards = 0; }
+        if (q.taskRewards >= TASK_REWARDS_PER_DAY) continue;
+        q.taskRewards++;
+        q.coins += TASK_COINS;
+        q.discount = true;
+        send(sockets.get(mid), { t: 'reward', text: `Everyone finished "${t.text}"! +${TASK_COINS} coins and 10% off your next shop buy.` });
+      }
     }
   }
 }
@@ -632,7 +752,6 @@ function broadcastHouseNow(code, full = false, only = null) {
   // now lets clients work out how far a playing video has got without trusting their own clocks.
   const house = {
     code, owner: h.owner ?? null, ownerName: db.players[h.owner]?.name ?? null,
-    todos: h.todos ?? [],
     events: h.events ?? [], announcements: h.announcements ?? [], watch: w ? { ...w, now: Date.now(), scope: 'house' } : null,
   };
   for (const id of only ? [only] : h.members) {
@@ -646,7 +765,7 @@ function broadcastHouseNow(code, full = false, only = null) {
     const dmw = houseDmWatch(p);
     const gw = houseGroupWatch(p);
     const privateWatch = gw ? groupWatchPayload(gw[0], gw[1]) : dmw ? dmWatchPayload(dmw[0], dmw[1], id) : null;
-    send(ws, { t: 'state', house: { ...house, ...(f && { chat: tail(thread) }), members: h.members.map((mid) => { const q = db.players[mid]; return { ...publicPlayer(q, id), rooms: roomsFor(id, q) }; }), todos: house.todos.filter((t) => canSee(t, h, id)) }, me: { id: p.id, home: p.home, ...houseLists(p), coins: p.coins, discount: !!p.discount, notes: p.notes ?? [], sentNotes: p.sentNotes ?? [], scratch: p.scratch ?? [], inbox: p.inbox ?? [], inboxSeen: p.inboxSeen ?? 0, tipsSeen: p.tipsSeen ?? [], events: p.events ?? [], inventory: p.inventory, crafted: p.crafted ?? [], ready: p.ready ?? {}, petAccs: p.petAccs ?? [], ...(sentSessions.get(id) !== mySessions(p).length && { sessions: mySessions(p) }), subjects: p.subjects ?? [], hiddenSubjects: p.hiddenSubjects ?? [], todos: p.todos ?? [], dm: f ? dmView(p) : undefined, groups: f ? groupsView(p) : groupsMeta(p), friends: friendList(p), notify: p.notify ?? {}, mutedThreads: mutedView(p), threadSeen: seenView(p), chatThemes: p.chatThemes ?? {}, pushKey: pushOn ? PUSH_KEY : undefined, watch: privateWatch } });
+    send(ws, { t: 'state', house: { ...house, ...(f && { chat: tail(thread) }), members: h.members.map((mid) => { const q = db.players[mid]; return { ...publicPlayer(q, id), rooms: roomsFor(id, q, code) }; }), todos: todoView(h, id) }, me: { id: p.id, home: p.home, ...houseLists(p), coins: p.coins, discount: !!p.discount, notes: p.notes ?? [], sentNotes: p.sentNotes ?? [], scratch: p.scratch ?? [], inbox: p.inbox ?? [], inboxSeen: p.inboxSeen ?? 0, tipsSeen: p.tipsSeen ?? [], events: p.events ?? [], inventory: p.inventory, crafted: p.crafted ?? [], ready: p.ready ?? {}, petAccs: p.petAccs ?? [], ...(sentSessions.get(id) !== mySessions(p).length && { sessions: mySessions(p) }), subjects: p.subjects ?? [], hiddenSubjects: p.hiddenSubjects ?? [], todos: p.todos ?? [], dm: f ? dmView(p) : undefined, groups: f ? groupsView(p) : groupsMeta(p), friends: friendList(p), notify: p.notify ?? {}, mutedThreads: mutedView(p), threadSeen: seenView(p), chatThemes: p.chatThemes ?? {}, pushKey: pushOn ? PUSH_KEY : undefined, watch: privateWatch } });
     sentSessions.set(id, mySessions(p).length);
   }
 }
@@ -723,7 +842,7 @@ async function handle(p, m) {
     NOTIFY, OUTFITS, PETS, PET_ACCS,
     ROOM_COST, SCAR_COLOURS, SCAR_KEYS, SHIRTS,
     SIZES, SKINS, STYLES, USES,
-    WALLPAPERS, WALL_PATTERNS, addGuestBond, guestBond, attachLabel,
+    WALLPAPERS, WALL_PATTERNS, addGuestBond, addTodoRef, dropTodoRef, guestBond, attachLabel,
     boardMinutes, bondLevel, broadcastHouse, buddiesOf,
     caffeineMinutes, caffeineOverlap, canPlace, canRotate,
     canSee, chatImg, cheerCount, clawPrize,
@@ -732,7 +851,7 @@ async function handle(p, m) {
     dmWatches, endDmWatch, ensureHome, findMsg,
     focusEnd, focusReward, focusStart, friendList,
     friends, goHome, groupWatches, handle,
-    has, houseDmWatch, houseGroupWatch, inbox,
+    has, houseDmWatch, houseGroupWatch, houseTodos, inbox,
     isFocusLength, isFriend, isPlant, lastChat,
     lastCheer, lastDm, lastInvite, leaveHouse,
     m, mySessions, newId: () => nextId++, newRoom,
@@ -745,7 +864,7 @@ async function handle(p, m) {
     save, sellPrice, send, serverThread,
     setMute, setPieceReady, setTz, settleTodos,
     sockets, store, streakBonus, streakDays,
-    threadMuted, todoFor, usernameProblem, visitAsks,
+    threadMuted, todoFor, todoView, usernameProblem, visitAsks,
     wantsNotify, watches,
   };
   if (await domain[m.t](ctx)) { save(); broadcastHouse(p.house); }
@@ -876,8 +995,8 @@ async function chatImage(req, res) {
 setInterval(() => {
   const now = Date.now();
   let changed = false;
-  for (const h of Object.values(db.houses)) for (const t of h.todos ?? []) {
-    if (!t.at || t.reminded || t.done || t.at > now) continue;
+  const remind = (t, h) => {
+    if (!t.at || t.reminded || t.done || t.at > now) return;
     t.reminded = true;
     changed = true;
     for (const id of todoFor(t, h)) {
@@ -888,6 +1007,19 @@ setInterval(() => {
       // Away: a push notification now, and the reminder waits for them in the app next time they log in.
       q.missed = [...(q.missed ?? []), { text: t.text, by: t.by }].slice(-10);
       push(q, { title: '⏰ Auralis reminder', body: t.text, tag: `todo-${t.id}`, open: 'todos' }, 'todo');
+    }
+  };
+  for (const h of Object.values(db.houses)) for (const t of houseTodos(h, null)) remind(t, h);
+  // A task whose maker has moved away still sits on the lists of the people it was given to, so their
+  // references find it too (`reminded` keeps it to one nudge).
+  for (const owner of Object.values(db.players)) {
+    if (owner.__stub) continue;
+    for (const r of owner.todoRefs ?? []) {
+      if (r.left) continue;
+      const maker = db.players[r.byId];
+      if (!maker || maker.__stub) continue;
+      const t = (maker.todos ?? []).find((x) => x.id === r.id);
+      if (t) remind(t, db.houses[maker.house] ?? null);
     }
   }
   if (changed) save();

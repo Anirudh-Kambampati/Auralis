@@ -178,6 +178,10 @@ let zoom = Math.max(DEEPEST_OUT, Math.min(2, savedZoom !== null ? Number(savedZo
 let outLimit = DEEPEST_OUT;
 let cam: { x: number; y: number; scale: number; z: number } | null = null; // camera target in art pixels, eased
 let camRoom = 0;
+// The scale a zoomed-in view was set to, held while I walk: fitting the room again in the next one made the view
+// magnify or shrink mid-step. The fitted step (0 and out) still follows the room, so the room on show fills the screen.
+let zoomScale = 0;
+let zoomDirty = false; // the zoom step just changed: take the scale again from the room in view
 
 // ---------- network ----------
 let ws: WebSocket;
@@ -268,7 +272,7 @@ const send = (m: object) => {
 function mergeRooms(have: Room[] | undefined, next: (Room | { r?: string })[]): Room[] {
   return next.map((room, i) => (Array.isArray((room as Room).furniture)
     ? (room as Room)
-    : { ...(have?.[i] ?? { wallpaper: 'plaster', floor: 'oak', furniture: [] }), r: room.r }));
+    : { ...(have?.[i] ?? { wallpaper: WALLPAPERS[0], floor: FLOORS[0], furniture: [] }), r: room.r }));
 }
 
 function onMessage(m: any) {
@@ -282,8 +286,11 @@ function onMessage(m: any) {
     reconnecting = false; // back: what was written during the gap can go now
     flushOutbox();
     // Moved house: start in my own room, drop any walk or seat that pointed at the old house's tiles,
-    // and treat its chat history as already seen.
-    if (m.house.code !== houseCode) { lastChatId = -1; avatars.delete(myId); path = []; seat = null; useNext = null; arrive = null; endBreak(); stopAllSounds(); }
+    // and drop that house's chat with it — the box and its count are the house I am in, not the one I left.
+    if (m.house.code !== houseCode) {
+      lastChatId = -1; avatars.delete(myId); path = []; seat = null; useNext = null; arrive = null; endBreak(); stopAllSounds();
+      chat = []; houseUnread = 0;
+    }
     const wasFocusing = !!myMember()?.focus;
     const oldGrid = grid, oldSlots = slots.map((x) => `${x.m.id}:${x.ri}`);
     houseCode = m.house.code;
@@ -1343,7 +1350,7 @@ function setZoom(next: number) {
   const clamped = Math.max(outLimit, Math.min(2, next));
   // A zoom re-frames on my character (or the room, zoomed out), so drop any drag left over from before it;
   // otherwise that stale pan is added to the player and the view lands off them.
-  if (clamped !== zoom) camPan.x = camPan.y = 0;
+  if (clamped !== zoom) { camPan.x = camPan.y = 0; zoomDirty = true; }
   zoom = clamped;
   localStorage.setItem('auralis.zoom', String(zoom));
   zoomInBtn.disabled = zoom >= 2;
@@ -1451,14 +1458,40 @@ onKey((e) => {
   e.preventDefault();
   e.stopImmediatePropagation(); // the arrows move the piece, not the avatar
 });
+// Walking by key (W/A/S/D or the arrows) follows the key rather than the key's auto-repeat. A held key is
+// remembered here and `step()` queues one tile at a time as the character arrives, so the queue is never more
+// than a tile ahead of the walk: no lagging tail of steps after a key is let go, one `pos` per tile (about
+// three a second, well inside the server's message budget) and no jump.
+const DIRECTIONS: Record<string, [number, number]> = {
+  ArrowUp: [0, -1], ArrowDown: [0, 1], ArrowLeft: [-1, 0], ArrowRight: [1, 0],
+  w: [0, -1], s: [0, 1], a: [-1, 0], d: [1, 0],
+};
+const heldDirs = new Map<string, [number, number]>(); // pressed direction keys, oldest first: the newest steers
+const keyName = (e: KeyboardEvent) => (e.key.length === 1 ? e.key.toLowerCase() : e.key); // Caps Lock and Shift hold the same key
+const dirOf = (e: KeyboardEvent) => {
+  const on = e.target as HTMLElement | null; // a window or document target has no closest()
+  if (on && typeof on.closest === 'function' && on.closest('input, textarea, select')) return null; // typing, not walking
+  const k = keyName(e);
+  return DIRECTIONS[k] ? { k, d: DIRECTIONS[k] } : null;
+};
 onKey((e) => {
-  const a = avatars.get(myId);
-  const d = ({ ArrowUp: [0, -1], ArrowDown: [0, 1], ArrowLeft: [-1, 0], ArrowRight: [1, 0], w: [0, -1], s: [0, 1], a: [-1, 0], d: [1, 0] } as Record<string, number[]>)[e.key];
-  if (!a || !d || (e.target as HTMLElement).closest('input, textarea, select')) return;
-  const n = path[path.length - 1] ?? { x: a.tx, y: a.ty };
-  if (walkable(grid.at(n.x + d[0], n.y + d[1]))) path = [...path.slice(0, 1), { x: n.x + d[0], y: n.y + d[1] }];
+  const hit = dirOf(e);
+  if (!hit || !avatars.has(myId)) return;
+  if (!heldDirs.size) path = []; // taking the wheel: a click path stops where it stands
+  heldDirs.set(hit.k, hit.d);
   quietUntil = Date.now() + 2500; // I'm steering: no wandering on top of it
 });
+// A release always clears its key, even when focus has moved into a text box since it was pressed.
+addEventListener('keyup', (e) => { if (heldDirs.delete(keyName(e))) quietUntil = Date.now() + 2500; });
+addEventListener('blur', () => heldDirs.clear()); // a tab that loses focus never holds a key down
+
+// The tile a held key wants next, if it can be walked to.
+function steered(last: { x: number; y: number }) {
+  const d = [...heldDirs.values()].pop();
+  if (!d) return null;
+  const n = { x: last.x + d[0], y: last.y + d[1] };
+  return walkable(grid.at(n.x, n.y)) ? n : null;
+}
 
 // ---------- loop ----------
 let last = performance.now();
@@ -1478,6 +1511,12 @@ function startLoop() { // a new loop on the current window; the old one stops at
 function step(dt: number) {
   const speed = caffeinated(myMember()) ? 4.2 : 3.2; // tiles per second; coffee makes you quick
   for (const [id, a] of avatars) {
+    // A held direction tops the queue up one tile at a time, as the character arrives on the last one: a held
+    // key walks steadily instead of stacking a queue of steps that it then has to walk out after the release.
+    if (id === myId && a.x === a.tx && a.y === a.ty && path.length < 2) {
+      const next = steered(path[path.length - 1] ?? a);
+      if (next) path = [...path, next];
+    }
     if (id === myId && a.x === a.tx && a.y === a.ty && path.length) {
       const n = path.shift()!;
       a.up = n.y < a.ty;
@@ -1565,7 +1604,13 @@ function render(t: number, dt: number) {
     if (zoom < outLimit) setZoom(outLimit); // a bigger house pulls the view back in to what still fits
     else zoomOutBtn.disabled = zoom <= outLimit;
   }
-  const scale = Math.min(MAX_SCALE, Math.max(1, base + zoom * AV));
+  const fitted = Math.min(MAX_SCALE, Math.max(1, base + zoom * AV));
+  // Zoomed in, the scale is fixed when the zoom is asked for: walking into a smaller room used to fit that room
+  // again and magnify the view under the player. The fitted view (zoom 0 and out) still tracks the room.
+  if (zoom <= 0) zoomScale = fitted;
+  else if (zoomDirty || !zoomScale) zoomScale = fitted;
+  zoomDirty = false;
+  const scale = zoom <= 0 ? fitted : zoomScale;
   const vw = aw / scale, vh = ah / scale;
   // Centre the whole room when it fits on screen and we are not zoomed in; otherwise follow the player.
   // Zooming in always centres the camera on my character avatar. Decorate is the exception: it always
@@ -2234,16 +2279,17 @@ function renderHud() {
   tickTimers();
 }
 
-// The chat button carries the number of unread lines, not just a dot: every thread, house chat included. Painted
-// on every side re-render too, so a message shows its count even in a tab whose timers are throttled.
+// The chat button carries the number of conversations with something unread — a person, a group or the house, each
+// counted once however many lines are waiting — not a dot. Painted on every side re-render too, so a message shows
+// its count even in a tab whose timers are throttled.
 function paintChatBadge() {
-  const n = houseUnread + Object.values(dmUnread).reduce((a, b) => a + b, 0);
+  const n = (houseUnread ? 1 : 0) + Object.values(dmUnread).filter((b) => b > 0).length;
   const badge = !n ? '' : n > 99 ? '99+' : String(n);
   const el = $<HTMLElement>('#chatCount');
   if (el.textContent !== badge) el.textContent = badge;
   el.hidden = !n;
   const btn = ui.querySelector<HTMLButtonElement>('#dock [data-panel="chat"]')!;
-  const label = n ? `Chat (${n} unread)` : 'Chat';
+  const label = n ? `Chat (${n} ${n === 1 ? 'chat' : 'chats'} unread)` : 'Chat';
   if (btn.ariaLabel !== label) btn.ariaLabel = btn.title = label;
   if (!n) $('#fold-chat').classList.remove('dot'); // read elsewhere: the folded card's dot goes too
 }
@@ -3437,7 +3483,9 @@ function todoHTML(list: Todo[]) {
   if (!list.length) return '<li class="empty">Nothing to do yet ✨</li>';
   const row = (t: Todo) => {
     const shared = !t.mine && !t.all && !t.to; // older house to-dos: one tick for everyone
-    const who = t.all ? members : members.filter((m) => t.to?.includes(m.id));
+    // Who it is for is the people it names — an "everyone" one named the house as it stood when it was written;
+    // only an older one with just `all` still means whoever is here now.
+    const who = members.filter((m) => (t.to?.length ? t.to.includes(m.id) : t.all));
     const ticked = t.mine || shared ? t.done : !!t.ticks?.includes(myId);
     const canTick = t.mine || shared || who.some((m) => m.id === myId);
     const late = t.at && !t.done && t.at < Date.now();
@@ -3455,7 +3503,8 @@ function todoHTML(list: Todo[]) {
       <button class="check${ticked && !t.done ? ' mine' : ''}" data-todo="toggle" data-id="${t.id}"${mine} aria-label="${ticked ? 'Untick' : 'Tick'}"${canTick ? '' : ' disabled title="Only the people it\'s for can tick it"'}>${ticked ? '✓' : ''}</button>
       <span class="todo-text">${esc(t.text)}${from}${pills ? `<span class="todo-meta">${pills}</span>` : ''}</span>
       ${t.byId === myId ? `<button class="del" data-todo="edit" data-id="${t.id}" aria-label="Edit" title="Edit">✎</button>` : ''}
-      ${t.mine || !t.byId || t.byId === myId ? `<button class="del" data-todo="del" data-id="${t.id}"${mine} aria-label="Delete">✕</button>` : ''}</li>`;
+      ${(() => { const own = t.mine || !t.byId || t.byId === myId; const word = own ? 'Delete' : 'Leave it'; // leaving only takes it off my own list
+        return `<button class="del" data-todo="del" data-id="${t.id}"${mine} aria-label="${word}" title="${own ? 'Delete it for everyone it is for' : 'Take it off my list'}">✕</button>`; })()}</li>`;
   };
   const open = list.filter((t) => !t.done), done = list.filter((t) => t.done);
   const fold = !done.length ? '' : `<li class="todo-done-head"><button type="button" class="todo-fold" data-todo-group="done" aria-expanded="${doneOpen}" aria-label="${doneOpen ? 'Hide' : 'Show'} completed tasks"><span class="chev">${doneOpen ? '▾' : '▸'}</span>Completed tasks <b>${done.length}</b></button></li>`;
@@ -3970,7 +4019,8 @@ const noteFold = { in: false, out: false };
 function renderSide() {
   paintChatBadge(); // before the rows: the dock's count is what changed, and the card is rebuilt only when it has to
   chromeDirty();
-  const list: Todo[] = [...todos, ...(me.todos ?? []).map((t) => ({ ...t, mine: true }))];
+  // The house list already carries the shared ones I made; my own private ones ride in `me`.
+  const list: Todo[] = [...todos, ...(me.todos ?? []).filter((t) => !t.all && !t.to).map((t) => ({ ...t, mine: true }))];
   const tSig = `${myId}|${Math.floor(Date.now() / 60_000)}|${members.map((m) => `${m.id}${m.name}`).join()}|` // the minute: so "overdue" turns on
     + list.map((t) => `${t.mine ? 'p' : ''}${t.id}:${t.done ? 1 : 0}:${t.all ? 1 : 0}:${t.at ?? ''}:${(t.to ?? []).join('.')}:${(t.ticks ?? []).join('.')}:${t.text}`).join('|');
   if (tSig !== todoSig) {

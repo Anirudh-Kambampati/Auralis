@@ -55,10 +55,9 @@ ok('the A+B task lists exactly A and B', JSON.stringify([...ab.to].sort()) === J
 // C can't tick or delete a task they can't see; B can't delete A's task.
 C.send({ t: 'todo_toggle', id: ab.id });
 C.send({ t: 'todo_del', id: ab.id });
-B.send({ t: 'todo_del', id: ab.id });
 await sleep(600);
 const ab2 = A.todos().find((t) => t.text === 'SECRET-ab');
-ok('C could not tick it, and neither C nor B could delete it', !!ab2 && ab2.ticks.length === 0);
+ok('C could not tick it, and could not delete it', !!ab2 && ab2.ticks.length === 0);
 
 // B ticks their part: not done until A ticks too.
 B.send({ t: 'todo_toggle', id: ab.id });
@@ -96,6 +95,48 @@ await D.connect();
 await sleep(500);
 ok('D gets the missed reminder on login', D.msgs.some((m) => m.t === 'remind' && m.text === 'DAN-only' && m.missed));
 ok('D never hears about the A+B task', !D.heard('SECRET-ab'));
+
+// A to-do belongs to its maker, not to a house: it follows them out and back, and so does a private one.
+C.send({ t: 'todo_add', text: 'FOLLOW-me', all: true });
+C.send({ t: 'ptodo_add', text: 'PRIVATE-c' });
+await sleep(700);
+const held = C.todos().find((t) => t.text === 'FOLLOW-me');
+ok('C made a shared task the house can see', !!held && has(A, 'FOLLOW-me'));
+ok('C has a private task too', (C.state.me.todos ?? []).some((t) => t.text === 'PRIVATE-c'));
+C.send({ t: 'leave' });
+await sleep(900);
+ok('C went home', C.state.house.code !== code);
+ok('the shared task came with them', has(C, 'FOLLOW-me'));
+ok('and so did the private one', (C.state.me.todos ?? []).some((t) => t.text === 'PRIVATE-c'));
+ok('the housemates it was written for keep it while C is away', has(A, 'FOLLOW-me') && has(B, 'FOLLOW-me') && has(D, 'FOLLOW-me'));
+ok('...though C is no longer one of the people living here', A.state.house.members.every((m) => m.id !== C.id));
+ok("A never saw C's private task", !A.heard('PRIVATE-c'));
+C.send({ t: 'join', code });
+await sleep(900);
+ok('back in the house, C still has the task', has(C, 'FOLLOW-me'));
+ok('and the housemates see it again while C is here', has(A, 'FOLLOW-me'));
+// A task that was given to you comes off your own list with the same ✕, and nobody else's.
+A.send({ t: 'todo_del', id: held.id });
+await sleep(700);
+ok('A took the shared task off their own list', !has(A, 'FOLLOW-me'));
+ok("and it is still on B's list and its maker's", has(B, 'FOLLOW-me') && has(C, 'FOLLOW-me'));
+C.send({ t: 'todo_toggle', id: held.id }); // C's part of the "everyone" task, not the end of it
+await sleep(500);
+ok('an unfinished shared task is still on C\'s list after the move', has(C, 'FOLLOW-me') && !C.todos().find((t) => t.text === 'FOLLOW-me').done);
+// Deleting one you made is the other thing: it goes for everyone it was for.
+C.send({ t: 'todo_del', id: held.id });
+await sleep(700);
+ok('a maker deleting it takes it off every list', !has(C, 'FOLLOW-me') && !has(B, 'FOLLOW-me') && !has(D, 'FOLLOW-me'));
+
+// Notes were never house-bound (they live on the player row); a notebook line and a note cross a move too.
+C.send({ t: 'scratch_add', text: 'NOTEBOOK-c' });
+C.send({ t: 'note', to: A.id, text: 'NOTE-to-a' });
+await sleep(700);
+C.send({ t: 'leave' });
+await sleep(900);
+ok('the notebook line came home with C', (C.state.me.scratch ?? []).some((n) => n.text === 'NOTEBOOK-c'));
+ok("C's copy of the note they left is still theirs", (C.state.me.sentNotes ?? []).some((n) => n.text === 'NOTE-to-a'));
+ok("and it is still on A's desk", (A.state.me.notes ?? []).some((n) => n.text === 'NOTE-to-a'));
 
 // Push subscriptions must point at a real browser push service.
 A.send({ t: 'push_sub', sub: { endpoint: 'http://169.254.169.254/latest', keys: { p256dh: 'x', auth: 'y' } } });
