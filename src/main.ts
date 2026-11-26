@@ -23,7 +23,7 @@ type Furniture = { item: string; x: number; y: number; v?: number; s?: number; f
 type Room = { wallpaper: string; floor: string; pattern?: string; floorStyle?: string; level?: number; curtains?: boolean; wallColor?: string; floorColor?: string; furniture: Furniture[]; r?: string };
 type Member = {
   id: string; name: string; look: Look; rooms: Room[]; focus: Focus | null;
-  totalMinutes: number; online: boolean; pos: { x: number; y: number } | null; pets: { kind: string; name?: string; coat?: number; acc?: string; away?: boolean; follow?: boolean; bond?: number; myBond?: number; fav?: string | null; sofa?: { owner: string; r: number; index: number; pats: number } }[]; fedAt?: number;
+  totalMinutes: number; online: boolean; pos: { room?: string; x: number; y: number } | null; pets: { kind: string; name?: string; coat?: number; acc?: string; away?: boolean; follow?: boolean; bond?: number; myBond?: number; fav?: string | null; sofa?: { owner: string; r: number; index: number; pats: number } }[]; fedAt?: number;
   exams?: { subject: string; date: string }[]; // YYYY-MM-DD, soonest first
   caffeineSince?: number; caffeineUntil?: number; tipsyUntil?: number; // the caffeine window rides on the member, so housemates see the flame
   presence?: Presence;
@@ -39,7 +39,7 @@ type Focus = { minutes: number; endsAt: number; tag?: string; pausedAt?: number 
 type Session = { at: number; minutes: number; tag: string; early?: boolean };
 type Inbox = { kind: string; from?: string; by?: string; text: string; at: number; n?: number };
 type Friend = { id: string; name: string; look: Look; online: boolean; focus: boolean; status: 'friend' | 'incoming' | 'outgoing'; here?: boolean; visit?: boolean; asked?: boolean; presence?: Presence };
-type Me = { id: string; home?: string; threadSeen?: Record<string, number>; visited?: { code: string; ownerName: string | null; online: number }[]; banned?: { id: string; name: string }[]; coins: number; discount?: boolean; notes?: { id: number; from: string; text: string; at: number; seen?: boolean }[]; sentNotes?: { id: number; toName: string; text: string; at: number }[]; scratch?: { id: number; text: string; at: number; editedAt?: number }[]; inbox?: Inbox[]; inboxSeen?: number; tipsSeen?: string[]; events?: CalEvent[]; pushKey?: string; notify?: Record<string, boolean>; groups?: Record<string, { name: string; members: string[]; msgs: Chat[] }>; friends?: Friend[]; inventory: Record<string, number>; crafted?: { item: string; col: string }[]; sessions: Session[]; subjects: string[]; hiddenSubjects: string[]; todos: Todo[]; dm: Record<string, Chat[]>; petAccs?: string[]; connectors?: { id: string; label: string; value?: string; lastSync?: number | null; error?: string | null; warning?: string | null; today?: { units: number; coins: number; minutes: number } | null; data?: { units?: number; solved?: number; events?: number; track?: string | null; artist?: string | null; playing?: boolean; streak?: number; lastSolved?: string | null; day?: string } | null }[]; watch?: Watch | null };
+type Me = { id: string; home?: string; threadSeen?: Record<string, number>; visited?: { code: string; ownerName: string | null; online: number }[]; banned?: { id: string; name: string }[]; coins: number; discount?: boolean; notes?: { id: number; from: string; text: string; at: number; seen?: boolean }[]; sentNotes?: { id: number; toName: string; text: string; at: number }[]; scratch?: { id: number; text: string; at: number; editedAt?: number }[]; inbox?: Inbox[]; inboxSeen?: number; tipsSeen?: string[]; events?: CalEvent[]; pushKey?: string; notify?: Record<string, boolean>; groups?: Record<string, { name: string; members: string[]; msgs: Chat[] }>; friends?: Friend[]; inventory: Record<string, number>; crafted?: { item: string; col: string }[]; sessions: Session[]; subjects: string[]; hiddenSubjects: string[]; todos: Todo[]; dm: Record<string, Chat[]>; petAccs?: string[]; connectors?: { id: string; label: string; value?: string; lastSync?: number | null; error?: string | null; warning?: string | null; today?: { units: number; coins: number; minutes: number } | null; data?: { units?: number; solved?: number; events?: number; track?: string | null; artist?: string | null; playing?: boolean; streak?: number; lastSolved?: string | null; day?: string } | null }[]; spotifyOk?: boolean; watch?: Watch | null };
 type Board = { metric?: string; scope: string; period: string; rows: { name: string; me: boolean; minutes?: number; coins?: number; members?: number }[] };
 type Avatar = { x: number; y: number; tx: number; ty: number; up: boolean; dist: number; use?: string };
 type ItemKey = keyof typeof ITEMS;
@@ -423,13 +423,13 @@ function onMessage(m: any) {
         if (home < 0) continue;
         const o = grid.origins[home], s = grid.sizes[home];
         a.x = a.tx = o.x + (s.w >> 1); a.y = a.ty = o.y + (s.h >> 1);
-        if (id === myId) { path = []; seat = null; send({ t: 'pos', x: a.tx, y: a.ty }); }
+        if (id === myId) { path = []; seat = null; sendPos(a.tx, a.ty); }
         continue;
       }
       const dx = grid.origins[now].x - oldGrid.origins[was].x, dy = grid.origins[now].y - oldGrid.origins[was].y;
       if (!dx && !dy) continue;
       a.x += dx; a.tx += dx; a.y += dy; a.ty += dy;
-      if (id === myId) { path = []; seat = null; send({ t: 'pos', x: a.tx, y: a.ty }); }
+      if (id === myId) { path = []; seat = null; sendPos(a.tx, a.ty); }
     }
     petSpots = slots.map((_, i) => {
       const spots = [];
@@ -486,12 +486,13 @@ function onMessage(m: any) {
     const canStand = (x: number, y: number) => walkable(grid.at(x, y)) || acts.has(tileKey(x, y));
     for (const mem of members) {
       let a = avatars.get(mem.id);
-      const spot = mem.id !== myId && mem.pos && canStand(mem.pos.x, mem.pos.y) ? mem.pos : null;
+      const abs = mem.id !== myId ? posToAbs(mem.pos) : null;
+      const spot = abs && canStand(abs.x, abs.y) ? abs : null;
       if (!a || !canStand(Math.round(a.tx), Math.round(a.ty))) {
         const s = spot ?? roomSpawn(slotOf(mem.id));
         a = { x: s.x, y: s.y, tx: s.x, ty: s.y, up: false, dist: 0 };
         avatars.set(mem.id, a);
-        if (mem.id === myId) { path = []; send({ t: 'pos', x: s.x, y: s.y }); }
+        if (mem.id === myId) { path = []; sendPos(s.x, s.y); }
       }
     }
     for (const id of avatars.keys()) if (!members.some((x) => x.id === id)) avatars.delete(id);
@@ -519,7 +520,8 @@ function onMessage(m: any) {
     if (pendingOpen) openFromNotification(pendingOpen); // a notification that arrived before the house was ready
   } else if (m.t === 'pos') {
     const a = avatars.get(m.id);
-    if (a) { a.tx = m.x; a.ty = m.y; a.use = m.use; }
+    const abs = a && posToAbs(m);
+    if (abs) { a!.tx = abs.x; a!.ty = abs.y; a!.use = m.use; }
   } else if (m.t === 'leaderboard') {
     board = m;
     if (openPanel === 'stats') renderPanel();
@@ -688,6 +690,30 @@ let editRoom = 0; // which of my rooms Decorate and the room shop work on
 const slotOf = (id: string, ri = 0) => slots.findIndex((x) => x.m.id === id && x.ri === ri);
 const mySlot = () => slotOf(myId, editRoom);
 const myRoom = () => myMember()?.rooms[editRoom] ?? myMember()?.rooms[0];
+
+// Positions are room-relative, not grid-absolute: the grid is rebuilt per-client from the slot
+// order, so an absolute tile means different things on two screens when a member joins or a room
+// changes. Sending the room key plus a local tile keeps everyone in the same physical spot.
+function sendPos(x: number, y: number, use?: string) {
+  const cx = Math.round(x), cy = Math.round(y);
+  const ownerAt = (gx: number, gy: number) => (gx >= 0 && gy >= 0 && gx < grid.w && gy < grid.h ? grid.owner[gy * grid.w + gx] : -1);
+  const si = [ownerAt(cx, cy), ownerAt(cx - 1, cy), ownerAt(cx, cy - 1)].find((k) => k >= 0) ?? -1;
+  if (si < 0) return;
+  const slot = slots[si], o = grid.origins[si];
+  send({ t: 'pos', room: `${slot.m.id}:${slot.ri}`, x: cx - o.x, y: cy - o.y, ...(use ? { use } : {}) });
+}
+// Convert a room-relative position to absolute grid tiles using this client's grid. Returns null
+// when the room is not in the grid (the member left, or a stale snapshot), so the caller can fall
+// back to a spawn. An old absolute position (no `room`) passes through unchanged.
+function posToAbs(pos: { room?: string; x: number; y: number } | null | undefined): { x: number; y: number } | null {
+  if (!pos) return null;
+  if (pos.room === undefined) return { x: pos.x, y: pos.y };
+  const [ownerId, riStr] = pos.room.split(':');
+  const si = slots.findIndex((s) => s.m.id === ownerId && s.ri === Number(riStr));
+  if (si < 0) return null;
+  const o = grid.origins[si];
+  return { x: o.x + pos.x, y: o.y + pos.y };
+}
 const furnColor = (f: Furniture) => f.col || (f.v === undefined ? undefined : colorsFor(f.item)[f.v]);
 
 // Tiles of furniture a character can use (chairs, sofas, gym balls, treadmills...) and what they do there.
@@ -1021,7 +1047,7 @@ function interact(si: number, fi: number) {
   if (p.length > 1) { path = p.slice(1); useNext = it.use!; return true; }
   // Already standing in front of it.
   a.use = it.use; a.up = true;
-  send({ t: 'pos', x: a.tx, y: a.ty, use: a.use });
+  sendPos(a.tx, a.ty, a.use);
   restUntil = Date.now() + 6000;
   arrive?.();
   arrive = null;
@@ -1143,7 +1169,7 @@ function wander() {
     const u = pool[Math.floor(Math.random() * pool.length)];
     if (u.x === start.x && u.y === start.y) {
       a.use = u.use; a.up = true;
-      send({ t: 'pos', x: u.x, y: u.y, use: u.use });
+      sendPos(u.x, u.y, u.use);
       restUntil = Date.now() + 4000 + Math.random() * 4000;
       u.water?.();
       return;
@@ -1564,7 +1590,7 @@ function step(dt: number) {
       a.tx = n.x; a.ty = n.y;
       a.use = path.length ? undefined : useNext ?? undefined;
       if (a.use) a.up = true; // face the thing being used
-      send({ t: 'pos', x: n.x, y: n.y, use: a.use });
+      sendPos(n.x, n.y, a.use);
       if (!path.length) {
         // Watering, reading, cooking... takes a few seconds; otherwise barely a breath, then off again.
         restUntil = Date.now() + (useNext ? 4000 + Math.random() * 4000 : 150 + Math.random() * 450);
@@ -1573,7 +1599,7 @@ function step(dt: number) {
       }
     } else if (id === myId && seat && a.x === a.tx && a.y === a.ty) {
       a.tx = seat.x; a.ty = seat.y; a.up = true;
-      send({ t: 'pos', x: seat.x, y: seat.y });
+      sendPos(seat.x, seat.y);
       // Lounging lasts a while; a workout or a bounce a little less.
       restUntil = Date.now() + (stayMs || (acts.get(tileKey(seat.x, seat.y))?.act === 'sit' ? 8000 + Math.random() * 7000 : 5000 + Math.random() * 5000));
       stayMs = 0;
@@ -3501,7 +3527,7 @@ const connAgo = (at?: number | null) => {
 function renderConnectors() {
   const box = $('#connList');
   if (!box) return;
-  const rows = CONNECTOR_KINDS.map((c) => {
+  const rows = CONNECTOR_KINDS.filter((c) => c.id !== 'spotify' || me.spotifyOk !== false).map((c) => {
     const row = me.connectors?.find((x) => x.id === c.id);
     // The day's ledger, right where the connector lives: how much it found and what that paid against the cap.
     const t = row?.today;
@@ -5258,6 +5284,7 @@ function openSettings() {
 // The record player sends people here when nothing is linked: the dialog, scrolled to Connectors with the
 // Spotify row lit, so the row to press is the one thing they see.
 function openSpotifySettings() {
+  if (me.spotifyOk === false) { toast('Spotify is not available for your account.', 'error'); return; }
   openSettings();
   const li = settingsDialog.querySelector<HTMLElement>('#connList li[data-conn="spotify"]');
   if (!li) return;

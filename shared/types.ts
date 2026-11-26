@@ -66,6 +66,7 @@ export interface MeState {
   threadSeen?: Record<string, number>; // thread -> newest message id this member has read
   chatThemes?: Record<string, string>;
   connectors?: ConnectorView[]; // my connectors, private to me: what is linked, when it last synced, and why it failed
+  spotifyOk?: boolean; // Spotify is capped to a few accounts (Development Mode); false hides its row and console card
   pushKey?: string;
   watch?: WatchState | null; // private watch party (e.g. with one friend), if any
 }
@@ -86,7 +87,7 @@ export interface Member {
   focus: Focus | null;
   totalMinutes: number;
   online: boolean;
-  pos: { x: number; y: number } | null;
+  pos: { room?: string; x: number; y: number } | null; // room-relative ("ownerId:index" + local tile) so it survives a grid rebuild
   pets: Pet[];
   fedAt?: number;
   exams?: Exam[];

@@ -2,7 +2,7 @@
 // a sync pass against a fake fetch — no network, no DNS, no credentials.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { addConnector, applyEvents, connectorView, hideEvent, leetcodeTask, parseIcs, removeConnector, spotifyControl, syncPlayer } from './connectors.js';
+import { addConnector, applyEvents, connectorView, hideEvent, leetcodeTask, parseIcs, removeConnector, spotifyAllowed, spotifyControl, syncPlayer } from './connectors.js';
 import { social } from './social.js';
 
 const lookup = async () => [{ address: '93.184.216.34' }];
@@ -379,6 +379,15 @@ test('the record player card asks Spotify for the right call and reports a refus
   assert.equal(view[0].warning, 'Reconnect to allow play and pause.');
   const fresh = connectorView({ conn: { spotify: { value: 'Spotify', tokens: { refresh: 'r', scope: 'user-read-playback-state user-modify-playback-state' }, data: null } } });
   assert.equal(fresh[0].warning, null);
+});
+
+test('the Spotify connector is open only to the named allowlist, matched by name case-insensitively', () => {
+  assert.equal(spotifyAllowed({ name: 'A' }), true);
+  assert.equal(spotifyAllowed({ name: 'sleepig' }), true);
+  assert.equal(spotifyAllowed({ name: 'bujjikukka' }), true);
+  assert.equal(spotifyAllowed({ name: 'SLEEPIg' }), true); // a name is its username, which ignores case
+  assert.equal(spotifyAllowed({ name: 'someoneelse' }), false);
+  assert.equal(spotifyAllowed(null), false);
 });
 
 test('deleting an imported date hides it, so its feed cannot bring it back', async () => {

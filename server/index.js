@@ -10,7 +10,7 @@ import { sendMail, resetMail } from './mail.js';
 import { openPgStore } from './store-pg.js';
 import { files, isPng, isJpeg } from './files.js';
 import { roomsFor, forgetRooms } from './rooms.js';
-import { addConnector, connectorView, hideEvent, leetcodeTask, removeConnector, spotifyAuthUrl, spotifyConfigured, spotifyControl, spotifyExchange, syncDue, syncPlayer } from './connectors.js';
+import { addConnector, connectorView, hideEvent, leetcodeTask, removeConnector, spotifyAllowed, spotifyAuthUrl, spotifyConfigured, spotifyControl, spotifyExchange, syncDue, syncPlayer } from './connectors.js';
 import { focus as focusHandlers, chat as chatHandlers } from './handlers.js';
 import { world as worldHandlers } from './world.js';
 import { social as socialHandlers } from './social.js';
@@ -174,6 +174,16 @@ for (const p of Object.values(db.players)) {
   }
 }
 if (cleanedRot) store.saveAll();
+// Spotify is in Development Mode and open only to a few named players: a token from before the cap is
+// dropped here, so a non-allowlisted row cannot keep syncing (and 403-ing) after a restart.
+let droppedSpotify = 0;
+for (const p of Object.values(db.players)) {
+  if (p.__stub || !p.conn?.spotify || spotifyAllowed(p)) continue;
+  delete p.conn.spotify;
+  if (!Object.keys(p.conn).length) delete p.conn;
+  droppedSpotify++;
+}
+if (droppedSpotify) { store.saveAll(); console.log(`Spotify: dropped the connector from ${droppedSpotify} player(s) not on the allowlist`); }
 // Skin is only ever one of the presets now, so a custom skin tint saved by an older build is dropped from every account.
 let cleanedSkin = false;
 for (const p of Object.values(db.players)) {
@@ -768,7 +778,7 @@ function broadcastHouseNow(code, full = false, only = null) {
     const dmw = houseDmWatch(p);
     const gw = houseGroupWatch(p);
     const privateWatch = gw ? groupWatchPayload(gw[0], gw[1]) : dmw ? dmWatchPayload(dmw[0], dmw[1], id) : null;
-    send(ws, { t: 'state', house: { ...house, ...(f && { chat: tail(thread) }), members: h.members.map((mid) => { const q = db.players[mid]; return { ...publicPlayer(q, id), rooms: roomsFor(id, q, code) }; }), todos: todoView(h, id) }, me: { id: p.id, home: p.home, ...houseLists(p), coins: p.coins, discount: !!p.discount, notes: p.notes ?? [], sentNotes: p.sentNotes ?? [], scratch: p.scratch ?? [], inbox: p.inbox ?? [], inboxSeen: p.inboxSeen ?? 0, tipsSeen: p.tipsSeen ?? [], events: p.events ?? [], connectors: connectorView(p), inventory: p.inventory, crafted: p.crafted ?? [], ready: p.ready ?? {}, petAccs: p.petAccs ?? [], ...(sentSessions.get(id) !== mySessions(p).length && { sessions: mySessions(p) }), subjects: p.subjects ?? [], hiddenSubjects: p.hiddenSubjects ?? [], todos: p.todos ?? [], dm: f ? dmView(p) : undefined, groups: f ? groupsView(p) : groupsMeta(p), friends: friendList(p), notify: p.notify ?? {}, mutedThreads: mutedView(p), threadSeen: seenView(p), chatThemes: p.chatThemes ?? {}, pushKey: pushOn ? PUSH_KEY : undefined, watch: privateWatch } });
+    send(ws, { t: 'state', house: { ...house, ...(f && { chat: tail(thread) }), members: h.members.map((mid) => { const q = db.players[mid]; return { ...publicPlayer(q, id), rooms: roomsFor(id, q, code) }; }), todos: todoView(h, id) }, me: { id: p.id, home: p.home, ...houseLists(p), coins: p.coins, discount: !!p.discount, notes: p.notes ?? [], sentNotes: p.sentNotes ?? [], scratch: p.scratch ?? [], inbox: p.inbox ?? [], inboxSeen: p.inboxSeen ?? 0, tipsSeen: p.tipsSeen ?? [], events: p.events ?? [], connectors: connectorView(p), spotifyOk: spotifyAllowed(p), inventory: p.inventory, crafted: p.crafted ?? [], ready: p.ready ?? {}, petAccs: p.petAccs ?? [], ...(sentSessions.get(id) !== mySessions(p).length && { sessions: mySessions(p) }), subjects: p.subjects ?? [], hiddenSubjects: p.hiddenSubjects ?? [], todos: p.todos ?? [], dm: f ? dmView(p) : undefined, groups: f ? groupsView(p) : groupsMeta(p), friends: friendList(p), notify: p.notify ?? {}, mutedThreads: mutedView(p), threadSeen: seenView(p), chatThemes: p.chatThemes ?? {}, pushKey: pushOn ? PUSH_KEY : undefined, watch: privateWatch } });
     sentSessions.set(id, mySessions(p).length);
   }
 }
@@ -1269,7 +1279,7 @@ async function health(res) {
 // Spotify's sign-in happens in the browser, which cannot carry an Authorization header across a redirect,
 // so the start call hands back a URL and the one-time state it was made with. The state is the only thing
 // that says who is coming back. Tokens stay on the player's row and never reach a browser.
-const oauthStates = new Map(); // state -> { playerId, at }
+const oauthStates = new Map(); // state -> { playerId, at, back }
 const OAUTH_STATE_MS = 10 * 60_000;
 // The redirect must be byte-identical on the start and the callback, so it is never taken from a request:
 // SPOTIFY_REDIRECT_URI when the website and the server are on different hosts, otherwise this server.
@@ -1285,9 +1295,12 @@ async function spotifyStart(req, res) {
   const id = await store.playerForToken(String(req.headers.authorization ?? '').replace(/^Bearer /, ''));
   const p = id && db.players[id];
   if (!p) return reply(401, { error: 'Please log in again.' });
+  if (!spotifyAllowed(p)) return reply(403, { error: 'Spotify is limited to a few accounts right now.' });
   const state = crypto.randomBytes(16).toString('base64url');
   for (const [k, v] of oauthStates) if (Date.now() - v.at > OAUTH_STATE_MS) oauthStates.delete(k);
-  oauthStates.set(state, { playerId: p.id, at: Date.now() });
+  // The site the sign-in started from, so the callback returns there (like a reset link) and not to the
+  // configured SITE_URL, which may be a second, stale front end. Spotify's own callback carries no Origin.
+  oauthStates.set(state, { playerId: p.id, at: Date.now(), back: siteFor(req) });
   return reply(200, { url: spotifyAuthUrl(state, spotifyRedirect()) });
 }
 
@@ -1298,6 +1311,7 @@ async function spotifyControlRoute(req, res) {
   const id = await store.playerForToken(String(req.headers.authorization ?? '').replace(/^Bearer /, ''));
   const p = id && db.players[id];
   if (!p) return reply(401, { error: 'Please log in again.' });
+  if (!spotifyAllowed(p)) return reply(403, { error: 'Spotify is limited to a few accounts right now.' });
   const entry = p.conn?.spotify;
   if (!entry?.tokens) return reply(409, { error: 'Connect Spotify in Settings first.' });
   const { action } = await readJson(req);
@@ -1316,7 +1330,7 @@ async function spotifyCallback(req, res) {
   const state = q.get('state') ?? '';
   const seen = oauthStates.get(state);
   oauthStates.delete(state); // one use, whatever happens next
-  const back = `${siteUrl()}/#`;
+  const back = `${seen?.back ?? siteUrl()}/#`; // the site it started from, or the configured one for an expired state
   if (!seen || Date.now() - seen.at > OAUTH_STATE_MS) return res.writeHead(302, { location: `${back}spotify-expired` }).end();
   const p = db.players[seen.playerId];
   if (!p) return res.writeHead(302, { location: `${back}spotify-expired` }).end();

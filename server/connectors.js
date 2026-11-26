@@ -318,6 +318,9 @@ const impl = {
     });
     if (res.status === 204) return { data: { track: null, artist: null, playing: false }, label: 'Spotify' };
     if (res.status === 401) { entry.tokens = null; throw new Error('Spotify sign-in expired; reconnect it.'); }
+    // A Development Mode app lets a non-allowlisted user sign in (they get a token) but answers 403 on every
+    // API call. The row has to say so, or the owner just sees "403" and cannot tell allowlist from a dead token.
+    if (res.status === 403) throw new Error('Spotify is in Development Mode; your account is not allowlisted. Ask the owner to add you under User Management in the Spotify dashboard.');
     if (res.status === 429) throw new Error('Spotify is rate-limiting us; trying again later.');
     if (!res.ok) throw new Error(`Spotify answered ${res.status}.`);
     const json = await res.json().catch(() => null);
@@ -342,6 +345,13 @@ const SPOTIFY_ID = () => String(process.env.SPOTIFY_CLIENT_ID ?? '').trim();
 const SPOTIFY_SECRET = () => String(process.env.SPOTIFY_CLIENT_SECRET ?? '').trim();
 const SPOTIFY_SCOPES = 'user-read-currently-playing user-read-playback-state user-modify-playback-state';
 export const spotifyConfigured = () => !!(SPOTIFY_ID() && SPOTIFY_SECRET());
+
+// Spotify is in Development Mode: a five-user cap, and a 403 on every API call for anyone not on the
+// allowlist (they can still sign in, which is why the cap has to be enforced here and not left to Spotify).
+// So the connector is open only to these players, matched by name (their username, case-insensitive). The
+// start and control routes refuse everyone else, and a boot sweep drops a token left over from before the cap.
+const SPOTIFY_ALLOWLIST = new Set(['a', 'sleepig', 'bujjikukka']);
+export const spotifyAllowed = (p) => SPOTIFY_ALLOWLIST.has(String(p?.name ?? '').trim().toLowerCase());
 
 const basic = () => `Basic ${Buffer.from(`${SPOTIFY_ID()}:${SPOTIFY_SECRET()}`).toString('base64')}`;
 

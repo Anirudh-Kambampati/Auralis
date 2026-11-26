@@ -191,9 +191,12 @@ export const social = {
     if (Number.isFinite(m.x) && Number.isFinite(m.y)) {
             // use: what they're doing with the furniture in front of them (watering, reading...), if anything.
             const use = USES.includes(m.use) ? m.use : undefined;
-            positions.set(p.id, { x: m.x, y: m.y, use });
+            // room: "ownerId:index" plus a room-local tile, so the position means the same physical spot on
+            // every screen even when the grid layout differs (a member joined, a room changed size).
+            const room = typeof m.room === 'string' ? m.room : undefined;
+            positions.set(p.id, { room, x: m.x, y: m.y, use });
             for (const id of db.houses[p.house].members) {
-              if (id !== p.id) send(sockets.get(id), { t: 'pos', id: p.id, x: m.x, y: m.y, use });
+              if (id !== p.id) send(sockets.get(id), { t: 'pos', id: p.id, room, x: m.x, y: m.y, use });
             }
           }
           return;

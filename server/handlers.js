@@ -124,7 +124,7 @@ export const chat = {
   async dm(ctx) {
     const { sockets, db, p, m, store, pushTail, noteThread, dmThread, findMsg, isFriend, cleanText, newId, lastDm, lastChat, chatImg, attachLabel, threadMuted, push, inbox, save, broadcastHouse, refresh, lastCheer, cheerCount, lastInvite, setTz, focusEnd, focusStart, buddiesOf, quitReward, quitMinutes, caffeineOverlap, recordSession, streakDays, streakBonus, caffeineMinutes, mySessions, bondLevel, PETS, send, groupWatches, houseGroupWatch, watches, dmWatches, endDmWatch, pairKey, parseVideo, room, noteSeen, serverThread, isFocusLength, focusReward, friends, handle, setMute, visitAsks, houseDmWatch } = ctx;
       const to = db.players[m.to];
-      const text = cleanText(m.text, 200);
+      const text = cleanText(m.text, Infinity);
       const img = chatImg(p, m.img);
       if (!to || !(text || img) || to.id === p.id || !(db.houses[p.house]?.members.includes(to.id) || isFriend(p.id, to.id))) return;
       const now = Date.now();
@@ -249,7 +249,7 @@ export const chat = {
 
   async gmsg(ctx) {
     const { sockets, db, p, m, store, pushTail, noteThread, dmThread, findMsg, isFriend, cleanText, newId, lastDm, lastChat, chatImg, attachLabel, threadMuted, push, inbox, save, broadcastHouse, refresh, lastCheer, cheerCount, lastInvite, setTz, focusEnd, focusStart, buddiesOf, quitReward, quitMinutes, caffeineOverlap, recordSession, streakDays, streakBonus, caffeineMinutes, mySessions, bondLevel, PETS, send, groupWatches, houseGroupWatch, watches, dmWatches, endDmWatch, pairKey, parseVideo, room, noteSeen, serverThread, isFocusLength, focusReward, friends, handle, setMute, visitAsks, houseDmWatch } = ctx;
-      const g = p.groups?.[m.g], text = cleanText(m.text, 200), img = chatImg(p, m.img), now = Date.now();
+      const g = p.groups?.[m.g], text = cleanText(m.text, Infinity), img = chatImg(p, m.img), now = Date.now();
       if (!g || !(text || img)) return;
       if (now - (lastDm.get(p.id) ?? 0) < 600) return send(sockets.get(p.id), { t: 'error', text: 'Slow down a little — that message was not sent.' });
       lastDm.set(p.id, now);
@@ -289,7 +289,7 @@ export const chat = {
   async chat(ctx) {
     const { sockets, db, p, m, store, pushTail, noteThread, dmThread, findMsg, isFriend, cleanText, newId, lastDm, lastChat, chatImg, attachLabel, threadMuted, push, inbox, save, broadcastHouse, refresh, lastCheer, cheerCount, lastInvite, setTz, focusEnd, focusStart, buddiesOf, quitReward, quitMinutes, caffeineOverlap, recordSession, streakDays, streakBonus, caffeineMinutes, mySessions, bondLevel, PETS, send, groupWatches, houseGroupWatch, watches, dmWatches, endDmWatch, pairKey, parseVideo, room, noteSeen, serverThread, isFocusLength, focusReward, friends, handle, setMute, visitAsks, houseDmWatch } = ctx;
       const h = db.houses[p.house];
-      const text = cleanText(m.text, 200), img = chatImg(p, m.img);
+      const text = cleanText(m.text, Infinity), img = chatImg(p, m.img);
       const now = Date.now();
       if (!text && !img) return;
       if (now - (lastChat.get(p.id) ?? 0) < 600) return send(sockets.get(p.id), { t: 'error', text: 'Slow down a little — that message was not sent.' });
