@@ -1294,7 +1294,7 @@ button.ghost.small { padding: 8px 14px; font-size: 15px; box-shadow: 0 3px 0 var
 .modal h2 { display: flex; align-items: center; gap: 8px; margin: 0 0 12px; font-size: 20px; }
 .modal .modal-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 0 0 12px; }
 .modal .modal-head h2 { margin: 0; }
-.modal .modal-head > button { display: grid; place-items: center; width: 32px; height: 32px; flex: none; font: inherit; color: var(--ink); background: #fff; border: 2px solid var(--ink); border-radius: 10px; }
+.modal .modal-head > button { display: flex; align-items: center; justify-content: center; width: 32px; height: 32px; padding: 0; flex: none; font: inherit; line-height: 1; color: var(--ink); background: #fff; border: 2px solid var(--ink); border-radius: 10px; }
 .modal h2 img { width: 24px; height: 24px; image-rendering: pixelated; }
 .modal h3 { margin: 16px 0 8px; font-size: 14px; }
 .modal h3 small { font-weight: 500; color: var(--muted); }
