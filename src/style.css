@@ -1190,6 +1190,7 @@ button.ghost.small { padding: 8px 14px; font-size: 15px; box-shadow: 0 3px 0 var
 .members li.conn .who small { display: block; margin-top: 2px; }
 .members li.conn input { flex: 1 1 140px; min-width: 0; }
 .members li.conn button { margin-left: auto; }
+.members li.conn .rate { opacity: 0.7; font-size: 11px; }
 /* The record player opens Settings on the Spotify row; this is what lights it up. */
 .members li.conn.flash { animation: connFlash 1.8s ease-out; }
 @keyframes connFlash {
@@ -1249,6 +1250,7 @@ button.ghost.small { padding: 8px 14px; font-size: 15px; box-shadow: 0 3px 0 var
 .todo-meta .pill { font-size: 11px; font-weight: 700; padding: 1px 8px; border: 2px solid var(--ink); border-radius: 999px; background: #e6dcf5; color: #3a2633; }
 .todo-meta .pill.ticked { background: #bfe8cc; }
 .todo-meta .pill.all { background: #ffe3a3; }
+.todo-meta .pill.streak { background: #ffe0c2; color: #8a3a00; }
 .todo-meta .due { font-size: 11px; font-weight: 700; color: var(--muted); align-self: center; }
 .todo-meta .due.late { color: var(--coral); }
 #todoList .check:disabled { opacity: 0.35; cursor: not-allowed; }

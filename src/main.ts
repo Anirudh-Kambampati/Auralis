@@ -30,7 +30,7 @@ type Member = {
   nowPlaying?: { track: string | null; artist?: string | null; playing?: boolean; at?: number } | null; // their record player's track
 };
 // all: everyone has to tick it. to: who it's for (older ones have neither). at: reminder time. mine: one of my older private to-dos.
-type Todo = { id: number; text: string; done: boolean; by: string; byId?: string; all?: boolean; to?: string[]; ticks?: string[]; at?: number; mine?: boolean; repeat?: 'daily' | 'weekly' | 'monthly'; repeatUntil?: number; parentId?: number; priority?: 'low' | 'medium' | 'high' };
+type Todo = { id: number; text: string; done: boolean; by: string; byId?: string; all?: boolean; to?: string[]; ticks?: string[]; at?: number; mine?: boolean; conn?: 'leetcode'; repeat?: 'daily' | 'weekly' | 'monthly'; repeatUntil?: number; parentId?: number; priority?: 'low' | 'medium' | 'high' };
 type Presence = { status: string; custom?: string; until?: number; at?: number } | null;
 type Chat = { id: number; from: string; by: string; text: string; at: number; img?: string; replyTo?: number }; // img: key of a picture
 type CalEvent = { id: number; date: string; time?: string; text: string; by?: string }; // date YYYY-MM-DD, time HH:MM
@@ -39,7 +39,7 @@ type Focus = { minutes: number; endsAt: number; tag?: string; pausedAt?: number 
 type Session = { at: number; minutes: number; tag: string; early?: boolean };
 type Inbox = { kind: string; from?: string; by?: string; text: string; at: number; n?: number };
 type Friend = { id: string; name: string; look: Look; online: boolean; focus: boolean; status: 'friend' | 'incoming' | 'outgoing'; here?: boolean; visit?: boolean; asked?: boolean; presence?: Presence };
-type Me = { id: string; home?: string; threadSeen?: Record<string, number>; visited?: { code: string; ownerName: string | null; online: number }[]; banned?: { id: string; name: string }[]; coins: number; discount?: boolean; notes?: { id: number; from: string; text: string; at: number; seen?: boolean }[]; sentNotes?: { id: number; toName: string; text: string; at: number }[]; scratch?: { id: number; text: string; at: number; editedAt?: number }[]; inbox?: Inbox[]; inboxSeen?: number; tipsSeen?: string[]; events?: CalEvent[]; pushKey?: string; notify?: Record<string, boolean>; groups?: Record<string, { name: string; members: string[]; msgs: Chat[] }>; friends?: Friend[]; inventory: Record<string, number>; crafted?: { item: string; col: string }[]; sessions: Session[]; subjects: string[]; hiddenSubjects: string[]; todos: Todo[]; dm: Record<string, Chat[]>; petAccs?: string[]; connectors?: { id: string; label: string; value?: string; lastSync?: number | null; error?: string | null; warning?: string | null; data?: { units?: number; solved?: number; events?: number; track?: string | null; artist?: string | null; playing?: boolean } | null }[]; watch?: Watch | null };
+type Me = { id: string; home?: string; threadSeen?: Record<string, number>; visited?: { code: string; ownerName: string | null; online: number }[]; banned?: { id: string; name: string }[]; coins: number; discount?: boolean; notes?: { id: number; from: string; text: string; at: number; seen?: boolean }[]; sentNotes?: { id: number; toName: string; text: string; at: number }[]; scratch?: { id: number; text: string; at: number; editedAt?: number }[]; inbox?: Inbox[]; inboxSeen?: number; tipsSeen?: string[]; events?: CalEvent[]; pushKey?: string; notify?: Record<string, boolean>; groups?: Record<string, { name: string; members: string[]; msgs: Chat[] }>; friends?: Friend[]; inventory: Record<string, number>; crafted?: { item: string; col: string }[]; sessions: Session[]; subjects: string[]; hiddenSubjects: string[]; todos: Todo[]; dm: Record<string, Chat[]>; petAccs?: string[]; connectors?: { id: string; label: string; value?: string; lastSync?: number | null; error?: string | null; warning?: string | null; today?: { units: number; coins: number; minutes: number } | null; data?: { units?: number; solved?: number; events?: number; track?: string | null; artist?: string | null; playing?: boolean; streak?: number; lastSolved?: string | null; day?: string } | null }[]; watch?: Watch | null };
 type Board = { metric?: string; scope: string; period: string; rows: { name: string; me: boolean; minutes?: number; coins?: number; members?: number }[] };
 type Avatar = { x: number; y: number; tx: number; ty: number; up: boolean; dist: number; use?: string };
 type ItemKey = keyof typeof ITEMS;
@@ -2659,6 +2659,14 @@ function streakLine() {
   const bonus = streakBonus(days);
   return days > 1 ? `<p class="center hint">🔥 Finish one today for a ${days}-day streak${bonus ? `: +${bonus * 100}% coins` : ''}. (3 days +10%, 7 days +25%, 30 days +50%)</p>` : '';
 }
+// The LeetCode streak belongs beside the study one: consistency is the reward, and the daily task is the proof.
+function leetcodeStreakLine() {
+  const row = me.connectors?.find((c) => c.id === 'leetcode');
+  const streak = Number(row?.data?.streak ?? 0);
+  if (streak < 2) return '';
+  const solvedToday = Number(row?.today?.units ?? 0) > 0;
+  return `<p class="center hint">🔥 LeetCode: ${streak}-day streak — ${solvedToday ? 'today’s problem is done ✓' : 'solve today’s to keep it going'}.</p>`;
+}
 function againButton() {
   const len = Number(localStorage.getItem('auralis.length'));
   return isFocusLength(len) ? `<div class="center"><button data-act="focus" data-v="${len}">▶ Again: ${len} min${lastTag ? ` of ${esc(lastTag)}` : ''}</button></div>` : '';
@@ -2917,7 +2925,7 @@ function panelBody(mine: Member) {
          <div class="bar panel-bar"><i id="pbar" style="width:${progress(f)}%"></i></div>
          <p class="center">Finish to earn <b>${f.minutes}</b> ${coin()}</p>${together}
          <div class="center"><button class="danger" data-act="cancel">Give up</button></div>`
-      : `${tomatoes()}${streakLine()}${againButton()}${joinable().map((o) => `<div class="invite"><span>📚 <b>${esc(o.name)}</b> is studying <b>${esc(o.focus!.tag ?? 'Study')}</b>, ${fmt(o.focus!.endsAt - Date.now())} left.</span>
+      : `${tomatoes()}${streakLine()}${leetcodeStreakLine()}${againButton()}${joinable().map((o) => `<div class="invite"><span>📚 <b>${esc(o.name)}</b> is studying <b>${esc(o.focus!.tag ?? 'Study')}</b>, ${fmt(o.focus!.endsAt - Date.now())} left.</span>
            <button data-act="joingroup" data-v="${o.id}">Join them</button></div>`).join('')}
          ${toggleSec('What are you studying?', `<div class="row"><input id="tag" maxlength="24" placeholder="Study" value="${esc(lastTag)}" aria-label="Subject">
            <button class="off" data-act="tagsave" title="Save as a quick pick">★ Save</button></div>
@@ -3465,7 +3473,13 @@ function examsHTML(mine: Member) {
 }
 
 // ---------- connectors: free accounts that feed the game ----------
-const CONNECTOR_KINDS = CONNECTORS as { id: string; label: string; valueLabel: string; placeholder: string; max: number; hint: string; oauth?: boolean }[];
+const CONNECTOR_KINDS = CONNECTORS as { id: string; label: string; valueLabel: string; placeholder: string; max: number; hint: string; oauth?: boolean; activity?: boolean; unit?: string; coinPer?: number; coinEach?: number; minutesEach?: number; coinsPerDay?: number }[];
+// What a connector pays, in its own words. Settings is the only place the rate is written down.
+const rateLine = (c: { unit?: string; coinPer?: number; coinEach?: number; minutesEach?: number; coinsPerDay?: number }) => {
+  if (!c.coinEach) return '';
+  const each = c.coinPer === 1 ? c.unit : `${c.coinPer} ${c.unit}s`;
+  return `${c.coinEach} coins per ${each} · ${c.minutesEach} study minutes each · ${c.coinsPerDay} coins a day`;
+};
 const connAgo = (at?: number | null) => {
   if (!at) return 'not synced yet';
   const s = Math.max(0, Math.round((Date.now() - at) / 1000));
@@ -3478,9 +3492,16 @@ function renderConnectors() {
   if (!box) return;
   const rows = CONNECTOR_KINDS.map((c) => {
     const row = me.connectors?.find((x) => x.id === c.id);
+    // The day's ledger, right where the connector lives: how much it found and what that paid against the cap.
+    const t = row?.today;
+    const today = t && c.activity
+      ? ` · ${t.units} ${c.unit ?? 'unit'}${t.units === 1 ? '' : 's'} · ${t.coins}/${c.coinsPerDay ?? '—'} coins today`
+      : '';
+    const status = row?.error ? `<b>${esc(row.error)}</b>` : row?.warning ? `<b>${esc(row.warning)}</b>` : connAgo(row?.lastSync);
+    const rate = rateLine(c);
     const state = row
-      ? `<small class="hint">${row.error ? `<b>${esc(row.error)}</b>` : row.warning ? `<b>${esc(row.warning)}</b>` : connAgo(row.lastSync)}${row.value ? ` · ${esc(row.value)}` : ''}</small>`
-      : `<small class="hint">${esc(c.hint)}</small>`;
+      ? `<small class="hint">${status}${today}${row.value ? ` · ${esc(row.value)}` : ''}</small>${rate ? `<small class="rate">${esc(rate)}</small>` : ''}`
+      : `<small class="hint">${esc(c.hint)}</small>${rate ? `<small class="rate">${esc(rate)}</small>` : ''}`;
     const action = row
       ? `<button class="off small" data-act="connsync" data-v="${c.id}">Sync</button><button class="off small" data-act="conndel" data-v="${c.id}" aria-label="Remove ${esc(c.label)}">✕</button>`
       : c.oauth
@@ -3688,11 +3709,14 @@ function todoHTML(list: Todo[]) {
     const canTick = t.mine || shared || who.some((m) => m.id === myId);
     const late = t.at && !t.done && t.at < Date.now();
     const priorityIcon = t.priority === 'high' ? '🔴' : t.priority === 'low' ? '🔵' : '';
+    // The LeetCode task carries its streak, so consistency is visible on the list itself, not only in Settings.
+    const streak = t.conn === 'leetcode' ? Number(me.connectors?.find((c) => c.id === 'leetcode')?.data?.streak ?? 0) : 0;
     const pills = [
       t.at ? `<span class="due${late ? ' late' : ''}">⏰ ${fmtDue(t.at)}</span>` : '',
       t.priority ? `<span class="pill priority-${t.priority}">${priorityIcon} ${t.priority}</span>` : '',
       t.mine ? '<span class="pill">🔒 just you</span>' : t.all ? '<span class="pill all">👥 everyone</span>' : '',
       t.repeat ? `<span class="pill repeat">🔁 ${t.repeat}${t.repeatUntil ? ` until ${new Date(t.repeatUntil).toLocaleDateString()}` : ''}</span>` : '',
+      streak >= 2 ? `<span class="pill streak">🔥 ${streak}-day streak</span>` : '',
       ...who.map((m) => { const done = t.ticks?.includes(m.id); return `<span class="pill${done ? ' ticked' : ''}">${done ? '✓ ' : ''}${esc(m.name)}</span>`; }),
     ].join('');
     const from = t.byId && t.byId !== myId ? `<small>from ${esc(t.by)}</small>` : shared && t.by ? `<small>${esc(t.by)}</small>` : '';

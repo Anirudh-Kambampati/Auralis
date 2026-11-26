@@ -2,7 +2,7 @@
 // a sync pass against a fake fetch — no network, no DNS, no credentials.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { addConnector, applyEvents, connectorView, hideEvent, parseIcs, removeConnector, spotifyControl, syncPlayer } from './connectors.js';
+import { addConnector, applyEvents, connectorView, hideEvent, leetcodeTask, parseIcs, removeConnector, spotifyControl, syncPlayer } from './connectors.js';
 import { social } from './social.js';
 
 const lookup = async () => [{ address: '93.184.216.34' }];
@@ -127,7 +127,7 @@ test('github commits pay coins and minutes once, on the delta, up to the day cap
   const record = (pl, minutes, tag) => recorded.push({ minutes, tag });
 
   const first = await syncPlayer(p, { fetch: f, now, record });
-  assert.equal(p.coins, 2); // one coin per two commits
+  assert.equal(p.coins, 20); // ten coins per two commits (four commits)
   assert.equal(first.minutes, 8); // two minutes a commit
   assert.deepEqual(recorded, [{ minutes: 8, tag: 'GitHub' }]);
 
@@ -139,8 +139,49 @@ test('github commits pay coins and minutes once, on the delta, up to the day cap
   commits = 10; // four more today
   p.conn.github.nextAt = 0;
   await syncPlayer(p, { fetch: f, now: now + 120_000, record });
-  assert.equal(p.coins, 5); // floor(10 / 2)
+  assert.equal(p.coins, 50); // ten commits would be 50: the day cap, paid on the delta
   assert.equal(recorded.at(-1).minutes, 12); // 20 total, 8 already paid
+});
+
+test('github counts the day with the commit search, which does not wait for the events feed', async () => {
+  const now = at('2026-11-26T12:00:00Z');
+  const p = { id: 'p1', coins: 0, events: [], conn: { github: { value: 'octocat', nextAt: 0, paid: null } } };
+  const seen = [];
+  const f = async (url) => {
+    seen.push(url);
+    if (url.includes('/search/commits')) return new Response(JSON.stringify({ total_count: 5, items: [] }), { status: 200 });
+    return new Response(JSON.stringify([]), { status: 200 }); // a feed with nothing today is still valid
+  };
+  const r = await syncPlayer(p, { fetch: f, now });
+  assert.equal(p.conn.github.data.units, 5);
+  assert.equal(p.coins, 20); // five commits: two pairs at ten coins
+  assert.equal(r.minutes, 10);
+  assert.equal(r.label, 'GitHub');
+  // Settings reads the same ledger: five commits, the 50 coins they paid, against the cap.
+  assert.deepEqual(connectorView(p)[0].today, { units: 5, coins: 20, minutes: 10 });
+  assert.ok(seen.some((u) => u.includes('author%3Aoctocat') && u.includes('author-date')));
+});
+
+test('github counts a pushed repository when the events feed has no commit lists', async () => {
+  const now = at('2026-11-26T12:00:00Z');
+  const p = { id: 'p1', coins: 0, events: [], conn: { github: { value: 'octocat', nextAt: 0, paid: null } } };
+  const asked = [];
+  const f = async (url) => {
+    asked.push(url);
+    if (url.includes('/events/public')) {
+      return new Response(JSON.stringify([
+        // The shape GitHub sends now: no payload.commits, only the repo, the ref and the hashes.
+        { type: 'PushEvent', created_at: '2026-11-26T09:00:00Z', repo: { name: 'octocat/hello' }, payload: { ref: 'refs/heads/main', head: 'abc', before: 'def' } },
+        { type: 'PushEvent', created_at: '2026-11-25T09:00:00Z', repo: { name: 'octocat/old' }, payload: {} },
+      ]), { status: 200 });
+    }
+    return new Response(JSON.stringify(Array(3).fill({})), { status: 200 });
+  };
+  const r = await syncPlayer(p, { fetch: f, now });
+  assert.equal(p.coins, 10); // three commits is one pair of two
+  assert.equal(r.minutes, 6);
+  assert.ok(asked.some((u) => u.includes('/repos/octocat/hello/commits?author=octocat')), 'the pushed repository is asked for its commits');
+  assert.ok(!asked.some((u) => u.includes('octocat/old')), 'a push from another day is not asked about');
 });
 
 test('a rate-limited github call becomes an error string, not a throw', async () => {
@@ -163,9 +204,85 @@ test('leetcode counts today\'s accepted solutions only', async () => {
     },
   };
   await syncPlayer(p, { fetch: async () => new Response(JSON.stringify(json), { status: 200 }), now });
-  assert.equal(p.coins, 2);
+  assert.equal(p.coins, 10); // ten coins for the one solution accepted today
   assert.equal(p.conn.leetcode.data.solved, 321);
   assert.equal(p.conn.leetcode.data.units, 1);
+});
+
+test('the LeetCode connector keeps one daily task, rolls it over and ticks it on a solve', () => {
+  const p = { id: 'p1', name: 'Ada', conn: { leetcode: { value: 'neet', data: null } } };
+  let n = 0;
+  const newId = () => ++n;
+  assert.equal(leetcodeTask(p, newId, at('2026-11-26T09:00:00Z')), true);
+  assert.equal(p.todos.length, 1);
+  const t = p.todos[0];
+  assert.equal(t.conn, 'leetcode');
+  assert.equal(t.done, false);
+  assert.equal(t.day, '2026-11-26');
+  // A second call the same day changes nothing.
+  assert.equal(leetcodeTask(p, newId, at('2026-11-26T20:00:00Z')), false);
+  // A solve today ticks the same task, without a new one.
+  p.conn.leetcode.data = { units: 1, day: '2026-11-26' };
+  assert.equal(leetcodeTask(p, newId, at('2026-11-26T21:00:00Z')), true);
+  assert.equal(p.todos.length, 1);
+  assert.equal(p.todos[0].done, true);
+  // A new day rolls the one task over rather than adding another.
+  assert.equal(leetcodeTask(p, newId, at('2026-11-27T09:00:00Z')), true);
+  assert.equal(p.todos.length, 1);
+  assert.equal(p.todos[0].done, false);
+  assert.equal(p.todos[0].day, '2026-11-27');
+});
+
+test('a LeetCode streak climbs on consecutive days and pays its milestone once', async () => {
+  const p = { id: 'p1', coins: 0, events: [], conn: { leetcode: { value: 'neet', nextAt: 0 } } };
+  const day = (n) => `2026-11-${String(n).padStart(2, '0')}T12:00:00Z`;
+  const solved = (d) => ({
+    data: {
+      matchedUser: { submitStatsGlobal: { acSubmissionNum: [{ difficulty: 'All', count: 1 }] } },
+      recentAcSubmissionList: [{ timestamp: String(at(day(d)) / 1000) }],
+    },
+  });
+  let bonus = 0;
+  for (let d = 20; d <= 26; d++) {
+    p.conn.leetcode.nextAt = 0;
+    const r = await syncPlayer(p, { fetch: async () => new Response(JSON.stringify(solved(d)), { status: 200 }), now: at(day(d)) });
+    bonus += r.bonus ?? 0;
+  }
+  assert.equal(p.conn.leetcode.data.streak, 7);
+  assert.equal(bonus, 100); // 30 at three days and 70 at seven, each paid once
+  assert.equal(connectorView(p)[0].data.streak, 7); // Settings reads the same streak
+  // The next day keeps the run going but does not pay the week milestone again.
+  p.conn.leetcode.nextAt = 0;
+  const r = await syncPlayer(p, { fetch: async () => new Response(JSON.stringify(solved(27)), { status: 200 }), now: at(day(27)) });
+  assert.equal(p.conn.leetcode.data.streak, 8);
+  assert.equal(r.bonus ?? 0, 0);
+});
+
+test('LeetCode milestones pay at 3, 7 and every 15 days, once each', async () => {
+  const day = (n) => `2026-11-${String(n).padStart(2, '0')}T12:00:00Z`;
+  const solved = (d) => ({
+    data: {
+      matchedUser: { submitStatsGlobal: { acSubmissionNum: [{ difficulty: 'All', count: 1 }] } },
+      recentAcSubmissionList: [{ timestamp: String(at(day(d)) / 1000) }],
+    },
+  });
+  // A 59-day run, solved on day 60: 3+7+15+30+45+60 days at 10 coins a day.
+  const p = { id: 'p1', coins: 0, events: [], conn: { leetcode: { value: 'neet', nextAt: 0, data: { streak: 59, lastSolved: '2026-11-28' } } } };
+  const r = await syncPlayer(p, { fetch: async () => new Response(JSON.stringify(solved(29)), { status: 200 }), now: at(day(29)) });
+  assert.equal(p.conn.leetcode.data.streak, 60);
+  assert.equal(r.bonus, 1600); // 30+70+150+300+450+600
+  // Day 61 pays nothing new; the next tier is 75.
+  p.conn.leetcode.nextAt = 0;
+  const r2 = await syncPlayer(p, { fetch: async () => new Response(JSON.stringify(solved(30)), { status: 200 }), now: at(day(30)) });
+  assert.equal(p.conn.leetcode.data.streak, 61);
+  assert.equal(r2.bonus ?? 0, 0);
+});
+
+test('a missed day breaks the LeetCode streak', async () => {
+  const p = { id: 'p1', coins: 0, events: [], conn: { leetcode: { value: 'neet', nextAt: 0, data: { streak: 4, lastSolved: '2026-11-20' } } } };
+  const none = { data: { matchedUser: { submitStatsGlobal: { acSubmissionNum: [{ difficulty: 'All', count: 9 }] } }, recentAcSubmissionList: [] } };
+  await syncPlayer(p, { fetch: async () => new Response(JSON.stringify(none), { status: 200 }), now: at('2026-11-23T12:00:00Z') });
+  assert.equal(p.conn.leetcode.data.streak, 0);
 });
 
 test('adding and removing a connector is validated and cleans up after itself', () => {

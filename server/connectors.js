@@ -226,12 +226,43 @@ const impl = {
     if (!res.ok) throw new Error(`GitHub answered ${res.status}.`);
     const list = await res.json().catch(() => null);
     if (!Array.isArray(list)) throw new Error('GitHub sent something unexpected.');
+    // The day is counted with GitHub's commit search: one request, every public repository, and it does not
+    // wait for the events feed - which now omits a push's commit list and can lag for days.
+    const midnight = new Date(now);
+    midnight.setUTCHours(0, 0, 0, 0);
+    const query = encodeURIComponent(`author:${entry.value} author-date:>=${midnight.toISOString().slice(0, 10)}`);
+    const search = await f(`https://api.github.com/search/commits?q=${query}&per_page=1`, {
+      headers: { accept: 'application/vnd.github+json', 'user-agent': UA, ...(process.env.GITHUB_TOKEN ? { authorization: `Bearer ${process.env.GITHUB_TOKEN}` } : {}) },
+      signal: AbortSignal.timeout(TIMEOUT_MS),
+    });
+    if (search.ok) {
+      const found = await search.json().catch(() => null);
+      const units = Number(found?.total_count);
+      if (Number.isFinite(units)) return { units, data: { units }, label: 'GitHub' };
+    }
     const day = utcDay(now);
+    const today = list.filter((ev) => ev?.type === 'PushEvent' && utcDay(Date.parse(ev.created_at)) === day);
+    // GitHub stopped sending the commit list with a push in the public events feed: a PushEvent now carries
+    // only the repository, the ref and two hashes. So when the feed has no commit lists, ask each repository
+    // pushed today for this author's commits since midnight: one request per repository, and the count is exact.
+    const listed = today.filter((ev) => Array.isArray(ev.payload?.commits));
     let units = 0;
-    for (const ev of list) {
-      if (ev?.type !== 'PushEvent') continue;
-      if (utcDay(Date.parse(ev.created_at)) !== day) continue;
-      units += Array.isArray(ev.payload?.commits) ? ev.payload.commits.length : 0;
+    if (listed.length) units = listed.reduce((n, ev) => n + ev.payload.commits.length, 0);
+    else {
+      const start = new Date(now);
+      start.setUTCHours(0, 0, 0, 0);
+      for (const repo of new Set(today.map((ev) => ev.repo?.name).filter(Boolean))) {
+        const rc = await f(`https://api.github.com/repos/${repo}/commits?author=${encodeURIComponent(entry.value)}&since=${start.toISOString()}&per_page=100`, {
+          headers: { accept: 'application/vnd.github+json', 'user-agent': UA, ...(process.env.GITHUB_TOKEN ? { authorization: `Bearer ${process.env.GITHUB_TOKEN}` } : {}) },
+          signal: AbortSignal.timeout(TIMEOUT_MS),
+        });
+        if (rc.status === 404) continue; // a repository that went private or away is not a failure
+        if (rc.status === 403 || rc.status === 429) throw new Error('GitHub is rate-limiting us; trying again later.');
+        if (!rc.ok) throw new Error(`GitHub answered ${rc.status}.`);
+        const commits = await rc.json().catch(() => null);
+        if (!Array.isArray(commits)) throw new Error('GitHub sent something unexpected.');
+        units += commits.length;
+      }
     }
     return { units, data: { units }, label: 'GitHub' };
   },
@@ -255,7 +286,26 @@ const impl = {
     const units = (json.data.recentAcSubmissionList ?? [])
       .filter((s) => utcDay(Number(s?.timestamp) * 1000) === day).length;
     const solved = user.submitStatsGlobal?.acSubmissionNum?.find((x) => x.difficulty === 'All')?.count ?? 0;
-    return { units, data: { units, solved }, label: 'LeetCode' };
+    // A streak is consecutive days with at least one accepted solution, and only a poll can see that happen,
+    // so it lives on the connector. `day` rides in the data so a rollover cannot tick a stale count.
+    const yesterday = utcDay(now - 86_400_000);
+    const last = entry.data?.lastSolved ?? null;
+    let streak = Number(entry.data?.streak) || 0;
+    if (units > 0) streak = last === day ? Math.max(streak, 1) : last === yesterday ? streak + 1 : 1;
+    else if (last && last !== day && last !== yesterday) streak = 0;
+    // Milestones pay once per run: 3 and 7 days, then every 15 days, at 10 coins per day of the streak.
+    entry.awards ??= {};
+    if (streak <= 1) entry.awards = {};
+    let bonus = 0;
+    for (const days of leetcodeMilestones(streak)) {
+      if (!entry.awards[days]) { entry.awards[days] = day; bonus += days * LEETCODE_COINS_PER_DAY; }
+    }
+    return {
+      units,
+      data: { units, solved, streak, lastSolved: units > 0 ? day : last, day },
+      label: 'LeetCode',
+      ...(bonus ? { bonus, note: `${streak}-day streak! +${bonus} coins` } : {}),
+    };
   },
 
   async spotify(entry, { fetch: f = fetch, now }) {
@@ -385,6 +435,38 @@ export async function spotifyControl(entry, action, { fetch: f = fetch } = {}) {
   if (!res.ok) throw new Error(`Spotify answered ${res.status}${why ? `: ${why}` : ''}.`);
 }
 
+// Consistency is its own reward, once per run, and never inside the daily cap: 3 and 7 days, then every 15 days
+// (15, 30, 45, 60, 75, …), at 10 coins per day of the streak — 3→30, 7→70, 15→150, 30→300, 45→450, 60→600, and
+// 750 at 75 — and a broken streak starts the run again.
+const LEETCODE_COINS_PER_DAY = 10;
+function leetcodeMilestones(streak) {
+  const out = [];
+  if (streak >= 3) out.push(3);
+  if (streak >= 7) out.push(7);
+  for (let d = 15; d <= streak; d += 15) out.push(d);
+  return out;
+}
+export const LEETCODE_TASK = 'Solve today’s LeetCode problem';
+
+// The daily LeetCode to-do the connector itself ticks. One row, not a new one every day: it is reused, rolled
+// over when the UTC day changes, and marked done as soon as an accepted solution appears in today's poll, so
+// the task and the proof of it come from the same place. The player can still tick or edit it by hand.
+export function leetcodeTask(p, newId, now = Date.now()) {
+  if (!p.conn?.leetcode) return false;
+  const day = utcDay(now);
+  p.todos ??= [];
+  const t = p.todos.find((x) => x.conn === 'leetcode');
+  if (!t) {
+    p.todos.push({ id: newId(), text: LEETCODE_TASK, done: false, by: p.name, byId: p.id, ticks: [], conn: 'leetcode', day });
+    return true;
+  }
+  let touched = false;
+  if (t.day !== day) { t.day = day; t.done = false; t.doneAt = null; touched = true; } // a fresh day, a fresh task
+  const today = p.conn.leetcode.data;
+  if (!t.done && today?.day === day && Number(today.units ?? 0) > 0) { t.done = true; t.doneAt = now; touched = true; }
+  return touched;
+}
+
 // ---------- what the player sees ----------
 const mask = (value) => {
   const s = String(value ?? '');
@@ -401,6 +483,11 @@ export function connectorView(p) {
       lastSync: e.lastSync ?? null,
       error: e.error ?? null,
       data: e.data ?? null,
+      // Today's work and what it has paid, so the row in Settings can say "2 commits · 20/50 coins today".
+      // This is the only place the day's ledger is shown: the reward itself still arrives as a toast.
+      today: e.paid?.day === utcDay(Date.now())
+        ? { units: e.paid.units ?? 0, coins: e.paid.coins ?? 0, minutes: e.paid.minutes ?? 0 }
+        : null,
       // A refresh token keeps the scopes it was granted with, so an account linked before play/pause existed
       // can read the track but cannot control it. Say so before the card is pressed, not after a 401.
       warning: id === 'spotify' && !!e.tokens && !String(e.tokens.scope ?? '').includes('user-modify-playback-state')
@@ -491,7 +578,7 @@ function grant(p, def, entry, units, now) {
 
 export async function syncPlayer(p, { fetch: f = fetch, lookup, now = Date.now(), record, maxEvents = 100, force = false } = {}) {
   const entries = Object.entries(p.conn ?? {}).filter(([id]) => CONNECTOR_BY_ID[id] && impl[id]);
-  let changed = false, coins = 0, minutes = 0, label = null;
+  let changed = false, coins = 0, minutes = 0, label = null, bonus = 0, note = '';
 
   for (const [kind, entry] of entries) {
     // `force` is a connector id (or true): a press on the record player's card cannot wait for the clock.
@@ -514,6 +601,7 @@ export async function syncPlayer(p, { fetch: f = fetch, lookup, now = Date.now()
       // A pause or a resume is a change the card draws (the button flips), so it must reach the screen too.
       if (kind === 'spotify' && (data?.track !== was.track || data?.artist !== was.artist || data?.playing !== was.playing)) changed = true;
       entry.data = data;
+      if (Number(out.bonus) > 0) { p.coins += out.bonus; coins += out.bonus; bonus += out.bonus; note = out.note ?? note; changed = true; }
       if (out.events && applyEvents(p, kind, out.events, maxEvents)) changed = true;
       if (def.activity && Number.isFinite(out.units)) {
         const g = grant(p, def, entry, out.units, now);
@@ -531,7 +619,7 @@ export async function syncPlayer(p, { fetch: f = fetch, lookup, now = Date.now()
   }
 
   if (minutes && record) record(p, minutes, label ?? 'Study');
-  return { changed, coins, minutes };
+  return { changed, coins, minutes, label, bonus, note };
 }
 
 // One pass over everyone with a connector, which is what the sweeper calls. Sequential on purpose: a

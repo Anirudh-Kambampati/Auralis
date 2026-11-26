@@ -10,7 +10,7 @@ import { sendMail, resetMail } from './mail.js';
 import { openPgStore } from './store-pg.js';
 import { files, isPng, isJpeg } from './files.js';
 import { roomsFor, forgetRooms } from './rooms.js';
-import { addConnector, connectorView, hideEvent, removeConnector, spotifyAuthUrl, spotifyConfigured, spotifyControl, spotifyExchange, syncDue, syncPlayer } from './connectors.js';
+import { addConnector, connectorView, hideEvent, leetcodeTask, removeConnector, spotifyAuthUrl, spotifyConfigured, spotifyControl, spotifyExchange, syncDue, syncPlayer } from './connectors.js';
 import { focus as focusHandlers, chat as chatHandlers } from './handlers.js';
 import { world as worldHandlers } from './world.js';
 import { social as socialHandlers } from './social.js';
@@ -796,27 +796,43 @@ function sendState(id, full = true) {
 // One sweep a minute; each connector asks no more often than its own `every` says. What changed is
 // that player's own state, so only they are refreshed, plus a small coin frame when the balance moved.
 const grantConnector = (p, minutes, tag) => recordSession(p, { at: Date.now(), minutes, tag });
+// The reward frames for one connector sync: the coin balance, the milestone note, and the activity line. The
+// milestone bonus is already inside `coins`, so the activity line names only what the day's work paid.
+function announceConnector(p, r) {
+  if (r.coins) send(sockets.get(p.id), { t: 'coins', coins: p.coins });
+  if (r.note) send(sockets.get(p.id), { t: 'reward', text: `LeetCode: ${r.note}.` });
+  const activityCoins = Math.max(0, (r.coins ?? 0) - (r.bonus ?? 0));
+  if (activityCoins || r.minutes) {
+    const bits = [activityCoins && `${activityCoins} coins`, r.minutes && `${r.minutes} study minutes`].filter(Boolean).join(' and ');
+    const who = r.label ?? 'Connector';
+    const why = who === 'GitHub' ? "you committed, so here's your" : 'your connected activity paid you';
+    send(sockets.get(p.id), { t: 'reward', text: `${who}: ${why} ${bits}.` });
+  }
+}
 async function runConnectorSync(p, { force = false } = {}) {
   const r = await syncPlayer(p, { record: grantConnector, force });
-  if (!r.changed && !force) return r; // a sweep that found nothing new must not rebuild anyone's state
+  const ticked = leetcodeTask(p, () => nextId++); // the daily task follows the poll, not a clock of its own
+  if (!r.changed && !force && !ticked) return r; // a sweep that found nothing new must not rebuild anyone's state
   save();
-  if (r.coins) send(sockets.get(p.id), { t: 'coins', coins: p.coins });
-  if (r.coins || r.minutes) {
-    const bits = [r.coins && `+${r.coins} coins`, r.minutes && `${r.minutes} study minutes`].filter(Boolean).join(' and ');
-    send(sockets.get(p.id), { t: 'reward', text: `Connected activity: ${bits}.` });
-  }
+  announceConnector(p, r);
   refresh(p.id);
   return r;
 }
 setInterval(async () => {
   try {
     const changed = await syncDue(db.players, { record: grantConnector });
-    if (!changed.length) return;
+    // The daily LeetCode task still rolls over on a quiet day, when there was nothing to pay and nothing changed.
+    let ticked = false;
+    for (const q of Object.values(db.players)) {
+      if (q.__stub || !q.conn?.leetcode) continue;
+      if (leetcodeTask(q, () => nextId++)) { ticked = true; refresh(q.id); }
+    }
+    if (!changed.length && !ticked) return;
     save();
     for (const c of changed) {
       const p = db.players[c.id];
       if (!p) continue;
-      if (c.coins) send(sockets.get(c.id), { t: 'coins', coins: p.coins });
+      announceConnector(p, c); // the sweep pays the same way a manual sync does, milestone note included
       refresh(c.id);
     }
   } catch (err) { console.error('connector sweep failed', err); }
@@ -843,7 +859,11 @@ setInterval(async () => {
 
 const connectorAdd = (p, kind, value) => {
   const problem = addConnector(p, kind, value);
-  if (!problem) save();
+  if (!problem) {
+    // LeetCode brings its own daily task: the same connector that sees a solve is what ticks it.
+    if (kind === 'leetcode') leetcodeTask(p, () => nextId++);
+    save();
+  }
   return problem;
 };
 const connectorDrop = (p, kind) => { if (removeConnector(p, kind)) save(); };

@@ -114,7 +114,8 @@ export interface ConnectorView {
   lastSync?: number | null;
   error?: string | null;
   warning?: string | null; // true while the stored sign-in lacks a scope the card needs (reconnect)
-  data?: { units?: number; solved?: number; events?: number; track?: string | null; artist?: string | null; playing?: boolean } | null;
+  today?: { units: number; coins: number; minutes: number } | null; // today's activity and what it paid
+  data?: { units?: number; solved?: number; events?: number; track?: string | null; artist?: string | null; playing?: boolean; streak?: number; lastSolved?: string | null; day?: string } | null;
 }
 
 export interface Look {
