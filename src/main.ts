@@ -2427,19 +2427,30 @@ $('#skipBreak').addEventListener('click', () => { endBreak(); restUntil = 0; sta
 $<HTMLImageElement>('#deckMarker').src = coinSrc;
 
 let toastTimer = 0;
+// A popover joins the top layer, so a toast shows above an open modal dialog (a plain z-index cannot beat a
+// modal's top layer). Re-showing it each time keeps it on top of a dialog opened after the last toast.
+function hideToast() {
+  const el = $<HTMLDivElement>('#toast');
+  el.hidden = true;
+  if (typeof el.hidePopover === 'function' && el.matches(':popover-open')) el.hidePopover();
+}
 // opts.onClick makes the whole toast a button (an invite: tap to join); opts.ms keeps it up longer.
 function toast(html: string, kind = '', opts: { ms?: number; onClick?: () => void } = {}) {
-  const el = $('#toast');
+  const el = $<HTMLDivElement>('#toast');
   el.innerHTML = `<span>${html}</span>`; // one inline run so bold words don't become separate flex items
   el.className = kind;
   $('#announce').textContent = el.textContent ?? ''; // read out by screen readers, since the toast just animates
   el.hidden = true;
   void el.offsetWidth; // restart the drop-in animation
   el.hidden = false;
-  el.onclick = opts.onClick ? () => { el.hidden = true; opts.onClick!(); } : null;
+  if (typeof el.showPopover === 'function') {
+    if (el.matches(':popover-open')) el.hidePopover();
+    el.showPopover();
+  }
+  el.onclick = opts.onClick ? () => { hideToast(); opts.onClick!(); } : null;
   el.style.cursor = opts.onClick ? 'pointer' : '';
   clearTimeout(toastTimer);
-  toastTimer = window.setTimeout(() => (el.hidden = true), opts.ms ?? 3200);
+  toastTimer = window.setTimeout(hideToast, opts.ms ?? 3200);
 }
 
 // The tour replaces the old per-item toasts: one toast per thing was two or three lines and then silence. A tour
@@ -5258,6 +5269,16 @@ function openSpotifySettings() {
 }
 $('#settings').addEventListener('click', openSettings);
 $('#settingsClose').addEventListener('click', () => settingsDialog.close());
+$('#settingsX').addEventListener('click', () => settingsDialog.close());
+settingsDialog.addEventListener('click', (e) => {
+  // A click on the backdrop (the dialog element itself, outside its box) closes it; a click on the padding
+  // inside the box does not. Clicks on the content never have the dialog as their target.
+  if (e.target === settingsDialog) {
+    const r = settingsDialog.getBoundingClientRect();
+    const inside = e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom;
+    if (!inside) settingsDialog.close();
+  }
+});
 settingsDialog.addEventListener('click', (e) => {
   const b = (e.target as HTMLElement).closest<HTMLButtonElement>('button[data-act]');
   if (!b) return;

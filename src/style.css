@@ -352,6 +352,8 @@ label { display: flex; flex-direction: column; gap: var(--gap); font-weight: 700
 /* ---------- toast ---------- */
 #toast {
   position: fixed;
+  inset: auto; /* a popover defaults to inset:0 + margin:auto; clear it so top/left win */
+  margin: 0;
   top: calc(78px + env(safe-area-inset-top, 0));
   left: 50%;
   transform: translateX(-50%);
@@ -1290,6 +1292,9 @@ button.ghost.small { padding: 8px 14px; font-size: 15px; box-shadow: 0 3px 0 var
 .modal { width: min(400px, calc(100vw - 32px)); padding: var(--pad) 20px; color: var(--ink); background: var(--paper); border: 3px solid var(--ink); border-radius: 18px; box-shadow: 0 6px 0 var(--ink); }
 .modal::backdrop { background: rgba(58, 38, 51, 0.4); }
 .modal h2 { display: flex; align-items: center; gap: 8px; margin: 0 0 12px; font-size: 20px; }
+.modal .modal-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 0 0 12px; }
+.modal .modal-head h2 { margin: 0; }
+.modal .modal-head > button { display: grid; place-items: center; width: 32px; height: 32px; flex: none; font: inherit; color: var(--ink); background: #fff; border: 2px solid var(--ink); border-radius: 10px; }
 .modal h2 img { width: 24px; height: 24px; image-rendering: pixelated; }
 .modal h3 { margin: 16px 0 8px; font-size: 14px; }
 .modal h3 small { font-weight: 500; color: var(--muted); }
