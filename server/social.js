@@ -9,7 +9,7 @@
 
 import { MAX_NOTES } from '../shared/game.js';
 
-export const ctxKeys = ["ACCESSORIES","BODIES","FACES","HAIRS","ITEMS","MAX_EVENTS","NOTIFY","OUTFITS","SCAR_COLOURS","SCAR_KEYS","SHIRTS","SIZES","SKINS","STYLES","USES","addTodoRef","boardMinutes","broadcastHouse","cleanText","db","dropTodoRef","ensureHome","friendList","goHome","has","inbox","leaveHouse","m","newId","nextOccurrence","okPushSub","p","pick","positions","push","refresh","remember","save","send","settleTodos","sockets","store","todoFor","todoView","usernameProblem","wantsNotify"];
+export const ctxKeys = ["ACCESSORIES","BODIES","FACES","HAIRS","ITEMS","MAX_EVENTS","NOTIFY","OUTFITS","SCAR_COLOURS","SCAR_KEYS","SHIRTS","SIZES","SKINS","STYLES","USES","addTodoRef","boardMinutes","broadcastHouse","cleanText","connectorAdd","connectorDrop","connectorSyncNow","db","hideEvent","dropTodoRef","ensureHome","friendList","goHome","has","inbox","leaveHouse","m","newId","nextOccurrence","okPushSub","p","pick","positions","push","refresh","remember","save","send","settleTodos","sockets","store","todoFor","todoView","usernameProblem","wantsNotify"];
 
 export const social = {
   async look(ctx) {
@@ -199,6 +199,35 @@ export const social = {
           return;
   },
 
+  // A connector lives on the player's own row, so adding one is one save. Its first sync is asked for
+  // at once, or the panel would sit on "never synced" until the next sweep.
+  async connector_add(ctx) {
+    const { p, m, connectorAdd, connectorSyncNow, send, sockets } = ctx;
+    {
+          const kind = String(m.kind ?? '');
+          const problem = connectorAdd(p, kind, String(m.value ?? ''));
+          if (problem) return send(sockets.get(p.id), { t: 'error', text: problem });
+          await connectorSyncNow(p, kind);
+          return true;
+        }
+  },
+
+  async connector_del(ctx) {
+    const { p, m, connectorDrop } = ctx;
+    {
+          connectorDrop(p, String(m.kind ?? ''));
+          return true;
+        }
+  },
+
+  async connector_sync(ctx) {
+    const { p, m, connectorSyncNow } = ctx;
+    {
+          await connectorSyncNow(p, String(m.kind ?? ''));
+          return true;
+        }
+  },
+
   async event_add(ctx) {
     const { db, p, cleanText, m, newId, MAX_EVENTS } = ctx;
     {
@@ -213,11 +242,15 @@ export const social = {
   },
 
   async event_del(ctx) {
-    const { db, p, m } = ctx;
+    const { db, p, m, hideEvent } = ctx;
     {
           const h = db.houses[p.house];
           if (m.scope === 'house') h.events = (h.events ?? []).filter((e) => e.id !== m.id);
-          else p.events = (p.events ?? []).filter((e) => e.id !== m.id);
+          else {
+            // An imported date is remembered as hidden, or the next sync of its feed puts it straight back.
+            for (const e of p.events ?? []) if (e.id === m.id) hideEvent(p, e);
+            p.events = (p.events ?? []).filter((e) => e.id !== m.id);
+          }
           return true;
         }
   },

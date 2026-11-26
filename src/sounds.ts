@@ -431,7 +431,6 @@ const file = (name: string): Start => (ctx, out) => {
 
 // [what the toast calls it, the sound, what kind: 'music' plays alone; band instruments play together, but not over music]
 const SOUNDS: Record<string, [string, Start, ('music' | 'band')?]> = {
-  recordPlayer: ['Ambience', file('Ambience'), 'music'],
   djDeck: ['EDM study mix', edm, 'music'],
   piano: ['Jazz piano', file('Piano'), 'music'],
   guitar: ['Jazz guitar', file('Guitar'), 'music'],

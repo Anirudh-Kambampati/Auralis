@@ -78,6 +78,21 @@ body.busy, body.busy * { cursor: var(--busy) !important; }
 html.signed-out, html.signed-out body { touch-action: auto; }
 
 #game { position: fixed; inset: 0; width: 100%; height: 100%; image-rendering: pixelated; }
+
+/* The record player's Spotify card. A DOM element over the canvas so the controls are real buttons; the
+   renderer sets its transform from the same camera the room is drawn with. */
+#spotifyCard {
+  position: fixed; left: 0; top: 0; z-index: 3; display: flex; align-items: center; gap: 1px;
+  padding: 1px 3px; border-radius: 999px; background: rgba(43, 37, 48, 0.5);
+  opacity: 0.35; transition: opacity 0.15s;
+}
+#spotifyCard[hidden] { display: none; }
+#spotifyCard:hover, #spotifyCard:focus-within { opacity: 1; }
+#spotifyCard button {
+  padding: 2px 5px; border: 0; box-shadow: none; border-radius: 999px; background: transparent;
+  color: #ffe08a; font-size: 13px; line-height: 1; min-width: 0;
+}
+@media (hover: none) { #spotifyCard { opacity: 0.6; } }
 img, canvas { image-rendering: pixelated; }
 
 /* ---------- buttons ---------- */
@@ -138,14 +153,8 @@ button:focus-visible, select:focus-visible, a:focus-visible { outline: 3px dashe
 .hud-left { display: flex; align-items: flex-start; gap: var(--gap); }
 .hud-right { display: flex; gap: var(--gap); }
 .chip.theme { padding: 5px 8px; cursor: var(--point); }
-.chip.vol { position: relative; display: flex; align-items: center; gap: 4px; padding: 5px 8px; }
-#volMenu { position: absolute; top: calc(100% + 6px); right: -3px; display: grid; gap: 8px; padding: 10px 12px; font-size: 15px; background: var(--paper); border: 3px solid var(--ink); border-radius: 12px; z-index: 5; }
-#volMenu[hidden] { display: none; }
-#volMenu label { display: flex; flex-direction: row; justify-content: space-between; align-items: center; gap: var(--gap); white-space: nowrap; }
-#volMenu button#stopAll { color: var(--ink); background: var(--soft); border: 2px solid var(--ink); border-radius: 8px; padding: 6px 10px; font-size: 14px; white-space: nowrap; }
-.chip.vol button { color: var(--ink); background: none; border: 0; box-shadow: none; padding: 0; cursor: var(--point); }
-.chip.vol input { width: 70px; cursor: var(--point); }
-@media (max-width: 600px) { .chip.vol input { width: 44px; } }
+/* Settings: one dialog for sound, notifications, connectors and the account */
+.chip.settings { padding: 5px 9px; font-size: 17px; line-height: 1; cursor: var(--point); }
 /* The bell: a count of what's new, and a menu of what happened with a quick action each */
 .bell-wrap { position: relative; display: flex; }
 .chip.bell { position: relative; padding: 5px 8px; cursor: var(--point); }
@@ -1174,6 +1183,19 @@ button.ghost.small { padding: 8px 14px; font-size: 15px; box-shadow: 0 3px 0 var
 .code-small { color: var(--muted); font-size: 13px; letter-spacing: 1px; }
 .members .who { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .members .tag, .members li button.small { flex-shrink: 0; white-space: nowrap; }
+/* Connector rows: the hint wraps under its label and the control takes the next line, so a whole sentence is
+   not cut in half by the box beside it (a leaderboard row has one short label; a connector has a sentence). */
+.members li.conn { flex-wrap: wrap; }
+.members li.conn .who { flex: 1 1 100%; white-space: normal; overflow: visible; text-overflow: clip; }
+.members li.conn .who small { display: block; margin-top: 2px; }
+.members li.conn input { flex: 1 1 140px; min-width: 0; }
+.members li.conn button { margin-left: auto; }
+/* The record player opens Settings on the Spotify row; this is what lights it up. */
+.members li.conn.flash { animation: connFlash 1.8s ease-out; }
+@keyframes connFlash {
+  0%, 45% { box-shadow: 0 0 0 3px var(--blue); border-radius: var(--r); }
+  100% { box-shadow: 0 0 0 0 transparent; border-radius: var(--r); }
+}
 
 /* What a click will do, next to the pointer (or over a tapping finger). */
 #tip { position: fixed; z-index: 60; pointer-events: none; padding: 4px 9px; border-radius: 8px; background: var(--ink); color: #fff; font-size: 13px; font-weight: 600; white-space: nowrap; }
@@ -1280,6 +1302,17 @@ button.ghost.small { padding: 8px 14px; font-size: 15px; box-shadow: 0 3px 0 var
 /* A link in a question is one long unbroken word: let it wrap instead of pushing the dialog wide. */
 #askBody { overflow-wrap: anywhere; white-space: pre-line; }
 .modal .end { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
+/* Settings: one row per thing, a label on the left and its control on the right, in four short sections. */
+#settingsModal { width: min(460px, calc(100vw - 32px)); max-height: min(86vh, 760px); overflow-y: auto; }
+#settingsModal h3 { margin: 18px 0 8px; font-size: 13px; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); }
+#settingsModal h3:first-of-type { margin-top: 4px; }
+#settingsModal .set-row { display: flex; flex-direction: row; align-items: center; justify-content: space-between; gap: var(--gap); margin: 8px 0; font-size: 14px; font-weight: 600; }
+#settingsModal .set-row input[type="range"] { flex: 1; max-width: 58%; }
+#settingsModal .set-row #mute { padding: 4px 10px; font-size: 16px; }
+#settingsModal .set-row #chimesBtn { padding: 4px 12px; font-size: 13px; }
+#settingsModal #stopAll { margin-top: 4px; font-size: 13px; }
+#settingsModal #connList .members { margin: 8px 0 0; }
+#settingsModal .end { margin-top: 20px; }
 .who { display: flex; flex-wrap: wrap; gap: 6px; }
 .who-chip { display: inline-flex; }
 .who-chip input { position: absolute; opacity: 0; width: 1px; height: 1px; }
@@ -1370,9 +1403,6 @@ button.ghost.small { padding: 8px 14px; font-size: 15px; box-shadow: 0 3px 0 var
 .chat-row.new .chat-face { padding: 8px; background: #ffe3a3; }
 #chatLog p.note { align-self: center; padding: 0; font-size: 12px; color: var(--muted); background: none; border: none; }
 /* Bell menu, folded at the bottom: which browser notifications I want */
-.bell-prefs { margin-top: 12px; padding: 12px 4px 0; border-top: 2px dashed var(--soft); }
-.bell-prefs summary { font-size: 14px; font-weight: 700; }
-.bell-prefs .hint { margin: 8px 0; font-size: 12px; color: var(--muted); }
 #notifyPrefs { display: grid; gap: 8px; }
 #notifyPrefs label { display: flex; flex-direction: row; justify-content: space-between; align-items: center; gap: var(--gap); font-size: 14px; font-weight: 600; }
 #notifyPrefs input { width: auto; accent-color: #f48a8a; }

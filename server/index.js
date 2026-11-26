@@ -10,6 +10,7 @@ import { sendMail, resetMail } from './mail.js';
 import { openPgStore } from './store-pg.js';
 import { files, isPng, isJpeg } from './files.js';
 import { roomsFor, forgetRooms } from './rooms.js';
+import { addConnector, connectorView, hideEvent, removeConnector, spotifyAuthUrl, spotifyConfigured, spotifyControl, spotifyExchange, syncDue, syncPlayer } from './connectors.js';
 import { focus as focusHandlers, chat as chatHandlers } from './handlers.js';
 import { world as worldHandlers } from './world.js';
 import { social as socialHandlers } from './social.js';
@@ -685,6 +686,8 @@ function publicPlayer(p, viewer = null) {
     totalMinutes: p.totalMinutes, online: sockets.has(p.id), pos: positions.get(p.id) ?? null, fedAt: p.fedAt ?? 0,
     exams: p.exams ?? [],
     caffeineSince: p.caffeineSince, caffeineUntil: p.caffeineUntil, tipsyUntil: p.tipsyUntil,
+    // The one connector thing the house is meant to see: what their record player is playing.
+    nowPlaying: p.conn?.spotify?.data?.track ? p.conn.spotify.data : null,
     presence: p.presence ?? null,
   };
 }
@@ -765,7 +768,7 @@ function broadcastHouseNow(code, full = false, only = null) {
     const dmw = houseDmWatch(p);
     const gw = houseGroupWatch(p);
     const privateWatch = gw ? groupWatchPayload(gw[0], gw[1]) : dmw ? dmWatchPayload(dmw[0], dmw[1], id) : null;
-    send(ws, { t: 'state', house: { ...house, ...(f && { chat: tail(thread) }), members: h.members.map((mid) => { const q = db.players[mid]; return { ...publicPlayer(q, id), rooms: roomsFor(id, q, code) }; }), todos: todoView(h, id) }, me: { id: p.id, home: p.home, ...houseLists(p), coins: p.coins, discount: !!p.discount, notes: p.notes ?? [], sentNotes: p.sentNotes ?? [], scratch: p.scratch ?? [], inbox: p.inbox ?? [], inboxSeen: p.inboxSeen ?? 0, tipsSeen: p.tipsSeen ?? [], events: p.events ?? [], inventory: p.inventory, crafted: p.crafted ?? [], ready: p.ready ?? {}, petAccs: p.petAccs ?? [], ...(sentSessions.get(id) !== mySessions(p).length && { sessions: mySessions(p) }), subjects: p.subjects ?? [], hiddenSubjects: p.hiddenSubjects ?? [], todos: p.todos ?? [], dm: f ? dmView(p) : undefined, groups: f ? groupsView(p) : groupsMeta(p), friends: friendList(p), notify: p.notify ?? {}, mutedThreads: mutedView(p), threadSeen: seenView(p), chatThemes: p.chatThemes ?? {}, pushKey: pushOn ? PUSH_KEY : undefined, watch: privateWatch } });
+    send(ws, { t: 'state', house: { ...house, ...(f && { chat: tail(thread) }), members: h.members.map((mid) => { const q = db.players[mid]; return { ...publicPlayer(q, id), rooms: roomsFor(id, q, code) }; }), todos: todoView(h, id) }, me: { id: p.id, home: p.home, ...houseLists(p), coins: p.coins, discount: !!p.discount, notes: p.notes ?? [], sentNotes: p.sentNotes ?? [], scratch: p.scratch ?? [], inbox: p.inbox ?? [], inboxSeen: p.inboxSeen ?? 0, tipsSeen: p.tipsSeen ?? [], events: p.events ?? [], connectors: connectorView(p), inventory: p.inventory, crafted: p.crafted ?? [], ready: p.ready ?? {}, petAccs: p.petAccs ?? [], ...(sentSessions.get(id) !== mySessions(p).length && { sessions: mySessions(p) }), subjects: p.subjects ?? [], hiddenSubjects: p.hiddenSubjects ?? [], todos: p.todos ?? [], dm: f ? dmView(p) : undefined, groups: f ? groupsView(p) : groupsMeta(p), friends: friendList(p), notify: p.notify ?? {}, mutedThreads: mutedView(p), threadSeen: seenView(p), chatThemes: p.chatThemes ?? {}, pushKey: pushOn ? PUSH_KEY : undefined, watch: privateWatch } });
     sentSessions.set(id, mySessions(p).length);
   }
 }
@@ -788,6 +791,67 @@ function sendState(id, full = true) {
   if (!p?.house || !db.houses[p.house]) return;
   broadcastHouseNow(p.house, full, id);
 }
+
+// ---------- connectors ----------
+// One sweep a minute; each connector asks no more often than its own `every` says. What changed is
+// that player's own state, so only they are refreshed, plus a small coin frame when the balance moved.
+const grantConnector = (p, minutes, tag) => recordSession(p, { at: Date.now(), minutes, tag });
+async function runConnectorSync(p, { force = false } = {}) {
+  const r = await syncPlayer(p, { record: grantConnector, force });
+  if (!r.changed && !force) return r; // a sweep that found nothing new must not rebuild anyone's state
+  save();
+  if (r.coins) send(sockets.get(p.id), { t: 'coins', coins: p.coins });
+  if (r.coins || r.minutes) {
+    const bits = [r.coins && `+${r.coins} coins`, r.minutes && `${r.minutes} study minutes`].filter(Boolean).join(' and ');
+    send(sockets.get(p.id), { t: 'reward', text: `Connected activity: ${bits}.` });
+  }
+  refresh(p.id);
+  return r;
+}
+setInterval(async () => {
+  try {
+    const changed = await syncDue(db.players, { record: grantConnector });
+    if (!changed.length) return;
+    save();
+    for (const c of changed) {
+      const p = db.players[c.id];
+      if (!p) continue;
+      if (c.coins) send(sockets.get(c.id), { t: 'coins', coins: p.coins });
+      refresh(c.id);
+    }
+  } catch (err) { console.error('connector sweep failed', err); }
+}, 60_000).unref();
+// The record player is the one connector surface a room watches. While its owner is online, Spotify is asked
+// every 5 s instead of every 2 minutes, so a song that changes on another device lands on the record player
+// while it is still new. The paid ledger, the back-off and the error messages stay with the minute sweep;
+// this only moves the track, and only when it really moved.
+setInterval(async () => {
+  if (!spotifyConfigured()) return;
+  for (const id of [...sockets.keys()]) {
+    const p = db.players[id];
+    const entry = p?.conn?.spotify;
+    if (!entry?.tokens || entry.error) continue;
+    try {
+      // Forced for Spotify only: the other connectors keep their own clocks and their own paid ledgers.
+      const r = await syncPlayer(p, { record: grantConnector, force: 'spotify' });
+      if (!r.changed) continue;
+      save();
+      refresh(id); // their own state: the card and the label are both drawn from it
+    } catch { /* the sweep reports and backs off */ }
+  }
+}, 5_000).unref();
+
+const connectorAdd = (p, kind, value) => {
+  const problem = addConnector(p, kind, value);
+  if (!problem) save();
+  return problem;
+};
+const connectorDrop = (p, kind) => { if (removeConnector(p, kind)) save(); };
+const connectorSyncNow = async (p, kind) => {
+  const entry = p.conn?.[kind];
+  if (entry) entry.nextAt = 0; // a person asked, so the sweep's interval does not apply
+  await runConnectorSync(p, { force: true }); // a tap always repaints, even when the answer was unchanged
+};
 
 // The room a message is about: m.r picks one of the player's rooms (the first when missing).
 const setTz = (p, tz) => { if (Number.isFinite(tz)) p.tz = Math.max(-840, Math.min(840, Math.round(tz))); };
@@ -846,7 +910,7 @@ async function handle(p, m) {
     boardMinutes, bondLevel, broadcastHouse, buddiesOf,
     caffeineMinutes, caffeineOverlap, canPlace, canRotate,
     canSee, chatImg, cheerCount, clawPrize,
-    cleanText, colorsFor, craftColour, craftItem,
+    cleanText, colorsFor, connectorAdd, connectorDrop, connectorSyncNow, craftColour, craftItem, hideEvent,
     craftedPrice, db, discounted, dmThread,
     dmWatches, endDmWatch, ensureHome, findMsg,
     focusEnd, focusReward, focusStart, friendList,
@@ -1182,6 +1246,78 @@ async function health(res) {
     .end(JSON.stringify(ok ? { ok: true, storage: 'ok' } : { ok: false, storage: 'down' }));
 }
 
+// Spotify's sign-in happens in the browser, which cannot carry an Authorization header across a redirect,
+// so the start call hands back a URL and the one-time state it was made with. The state is the only thing
+// that says who is coming back. Tokens stay on the player's row and never reach a browser.
+const oauthStates = new Map(); // state -> { playerId, at }
+const OAUTH_STATE_MS = 10 * 60_000;
+// The redirect must be byte-identical on the start and the callback, so it is never taken from a request:
+// SPOTIFY_REDIRECT_URI when the website and the server are on different hosts, otherwise this server.
+// 127.0.0.1, not localhost: Spotify refuses a `localhost` redirect URI outright and allows HTTP only for a
+// loopback IP literal. Anything else it redirects to must be https.
+const connectorOrigin = () => String(process.env.SERVER_URL ?? '').trim().replace(/\/+$/, '')
+  || String(process.env.RENDER_EXTERNAL_URL ?? '').trim().replace(/\/+$/, '') || `http://127.0.0.1:${PORT}`;
+const spotifyRedirect = () => String(process.env.SPOTIFY_REDIRECT_URI ?? '').trim() || `${connectorOrigin()}/api/connectors/spotify/callback`;
+
+async function spotifyStart(req, res) {
+  const reply = (status, data) => res.writeHead(status, { 'content-type': 'application/json', 'cache-control': 'no-store' }).end(JSON.stringify(data));
+  if (!spotifyConfigured()) return reply(503, { error: 'Spotify is not set up on this server yet.' });
+  const id = await store.playerForToken(String(req.headers.authorization ?? '').replace(/^Bearer /, ''));
+  const p = id && db.players[id];
+  if (!p) return reply(401, { error: 'Please log in again.' });
+  const state = crypto.randomBytes(16).toString('base64url');
+  for (const [k, v] of oauthStates) if (Date.now() - v.at > OAUTH_STATE_MS) oauthStates.delete(k);
+  oauthStates.set(state, { playerId: p.id, at: Date.now() });
+  return reply(200, { url: spotifyAuthUrl(state, spotifyRedirect()) });
+}
+
+// Playback control from the record player's card. The same bearer as the game; the tokens never leave the row.
+async function spotifyControlRoute(req, res) {
+  const reply = (status, data) => res.writeHead(status, { 'content-type': 'application/json', 'cache-control': 'no-store' }).end(JSON.stringify(data));
+  if (!spotifyConfigured()) return reply(503, { error: 'Spotify is not set up on this server yet.' });
+  const id = await store.playerForToken(String(req.headers.authorization ?? '').replace(/^Bearer /, ''));
+  const p = id && db.players[id];
+  if (!p) return reply(401, { error: 'Please log in again.' });
+  const entry = p.conn?.spotify;
+  if (!entry?.tokens) return reply(409, { error: 'Connect Spotify in Settings first.' });
+  const { action } = await readJson(req);
+  try {
+    await spotifyControl(entry, action);
+    save(); // an expired access token may have been refreshed on the way
+    await runConnectorSync(p, { force: 'spotify' }); // the press is drawn at once, not at the next sweep
+    return reply(200, { ok: true });
+  } catch (err) {
+    return reply(409, { error: err?.message ?? 'Spotify refused that.' });
+  }
+}
+
+async function spotifyCallback(req, res) {
+  const q = new URL(req.url, 'http://x').searchParams;
+  const state = q.get('state') ?? '';
+  const seen = oauthStates.get(state);
+  oauthStates.delete(state); // one use, whatever happens next
+  const back = `${siteUrl()}/#`;
+  if (!seen || Date.now() - seen.at > OAUTH_STATE_MS) return res.writeHead(302, { location: `${back}spotify-expired` }).end();
+  const p = db.players[seen.playerId];
+  if (!p) return res.writeHead(302, { location: `${back}spotify-expired` }).end();
+  if (q.get('error')) return res.writeHead(302, { location: `${back}spotify-denied` }).end();
+  try {
+    const tokens = await spotifyExchange(q.get('code') ?? '', spotifyRedirect());
+    p.conn ??= {};
+    p.conn.spotify = { value: 'Spotify', tokens, lastSync: 0, error: null, nextAt: 0, data: null, paid: null };
+    save();
+    await runConnectorSync(p);
+    return res.writeHead(302, { location: `${back}spotify-connected` }).end();
+  } catch (err) {
+    console.error('spotify sign-in failed', err?.message ?? err);
+    // Keep a row so the panel can say what went wrong instead of looking untouched.
+    p.conn ??= {};
+    p.conn.spotify = { value: 'Spotify', lastSync: 0, error: 'Spotify sign-in failed; try again.', nextAt: 0, data: null, paid: null };
+    save();
+    return res.writeHead(302, { location: `${back}spotify-failed` }).end();
+  }
+}
+
 const server = http.createServer((req, res) => {
   // "//" is not a URL against a base, and a bad escape is not decodable: answer 400 instead of throwing
   // out of the request listener, which would end the process for everyone.
@@ -1196,6 +1332,9 @@ const server = http.createServer((req, res) => {
   }
   if (req.method === 'OPTIONS') return res.writeHead(originOk(origin) ? 204 : 403).end();
   if (path === '/api/health') return health(res);
+  if (path === '/api/connectors/spotify/start' && req.method === 'POST') return spotifyStart(req, res);
+  if (path === '/api/connectors/spotify/callback' && req.method === 'GET') return spotifyCallback(req, res);
+  if (path === '/api/connectors/spotify/control' && req.method === 'POST') return spotifyControlRoute(req, res);
   const route = path.match(/^\/api\/(signup|login|logout|delete|forgot|reset|snapshots|chatimg)$/)?.[1];
   if (route) api(req, res, route).catch((err) => { console.error(err); if (!res.headersSent) res.writeHead(500).end(); });
   else serveStatic(req, res);
@@ -1279,7 +1418,10 @@ wss.on('connection', (ws) => {
       try { await loadPlayerThreadsIn(p); } catch (err) { console.error('chat load failed', err); }
       // Their study history too: the detail window and the days already rolled up.
       try { await loadSessions(p); } catch (err) { console.error('sessions load failed', err); }
-      sockets.get(p.id)?.close();
+      // One socket per player: a second tab takes the account over, and the socket it replaces is told why
+      // (4001) instead of quietly dropping — otherwise the retired tab reconnects, takes the account back, and
+      // the two keep kicking each other. The client stops on 4001 and asks for a reload.
+      sockets.get(p.id)?.close(4001, 'another tab');
       sockets.set(p.id, ws);
       sentSessions.delete(p.id); // a new connection gets the full history once
       save();

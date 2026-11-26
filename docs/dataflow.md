@@ -49,6 +49,9 @@ If the socket is down when the client writes, the message waits in the client's 
 | `place`, `move`, `pickup` | The item is in your storage; `canPlace` (inside your room, no overlap). A wall piece is placed with a negative room-local `y` (`-1` or `-2`), the wall band above the floor. Placing can swap a same-kind work piece out and picking a piece up closes its slot, so every nap on that room — any member's pet — is remapped to the piece's new index, or cleared when the piece itself is gone. |
 | `flip`, `restyle`, `room` | The furniture exists; colours and patterns come from the allowed lists. |
 | `todo_*`, `chat` | Text cleaned and length-capped; chat flood guard (one message per 0.6 s). |
+| `connector_add {kind, value}` | A known kind from `shared/connectors.js`; a username or http(s) address of the right shape; never an OAuth kind. Stored on `p.conn` and synced once at once. |
+| `connector_del {kind}` | Deletes that connector and the events it imported. |
+| `connector_sync {kind}` | Ignores that connector's interval for one sync. |
 | `watch {url, to?, g?}` | URL must pass `parseVideo`. House chat (no `to`/`g`) starts/ends the house watch party for everyone in that house. In a DM (`to`, must be a housemate or friend) starts/ends a private watch party for just those two users, even in different houses. In a group chat (`g`) starts/ends a watch party for all group members, even in different houses. `watchCtl` syncs play/pause/seek for the matching party. |
 | `join`, `leave` | The house code exists. Moving out takes your room with you into a new house. |
 | `leaderboard` | Answered to the asker only: minutes summed from `sessions` and `session_days` for the last 7 days (or all time), over the house, friends, everyone, or houses. With `metric: 'coins'` the same scopes are ranked by the balance in `accounts` instead, and `period` is ignored. |
@@ -89,6 +92,16 @@ The Guide's words live in `shared/guide.js`, which both sides import. `GUIDE_SEC
 When a `state` message arrives and the client sees an item it owns that is in `GUIDE_TIPS` but not in `me.tipsSeen`, it opens the tour on those steps and sends `tip_seen` for each of them. The server adds the id to `tipsSeen` and saves. `tip_seen` saves without broadcasting, the same as `inbox_read`, so the client marks the tip as seen locally too — otherwise a broadcast arriving before the next `state` would open it twice.
 
 The tour replaces the per-item toasts, which had the failure this one is built to avoid: each toast marked its tip as seen before it was shown, so a player who owned ten of these things saw two and lost the other eight. Opening the tour is what consumes the tips, and it lists all of them at once, so nothing is ever marked seen without being on screen.
+
+## Connectors
+
+1. Settings → Connectors sends `connector_add {kind, value}`. The server checks the value against `shared/connectors.js`, stores it on the player's own row (`p.conn.<kind>`) and syncs it at once rather than waiting for the sweep.
+2. Every 60 s the sweep walks the players that have a connector; each one whose `nextAt` has passed is fetched — GitHub's public events, LeetCode's public GraphQL, the iCal address, or Spotify's now-playing. **The address is checked before it is fetched**: http/https only, no credentials in the URL, no private, loopback or metadata address once the hostname resolves, and every redirect hop is checked again.
+3. What comes back is turned into a surface that already exists: a feed's dates replace that source's events in `me.events` (each carries `src` and `key`), while GitHub and LeetCode activity pays coins and appends study minutes through the normal session log.
+4. Coins and minutes are paid on the **delta** of today's totals and capped per connector per day, so a repeated sync pays nothing.
+5. A failure stores a short message on the connector and backs off 30 minutes; it never throws into a save or a socket.
+6. The owner sees `me.connectors` (value, last sync, error). The house sees exactly one thing: `members[].nowPlaying`, the track on a linked record player.
+7. Spotify is OAuth: `POST /api/connectors/spotify/start` (bearer) answers a URL and a one-use state; `GET /api/connectors/spotify/callback` exchanges the code, stores the tokens on the row and redirects to `/#spotify-connected` (or `-failed`, `-denied`, `-expired`). The site reads that marker on load: it toasts it once and replaces the address with the clean one, so the news is not lost on a page that has no other way to report it, and not replayed on the next reload. Playback rides a second route: `POST /api/connectors/spotify/control` (bearer, `{ action: play | pause | next | previous }`) asks Spotify for that one change and forces a sync, so the card and the label move at once. While the owner is online a 5 s fast lane re-reads the track (`syncPlayer` forced for Spotify only) and refreshes their state only when it really changed, while a press forces that same sync so the change is drawn at once; the minute sweep still owns the ledger and the back-off. The scopes returned with the sign-in are kept on the token record, which is how the connector row knows, before a press, that play/pause was never granted; a refresh token cannot gain a scope, so only a reconnect can clear it.
 
 ## Room snapshots (Object Storage)
 

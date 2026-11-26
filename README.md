@@ -33,6 +33,7 @@ A cozy pixel-art study game you play with friends. Start a focus timer and your 
 - **Stats**: day, week, month and year charts, a streak, a breakdown by subject, and leaderboards for your house or everyone.
 - **Social**: shared house to-dos, private to-dos, house chat with speech bubbles, private messages and group chats, pictures and documents (PDF, Office, CSV, text) in any chat, friends you find by username (suggestions appear as you type), and room snapshots saved to cloud storage with share links.
 - **Accounts**: sign up and log in, and your progress follows you to any device.
+- **Connectors**: link a GitHub username, a LeetCode username, a public calendar feed (Canvas, Google Classroom, Outlook, Apple) or Spotify. Today's activity pays coins and study minutes, a feed fills your calendar, and Spotify shows what you are playing on your room's record player, and a small card there plays, pauses and skips. The three keyless ones need no setup; Spotify needs the server's own client ID and secret.
 - **Phone friendly**: bottom-sheet panels, pinch to zoom, a swipeable shop, and it can be installed with "Add to Home Screen". On desktop, pixel cursors show what a click will do.
 
 ## Run it

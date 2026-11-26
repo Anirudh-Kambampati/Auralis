@@ -78,7 +78,7 @@ export const GUIDE_SECTIONS = [
   {
     id: 'music',
     title: 'Music and sound',
-    blurb: 'Click a record player, DJ deck, piano, guitar, saxophone, cello, violin or harp to start a piece, and click it again to stop. Only one piece plays at a time, so starting another ends the first. Drum kit, synth and dhol are band instruments: they layer over each other, but stop when music starts. Sound belongs to the house it started in, so leaving the house stops it. The speaker in the HUD mutes everything, the slider beside it is the master volume, and the ▾ beside that sets the levels for music, fire and clocks, and chimes — and stops every sound at once.',
+    blurb: 'Click a DJ deck, piano, guitar, saxophone, cello, violin or harp to start a piece, and click it again to stop. Only one piece plays at a time, so starting another ends the first. The record player is for Spotify: a click carries on where you left off (or pauses), while hovering it gives three quiet buttons that play, pause and skip and the track rides above the console. With nothing linked, a click opens Settings on the Spotify row. Drum kit, synth and dhol are band instruments: they layer over each other, but stop when music starts. Sound belongs to the house it started in, so leaving the house stops it. The speaker in the HUD mutes everything, the slider beside it is the master volume, and the ▾ beside that sets the levels for music, fire and clocks, and chimes — and stops every sound at once.',
   },
   {
     id: 'gifts',

@@ -6,6 +6,7 @@ import {
   CLAW_COST, readyKey, pieceReadyAt, CRAFT, craftedPrice, guestBondLevel,
 } from '../shared/game.js';
 import { GUIDE_SECTIONS, GUIDE_START, GUIDE_TIPS, tourSteps, unseenTips } from '../shared/guide.js';
+import { CONNECTORS } from '../shared/connectors.js';
 import {
   T, OVERHANG, SURFACE, AVATAR_H, avatarScale, lookKey, drawSeated, drawActing, drawSeam, drawFloor, drawWall, drawWallFace, drawWallTop, drawDoor, drawWindow, drawPainting, drawFurniture, drawAvatar, drawDeskLamp, drawGlow, drawUsing, drawSingSpotlight, drawFlames, drawClaw, skyNow, weatherNow, skyProgress, nightTint,
   coinURL, uiIconURL, AV, drawPaper, isDark, paintBlockText, drawWindow as drawWin, drawDroplet, drawHeart, tileURL, ACC_COL, ACC_COLORS, ACC_TINT, type Look,
@@ -26,6 +27,7 @@ type Member = {
   exams?: { subject: string; date: string }[]; // YYYY-MM-DD, soonest first
   caffeineSince?: number; caffeineUntil?: number; tipsyUntil?: number; // the caffeine window rides on the member, so housemates see the flame
   presence?: Presence;
+  nowPlaying?: { track: string | null; artist?: string | null; playing?: boolean; at?: number } | null; // their record player's track
 };
 // all: everyone has to tick it. to: who it's for (older ones have neither). at: reminder time. mine: one of my older private to-dos.
 type Todo = { id: number; text: string; done: boolean; by: string; byId?: string; all?: boolean; to?: string[]; ticks?: string[]; at?: number; mine?: boolean; repeat?: 'daily' | 'weekly' | 'monthly'; repeatUntil?: number; parentId?: number; priority?: 'low' | 'medium' | 'high' };
@@ -37,7 +39,7 @@ type Focus = { minutes: number; endsAt: number; tag?: string; pausedAt?: number 
 type Session = { at: number; minutes: number; tag: string; early?: boolean };
 type Inbox = { kind: string; from?: string; by?: string; text: string; at: number; n?: number };
 type Friend = { id: string; name: string; look: Look; online: boolean; focus: boolean; status: 'friend' | 'incoming' | 'outgoing'; here?: boolean; visit?: boolean; asked?: boolean; presence?: Presence };
-type Me = { id: string; home?: string; threadSeen?: Record<string, number>; visited?: { code: string; ownerName: string | null; online: number }[]; banned?: { id: string; name: string }[]; coins: number; discount?: boolean; notes?: { id: number; from: string; text: string; at: number; seen?: boolean }[]; sentNotes?: { id: number; toName: string; text: string; at: number }[]; scratch?: { id: number; text: string; at: number; editedAt?: number }[]; inbox?: Inbox[]; inboxSeen?: number; tipsSeen?: string[]; events?: CalEvent[]; pushKey?: string; notify?: Record<string, boolean>; groups?: Record<string, { name: string; members: string[]; msgs: Chat[] }>; friends?: Friend[]; inventory: Record<string, number>; crafted?: { item: string; col: string }[]; sessions: Session[]; subjects: string[]; hiddenSubjects: string[]; todos: Todo[]; dm: Record<string, Chat[]>; petAccs?: string[]; watch?: Watch | null };
+type Me = { id: string; home?: string; threadSeen?: Record<string, number>; visited?: { code: string; ownerName: string | null; online: number }[]; banned?: { id: string; name: string }[]; coins: number; discount?: boolean; notes?: { id: number; from: string; text: string; at: number; seen?: boolean }[]; sentNotes?: { id: number; toName: string; text: string; at: number }[]; scratch?: { id: number; text: string; at: number; editedAt?: number }[]; inbox?: Inbox[]; inboxSeen?: number; tipsSeen?: string[]; events?: CalEvent[]; pushKey?: string; notify?: Record<string, boolean>; groups?: Record<string, { name: string; members: string[]; msgs: Chat[] }>; friends?: Friend[]; inventory: Record<string, number>; crafted?: { item: string; col: string }[]; sessions: Session[]; subjects: string[]; hiddenSubjects: string[]; todos: Todo[]; dm: Record<string, Chat[]>; petAccs?: string[]; connectors?: { id: string; label: string; value?: string; lastSync?: number | null; error?: string | null; warning?: string | null; data?: { units?: number; solved?: number; events?: number; track?: string | null; artist?: string | null; playing?: boolean } | null }[]; watch?: Watch | null };
 type Board = { metric?: string; scope: string; period: string; rows: { name: string; me: boolean; minutes?: number; coins?: number; members?: number }[] };
 type Avatar = { x: number; y: number; tx: number; ty: number; up: boolean; dist: number; use?: string };
 type ItemKey = keyof typeof ITEMS;
@@ -178,10 +180,9 @@ let zoom = Math.max(DEEPEST_OUT, Math.min(2, savedZoom !== null ? Number(savedZo
 let outLimit = DEEPEST_OUT;
 let cam: { x: number; y: number; scale: number; z: number } | null = null; // camera target in art pixels, eased
 let camRoom = 0;
-// The scale a zoomed-in view was set to, held while I walk: fitting the room again in the next one made the view
-// magnify or shrink mid-step. The fitted step (0 and out) still follows the room, so the room on show fills the screen.
-let zoomScale = 0;
-let zoomDirty = false; // the zoom step just changed: take the scale again from the room in view
+// The framing is the house's, not the room's: every step is taken from the largest room's fit, so walking through a
+// door never magnifies or shrinks the view, and the out-limit cannot change under the player (see `render`).
+
 
 // ---------- network ----------
 let ws: WebSocket;
@@ -193,6 +194,20 @@ const maxReconnectAttempts = 10;
 const baseReconnectDelay = 1500;
 let reconnectTimer = 0; // the pending retry, so coming back to the tab can go now instead of waiting it out
 let reconnecting = false; // true from a drop until the next state arrives: one message per outage, not one per tap
+
+// A second tab takes the account over: the server retires this socket with code 4001. Retrying would take the
+// connection back, and the two tabs would keep kicking each other, so this one stops and says why instead.
+let retiredElsewhere = false;
+function anotherTab() {
+  if (retiredElsewhere) return;
+  retiredElsewhere = true;
+  clearTimeout(reconnectTimer);
+  reconnectTimer = 0;
+  toast('Auralis is open in another tab. This one has stopped updating — <b>reload</b> to carry on here.', '', {
+    ms: 24 * 60 * 60_000,
+    onClick: () => location.reload(),
+  });
+}
 // Intents made while the socket is between lives. The server has not met us until it answers with `state`,
 // so these go out when that lands, in the order they were made.
 const outbox: object[] = [];
@@ -203,8 +218,21 @@ function showLoading(on: boolean) {
   if (on) hintTimer = window.setTimeout(() => ($('#loadHint').hidden = false), 5000);
 }
 
+// A retired tab is retired for the account it lost, not for the tab itself. Signing out, or signing in as
+// anyone, is a new connection: clear the flag, take the banner down and let connect() run again.
+function unretire() {
+  if (!retiredElsewhere) return;
+  retiredElsewhere = false;
+  reconnectAttempts = 0;
+  clearTimeout(reconnectTimer);
+  reconnectTimer = 0;
+  const el = $('#toast');
+  if (el.textContent?.startsWith('Auralis is open in another tab')) el.hidden = true;
+}
+
 function connect() {
   // One socket at a time: two of them make the server close the first, and the pair then take turns.
+  if (retiredElsewhere) return; // another tab owns this account; retrying would take it back
   if (ws?.readyState === 0 || ws?.readyState === 1) return;
   if (!houseCode) showLoading(true);
   const sock = new WebSocket(serverUrl);
@@ -218,6 +246,7 @@ function connect() {
     if (sock !== ws) return; // replaced: this close says nothing about the socket that is live now
     if (!token) return; // Don't reconnect if logged out
     if (e.code === 1000) return; // Normal closure, don't reconnect
+    if (e.code === 4001) { anotherTab(); return; } // another tab took the account over
     const delay = Math.min(baseReconnectDelay * Math.pow(1.5, reconnectAttempts), 30000); // Exponential backoff, max 30s
     reconnectAttempts = Math.min(reconnectAttempts + 1, maxReconnectAttempts);
     console.log(`WebSocket disconnected (code: ${e.code}). Reconnecting in ${delay}ms... (attempt ${reconnectAttempts}/${maxReconnectAttempts})`);
@@ -235,6 +264,7 @@ function scheduleReconnect(delay: number) {
 }
 // Back in a way the backoff cannot see — a tab that was asleep, a phone that changed network: retry now.
 function retryNow() {
+  if (retiredElsewhere) return; // the other tab owns this account
   if (!token || ws?.readyState === 0 || ws?.readyState === 1) return;
   clearTimeout(reconnectTimer);
   reconnectTimer = 0;
@@ -257,6 +287,7 @@ function flushOutbox() {
 // on every tap made a reconnect in progress look like the game itself being broken.
 const send = (m: object) => {
   if (ws?.readyState === 1) { ws.send(JSON.stringify(m)); return true; }
+  if (retiredElsewhere) return false; // the other tab holds the connection; its banner is already up
   if (token) {
     outbox.push(m);
     if (outbox.length > 100) outbox.shift(); // a long outage is not worth replaying minutes of movement
@@ -319,6 +350,7 @@ function onMessage(m: any) {
     for (const [thread, color] of Object.entries(m.me.chatThemes ?? {})) threadThemes.set(thread, color as string);
     subscribePush();
     renderNotifyPrefs();
+    renderConnectors();
     // Entering a (new or current) house: show unseen object types in it once per item (remembered per user).
     if (houseCode && houseCode !== lastHouseCode) {
       lastHouseCode = houseCode;
@@ -722,7 +754,7 @@ function labelTheme() {
 }
 labelTheme();
 matchMedia('(prefers-color-scheme: dark)').addEventListener('change', labelTheme); // following the system until picked
-const muteBtn = $<HTMLButtonElement>('#mute'), volMore = $<HTMLButtonElement>('#volMore'), volMenu = $<HTMLElement>('#volMenu');
+const muteBtn = $<HTMLButtonElement>('#mute');
 const sliders = ui.querySelectorAll<HTMLInputElement>('input[data-vol]'); // master first
 let muted = localStorage.getItem('auralis.muted') === 'on';
 function applyVolume() {
@@ -744,7 +776,6 @@ muteBtn.addEventListener('click', () => {
   localStorage.setItem('auralis.muted', muted ? 'on' : 'off');
   applyVolume();
 });
-volMore.addEventListener('click', () => { volMenu.hidden = !volMenu.hidden; volMore.ariaExpanded = String(!volMenu.hidden); });
 $<HTMLButtonElement>('#stopAll').addEventListener('click', () => { stopAllSounds(); toast('All sounds stopped.'); });
 themeBtn.addEventListener('click', () => {
   setTheme(isDark() ? 'light' : 'dark');
@@ -1327,6 +1358,16 @@ function tapAt(e: PointerEvent) {
     const what = soundName(clicked.item);
     toast(toggleSound(clicked.item) ? `🔊 ${what} on. Click the ${ITEMS[clicked.item as ItemKey].name.toLowerCase()} again to stop.` : `${what} off.`);
   }
+  // The record player belongs to Spotify now, and it has no loop of its own to fall back on: with an account
+  // linked a click carries on (or stops) what I was listening to, and with none it opens Settings on the
+  // Spotify row, because a silent console should not look broken.
+  if (clicked?.item === 'recordPlayer' && hit.m.id === myId) {
+    const np = myMember()?.nowPlaying;
+    if (!spotifyLinked()) { openSpotifySettings(); return; }
+    if (np?.track && np.playing !== false) { spotifyControl('pause'); toast('⏸ Spotify paused.'); }
+    else { spotifyControl('play'); toast('▶ Back to Spotify.'); }
+    return;
+  }
   if (clicked?.item === 'deskCalendar') { if (hit.m.id === myId) setPanel('calendar'); else toast(esc(examLabel(hit.m))); return; }
   // A housemate's desk: leave them a note. A lamp in my own room: switch it on or off.
   if (clicked && hit.m.id !== myId && (ITEMS[clicked.item as ItemKey] as { table?: boolean }).table) { writeNote(hit.m.id); return; }
@@ -1350,7 +1391,7 @@ function setZoom(next: number) {
   const clamped = Math.max(outLimit, Math.min(2, next));
   // A zoom re-frames on my character (or the room, zoomed out), so drop any drag left over from before it;
   // otherwise that stale pan is added to the player and the view lands off them.
-  if (clamped !== zoom) { camPan.x = camPan.y = 0; zoomDirty = true; }
+  if (clamped !== zoom) camPan.x = camPan.y = 0;
   zoom = clamped;
   localStorage.setItem('auralis.zoom', String(zoom));
   zoomInBtn.disabled = zoom >= 2;
@@ -1578,7 +1619,7 @@ function render(t: number, dt: number) {
   ctx.imageSmoothingEnabled = false; // sprites are pre-baked canvases; smoothing would blur them when scaled up
   const me_ = avatars.get(myId) ?? { x: 0, y: 0 };
   const now = Date.now();
-  // Fit and centre my room in the part of the screen not covered by the HUD, dock, deck, side bar or panel.
+  // Frame the house-wide zoom in the part of the screen not covered by the HUD, dock, deck, side bar or panel.
   const chromeKey = `${win.innerWidth}x${win.innerHeight}@${dpr}|${chromeRev}`;
   if (chrome.key !== chromeKey) chrome = { key: chromeKey, ...measureChrome(dpr) };
   const coverTop = 70 * dpr, coverBottom = chrome.below * dpr, coverRight = chrome.right;
@@ -1592,11 +1633,20 @@ function render(t: number, dt: number) {
   const ri = Math.min(camRoom, grid.origins.length - 1);
   const o = grid.origins[ri] ?? { x: 1, y: WALL_H }, size = grid.sizes[ri] ?? roomSize(undefined);
   const roomW = (size.w + 2) * T, roomH = (size.h + WALL_H + 1) * T; // room plus its walls
-  const fit = Math.max(1, Math.floor(Math.min(aw / (roomW + T), ah / (roomH + T / 2))));
+  // The framing belongs to the house, not to the room I happen to be standing in: it is the largest room's fit.
+  // Re-fitting per room magnified or shrank the whole view every time the character walked through a door, which
+  // is what wandering a house of different-sized rooms made obvious — and the out-limit shrank with it. A reload
+  // frames the same scale, and so does a housemate on the same window.
+  let frameW = roomW, frameH = roomH;
+  for (const s of grid.sizes ?? []) {
+    frameW = Math.max(frameW, (s.w + 2) * T);
+    frameH = Math.max(frameH, (s.h + WALL_H + 1) * T);
+  }
+  const fit = Math.max(1, Math.floor(Math.min(aw / (frameW + T), ah / (frameH + T / 2))));
   // Characters and redrawn furniture have AV times the detail, so keep the scale a multiple of AV: crisp half-pixels.
   const base = Math.max(AV, Math.floor(fit / AV) * AV);
   // Out stops at the whole house: the first step that fits every room, and never a step past it, so the camera
-  // cannot drift off into empty paper. A house already inside the fitted room's view has nowhere to go.
+  // cannot drift off into empty paper. A house already inside the framed view has nowhere to go.
   const houseFit = Math.min(aw / (grid.w * T + T), ah / (grid.h * T + T / 2));
   const limit = -Math.max(0, Math.ceil((base - houseFit) / AV));
   if (limit !== outLimit) {
@@ -1604,13 +1654,9 @@ function render(t: number, dt: number) {
     if (zoom < outLimit) setZoom(outLimit); // a bigger house pulls the view back in to what still fits
     else zoomOutBtn.disabled = zoom <= outLimit;
   }
-  const fitted = Math.min(MAX_SCALE, Math.max(1, base + zoom * AV));
-  // Zoomed in, the scale is fixed when the zoom is asked for: walking into a smaller room used to fit that room
-  // again and magnify the view under the player. The fitted view (zoom 0 and out) still tracks the room.
-  if (zoom <= 0) zoomScale = fitted;
-  else if (zoomDirty || !zoomScale) zoomScale = fitted;
-  zoomDirty = false;
-  const scale = zoom <= 0 ? fitted : zoomScale;
+  // One scale for every zoom step, taken from a framing that does not depend on the room: there is nothing to
+  // hold between steps, and no jump as the character crosses into a room of another size.
+  const scale = Math.min(MAX_SCALE, Math.max(1, base + zoom * AV));
   const vw = aw / scale, vh = ah / scale;
   // Centre the whole room when it fits on screen and we are not zoomed in; otherwise follow the player.
   // Zooming in always centres the camera on my character avatar. Decorate is the exception: it always
@@ -1772,6 +1818,9 @@ function render(t: number, dt: number) {
   }
   const sunny = sky === 'day' && weather !== 'rain' && weather !== 'snow';
   const areas = slots.map((_, j) => ({ spots: petSpots[j], toys: petToys[j], laps: laps[j] }));
+  const trackLabels: { x: number; y: number; text: string }[] = []; // what a linked record player is playing
+  spotifySpot = null; // the card is placed from this frame's draw of my own record player
+  spotifyTile = null;
   type PetNow = { m: Member; p: Member['pets'][number]; slot: number; seed: number; room: number; pos: ReturnType<typeof petPos>; goal?: { x: number; y: number }; act?: string; run?: boolean };
   const pets: PetNow[] = [];
   slots.forEach(({ m, room, ri }, i) => {
@@ -1792,6 +1841,11 @@ function render(t: number, dt: number) {
       const fp = footprint(f);
       if (it.solid && !(canRotate(f.item) && f.rot)) for (const g of room.furniture) {
         if ((ITEMS[g.item as ItemKey] as { top?: boolean } | undefined)?.top &&g.y >= f.y && g.y < f.y + it.h && g.x >= f.x && g.x < f.x + it.w) bare |= 1 << (f.flip ? f.x + it.w - 1 - g.x : g.x - f.x);
+      }
+      if (f.item === 'recordPlayer' && m.nowPlaying?.track) trackLabels.push({ x: o.x + f.x, y: o.y + f.y, text: `♪ ${m.nowPlaying.track}` });
+      if (f.item === 'recordPlayer' && m.id === myId && onScreen(o.x + f.x, o.y + f.y)) {
+        spotifySpot ??= { x: (o.x + f.x) * T, y: (o.y + f.y) * T - lift };
+        spotifyTile ??= { x: o.x + f.x, y: o.y + f.y };
       }
       const thirsty = isPlant(f.item) && now - (f.wateredAt ?? now) > THIRSTY_MS; // droops until someone waters it
       const draw = () => {
@@ -2116,6 +2170,19 @@ function render(t: number, dt: number) {
   // Text in device pixels so it stays crisp.
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.textAlign = 'center';
+  for (const { x, y, text } of trackLabels) { // a linked record player: the track over the console
+    const fs = Math.max(10, 2.2 * scale);
+    ctx.font = `600 ${fs}px 'Fredoka', system-ui, sans-serif`;
+    ctx.lineWidth = Math.max(2, fs / 4);
+    ctx.strokeStyle = 'rgba(43,37,48,0.75)';
+    ctx.fillStyle = '#ffe08a';
+    const shown = text.length > 34 ? `${text.slice(0, 33)}…` : text;
+    const sx = (view.ox + x * T + 8) * scale, sy = (view.oy + y * T - 4) * scale;
+    ctx.strokeText(shown, sx, sy);
+    ctx.fillText(shown, sx, sy);
+  }
+  paintSpotifyCard(); // DOM over the canvas, placed once this frame's camera is settled
+
   for (const { x, y, name } of petLabels) { // a named pet: small, quiet tag over its head
     const fs = Math.max(10, 2.4 * scale);
     ctx.font = `600 ${fs}px 'Fredoka', system-ui, sans-serif`;
@@ -2406,7 +2473,9 @@ function maybeShowHouseItemsTour() {
         let text = where;
         if (f.item in GUIDE_TIPS) text = `${where}. ${(GUIDE_TIPS as Record<string, string>)[f.item]}`;
         else if (isSing) text = `${where}. Click to sing: a pose, floating notes and a spotlight, just for show.`;
-        else if (isMusic) text = `${where}. Click to play music (shared with the house).`;
+        else if (isMusic) text = f.item === 'recordPlayer'
+          ? `${where}. Click to carry on listening in Spotify, or to link it.`
+          : `${where}. Click to play music (shared with the house).`;
         else if (isWatch) text = `${where}. Watch videos together with housemates here.`;
         rows.push({ item: f.item, title: it.name, text });
       }
@@ -2867,10 +2936,7 @@ function panelBody(mine: Member) {
     return `<div class="me">${avatarPreview(mine.look)}<div class="me-info">
         <label>Name <input id="name" maxlength="20" pattern="[A-Za-z0-9_.-]{3,20}" title="Also your username: 3–20 letters, numbers, _ . or -" value="${esc(mine.name)}"></label>
         <p class="hint">Total focus: <b>${mine.totalMinutes}</b> min</p>
-        <div class="me-actions"><button class="off small-chip" data-act="logout">Log out</button>
-        <button class="danger small-chip" data-act="deleteaccount" title="Erase this account and everything in it">Delete account</button>
-        <button class="off small-chip" data-act="status">🟢 Set activity</button>
-        <button class="off small-chip" data-act="chimes">${chimes ? '🔔 Sounds on' : '🔕 Sounds off'}</button>
+        <div class="me-actions"><button class="off small-chip" data-act="status">🟢 Set activity</button>
         ${installPrompt ? '<button class="off small-chip" data-act="install">📲 Install app</button>' : ''}
         <a class="hint" href="/privacy.html" target="_blank" rel="noopener">Privacy policy</a></div></div></div>
       ${mine.pets.length ? toggleSec('Pets', `${mine.pets.map((p, slot) => {
@@ -3226,12 +3292,7 @@ panel.addEventListener('click', (e) => {
     case 'logout': signOut(true); break;
     case 'deleteaccount': void deleteAccount(); break;
     case 'status': setStatus(); break;
-    case 'chimes':
-      chimes = !chimes;
-      localStorage.setItem('auralis.chimes', chimes ? 'on' : 'off');
-      if (chimes) chime();
-      renderPanel();
-      break;
+    case 'chimes': toggleChimes(); break;
     case 'gift':
       if (gifting?.kind === 'crafted') { send({ t: 'gift_crafted', index: gifting.index, to: v }); gifting = null; break; }
       if (gifting?.kind === 'item') { send({ t: 'gift_item', item: gifting.item, to: v }); gifting = null; break; }
@@ -3267,9 +3328,16 @@ panel.addEventListener('click', (e) => {
       break;
     }
     case 'caldel': send({ t: 'event_del', scope: calScope, id: Number(v) }); break;
+    case 'connadd': case 'conndel': case 'connsync': case 'connspot': connectorAction(b.dataset.act!, v, settingsDialog); break;
     case 'snapshot': saveSnapshot(); break;
   }
 });
+// `toggle` does not bubble, so it is caught on the way down: what you opened stays open across a rebuild.
+panel.addEventListener('toggle', (e) => {
+  const d = (e.target as HTMLElement).closest<HTMLDetailsElement>('details.me-sec');
+  const title = d?.querySelector('summary')?.textContent?.trim();
+  if (d && title) secOpen.set(title, d.open);
+}, true);
 
 // Open the House panel with a note form for a housemate (also what clicking their desk does).
 function writeNote(id: string) {
@@ -3379,8 +3447,12 @@ function examLabel(m: Member) {
   if (m.id === myId) return next ? `Your next exam: ${next.subject} ${daysTo(next.date)}` : 'Add an exam to count down to';
   return next ? `${m.name}'s next exam: ${next.subject} ${daysTo(next.date)}` : `${m.name} has no exams coming up`;
 }
+// A section remembers whether you left it open. The panel is rebuilt on every house update — a housemate walks in, a
+// coin moves — and a fresh <details> would otherwise snap shut under your cursor, while the ones that start open
+// (Hair, Outfit) reopened every time and pulled the list back to themselves. `open` is only a first default.
+const secOpen = new Map<string, boolean>();
 const toggleSec = (title: string, body: string, open = false) =>
-  `<details class="me-sec"${open ? ' open' : ''}><summary>${esc(title)}</summary><div class="me-sec-body">${body}</div></details>`;
+  `<details class="me-sec"${(secOpen.get(title) ?? open) ? ' open' : ''}><summary>${esc(title)}</summary><div class="me-sec-body">${body}</div></details>`;
 
 function examsHTML(mine: Member) {
   const list = mine.exams ?? [];
@@ -3391,6 +3463,132 @@ function examsHTML(mine: Member) {
     <p class="hint">A desk calendar (Shop → Decor) shows your next exam to housemates.</p>`;
   return toggleSec('Exam countdown', body, !!list.length);
 }
+
+// ---------- connectors: free accounts that feed the game ----------
+const CONNECTOR_KINDS = CONNECTORS as { id: string; label: string; valueLabel: string; placeholder: string; max: number; hint: string; oauth?: boolean }[];
+const connAgo = (at?: number | null) => {
+  if (!at) return 'not synced yet';
+  const s = Math.max(0, Math.round((Date.now() - at) / 1000));
+  return s < 90 ? 'synced just now' : s < 3600 ? `synced ${Math.round(s / 60)} min ago` : `synced ${Math.round(s / 3600)} h ago`;
+};
+// Settings → Connectors. One row per service: what it is linked to and when it last synced, with Add, Sync or ✕.
+// The rows come from the server, so this is the only part of the dialog that is drawn rather than marked up.
+function renderConnectors() {
+  const box = $('#connList');
+  if (!box) return;
+  const rows = CONNECTOR_KINDS.map((c) => {
+    const row = me.connectors?.find((x) => x.id === c.id);
+    const state = row
+      ? `<small class="hint">${row.error ? `<b>${esc(row.error)}</b>` : row.warning ? `<b>${esc(row.warning)}</b>` : connAgo(row.lastSync)}${row.value ? ` · ${esc(row.value)}` : ''}</small>`
+      : `<small class="hint">${esc(c.hint)}</small>`;
+    const action = row
+      ? `<button class="off small" data-act="connsync" data-v="${c.id}">Sync</button><button class="off small" data-act="conndel" data-v="${c.id}" aria-label="Remove ${esc(c.label)}">✕</button>`
+      : c.oauth
+        ? `<button data-act="connspot">Connect</button>`
+        : `<input id="conn-${c.id}" maxlength="${c.max}" placeholder="${esc(c.placeholder)}" aria-label="${esc(c.label)} ${esc(c.valueLabel)}"><button data-act="connadd" data-v="${c.id}">Add</button>`;
+    return `<li class="conn" data-conn="${c.id}"><span class="who"><b>${esc(c.label)}</b> ${state}</span>${action}</li>`;
+  });
+  box.innerHTML = `<ul class="members">${rows.join('')}</ul>`;
+}
+
+// The four things a connector row can do, wherever the row happens to be drawn.
+function connectorAction(act: string, kind: string, root: HTMLElement) {
+  if (act === 'connadd') {
+    const box = root.querySelector<HTMLInputElement>(`#conn-${kind}`);
+    const value = box?.value.trim() ?? '';
+    if (!value) { toast('Enter a username or address first.', 'error'); return; }
+    send({ t: 'connector_add', kind, value });
+    box!.value = '';
+  } else if (act === 'conndel') send({ t: 'connector_del', kind });
+  else if (act === 'connsync') send({ t: 'connector_sync', kind });
+  else if (act === 'connspot') {
+    fetch(`${apiBase}/api/connectors/spotify/start`, { method: 'POST', headers: { authorization: `Bearer ${token}` } })
+      .then((r) => r.json())
+      .then((j) => { if (j.url) location.href = j.url; else toast(esc(j.error ?? 'Spotify is not set up yet.'), 'error'); })
+      .catch(() => toast('Could not reach the server.', 'error'));
+  }
+}
+
+// Spotify sign-in leaves the browser and comes back to `/#spotify-connected` (or -denied, -expired,
+// -failed). That marker is the only news the returning player gets, so it is read once as a toast and
+// then stripped from the address: a reload should not replay it.
+function spotifyReturn() {
+  const said: Record<string, [string, string, number]> = {
+    'spotify-connected': ['Spotify is connected — your record player shows what you play.', '', 5000],
+    'spotify-denied': ['You turned down the Spotify sign-in. Nothing was changed.', '', 4200],
+    'spotify-expired': ['That Spotify link expired. Press Connect again in Settings.', 'error', 4200],
+    'spotify-failed': ['Spotify sign-in did not finish. Try Connect again in Settings.', 'error', 4200],
+  };
+  const news = said[location.hash.replace(/^#/, '')];
+  if (!news) return;
+  toast(news[0], news[1], { ms: news[2] });
+  // replaceState, not location.hash = '': the marker shares its history entry, so Back still leaves.
+  try { history.replaceState(null, '', location.pathname + location.search); } catch { /* file:// page */ }
+}
+spotifyReturn();
+
+// ---------- Spotify on the record player ----------
+// The console used to play its own lo-fi loop. It is the owner's Spotify now: a small card over it plays,
+// pauses and skips, and the renderer draws the track on a label above it.
+const spotifyCard = $<HTMLDivElement>('#spotifyCard');
+let spotifyTile: { x: number; y: number } | null = null; // the console's tile, for the hover test
+let spotifyHover = false, spotifyCardHover = false;
+const spotifyPlayEl = $<HTMLButtonElement>('#spotifyPlay');
+const spotifyLinked = () => !!me.connectors?.some((c) => c.id === 'spotify');
+let spotifySpot: { x: number; y: number } | null = null; // my record player where this frame drew it, in world px
+
+type SpotifyAction = 'play' | 'pause' | 'next' | 'previous';
+function spotifyControl(action: SpotifyAction) {
+  fetch(`${apiBase}/api/connectors/spotify/control`, {
+    method: 'POST',
+    headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+    body: JSON.stringify({ action }),
+  })
+    .then(async (r) => {
+      const j = (await r.json().catch(() => ({}))) as { error?: string };
+      if (!r.ok) toast(esc(j.error ?? 'Spotify did not answer.'), 'error');
+    })
+    .catch(() => toast('Could not reach the server.', 'error'));
+}
+
+// The card is DOM and the console is canvas: both are placed from the same camera, so zooming and panning
+// keep the buttons on the record player instead of leaving them in a corner.
+function paintSpotifyCard() {
+  const np = myMember()?.nowPlaying;
+  const playing = !!np?.track && np.playing !== false;
+  // Whisper-quiet: three glyphs that surface only while the console (or the strip itself) is under the pointer.
+  // A touch screen has no hover, so there they stay faintly visible instead.
+  const touch = win.matchMedia('(hover: none)').matches;
+  const show = !!spotifySpot && spotifyLinked() && (spotifyHover || spotifyCardHover || touch || spotifyCard.matches(':focus-within'));
+  spotifyCard.hidden = !show;
+  if (!show) return;
+  const dpr = win.devicePixelRatio || 1;
+  const x = (view.ox + spotifySpot!.x + T / 2) * view.scale / dpr;
+  const y = (view.oy + spotifySpot!.y) * view.scale / dpr;
+  spotifyCard.style.transform = `translate(${Math.round(x)}px, ${Math.round(y)}px) translate(-50%, -100%)`;
+  const label = playing ? '⏸' : '▶';
+  if (spotifyPlayEl.textContent !== label) {
+    spotifyPlayEl.textContent = label;
+    spotifyPlayEl.setAttribute('aria-label', playing ? 'Pause' : 'Play');
+    spotifyPlayEl.title = playing ? 'Pause' : 'Play';
+  }
+}
+canvas.addEventListener('pointermove', (e) => {
+  if (!spotifyTile) { spotifyHover = false; return; }
+  const t = tileAt(e);
+  spotifyHover = t.tx === spotifyTile.x && t.ty === spotifyTile.y;
+});
+spotifyCard.addEventListener('pointerenter', () => (spotifyCardHover = true));
+spotifyCard.addEventListener('pointerleave', () => (spotifyCardHover = false));
+spotifyCard.addEventListener('click', (e) => {
+  const b = (e.target as HTMLElement).closest<HTMLButtonElement>('button[data-sp]');
+  if (!b) return;
+  const act = b.dataset.sp;
+  if (act === 'toggle') {
+    const np = myMember()?.nowPlaying;
+    spotifyControl(!!np?.track && np?.playing !== false ? 'pause' : 'play');
+  } else if (act === 'next' || act === 'previous') spotifyControl(act);
+});
 
 // ---------- calendar: the house's shared one, or my own (with my exams in it) ----------
 const isoDay = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -4871,6 +5069,7 @@ askDialog.addEventListener('close', () => settleAsk(false)); // anything else th
 
 function signOut(tellServer: boolean) {
   stopAllSounds();
+  unretire(); // a logout is a new session here: the tab that took the account over is not mine any more
   if (tellServer && token) fetch(`${apiBase}/api/logout`, { method: 'POST', body: JSON.stringify({ token }) }).catch(() => {});
   token = null;
   localStorage.removeItem('auralis.token');
@@ -4996,6 +5195,56 @@ $('#notifyPrefs').addEventListener('change', (e) => {
 $('#notifyPerm').addEventListener('click', (e) => {
   if ((e.target as HTMLElement).closest('#notifyAllow')) Notification.requestPermission().then(() => { subscribePush(); renderNotifyPrefs(); syncBell(); });
 });
+
+// ---------- settings: one dialog for sound, notifications, connectors and the account ----------
+// These are all settings, so they sit together instead of being spread over the HUD, the bell and the You panel.
+// The markup is static (index.html); only the connector rows are drawn, because those come from the server.
+const settingsDialog = $<HTMLDialogElement>('#settingsModal');
+const chimesBtn = $<HTMLButtonElement>('#chimesBtn');
+function paintChimes() {
+  chimesBtn.textContent = chimes ? '🔔 On' : '🔕 Off';
+  chimesBtn.setAttribute('aria-pressed', String(chimes));
+  chimesBtn.classList.toggle('on', chimes);
+  chimesBtn.classList.toggle('off', !chimes);
+}
+function toggleChimes() {
+  chimes = !chimes;
+  localStorage.setItem('auralis.chimes', chimes ? 'on' : 'off');
+  if (chimes) chime();
+  paintChimes();
+}
+function openSettings() {
+  renderConnectors();
+  renderNotifyPrefs();
+  paintChimes();
+  if (!settingsDialog.open) settingsDialog.showModal();
+}
+
+// The record player sends people here when nothing is linked: the dialog, scrolled to Connectors with the
+// Spotify row lit, so the row to press is the one thing they see.
+function openSpotifySettings() {
+  openSettings();
+  const li = settingsDialog.querySelector<HTMLElement>('#connList li[data-conn="spotify"]');
+  if (!li) return;
+  li.scrollIntoView({ block: 'center' });
+  li.classList.remove('flash');
+  void li.offsetWidth; // restart the animation when the row is lit twice in a row
+  li.classList.add('flash');
+  window.setTimeout(() => li.classList.remove('flash'), 1800);
+}
+$('#settings').addEventListener('click', openSettings);
+$('#settingsClose').addEventListener('click', () => settingsDialog.close());
+settingsDialog.addEventListener('click', (e) => {
+  const b = (e.target as HTMLElement).closest<HTMLButtonElement>('button[data-act]');
+  if (!b) return;
+  const act = b.dataset.act!;
+  // Leaving closes the dialog first: signing out or erasing the account takes the whole app away with it.
+  if (act === 'chimes') toggleChimes();
+  else if (act === 'logout') { settingsDialog.close(); signOut(true); }
+  else if (act === 'deleteaccount') { settingsDialog.close(); void deleteAccount(); }
+  else if (act.startsWith('conn')) connectorAction(act, b.dataset.v ?? '', settingsDialog);
+});
+// The dialog can also be dismissed with Escape or a click on the backdrop, which is what a dialog does by itself.
 
 // Web Push: lets reminders arrive with Auralis closed. Needs notification permission and the service worker (production builds).
 let pushAsked = false;
@@ -5142,6 +5391,7 @@ $('#authForm').addEventListener('submit', async (e) => {
       $<HTMLInputElement>('#authPass').value = '';
       $<HTMLInputElement>('#authConfirm').value = '';
       showLanding(false);
+      unretire(); // this tab is signing in as this account now
       connect();
     } catch {
       err.textContent = "Can't reach the server. Check your connection.";
@@ -5182,6 +5432,7 @@ $('#authForm').addEventListener('submit', async (e) => {
     localStorage.setItem('auralis.token', data.token);
     if (authMode === 'signup') { localStorage.removeItem('auralis.id'); pendingLook = buddyLook; }
     showLanding(false);
+    unretire(); // this tab is signing in as this account now, whoever it is
     connect();
   } catch {
     err.textContent = "Can't reach the server. Check your connection.";

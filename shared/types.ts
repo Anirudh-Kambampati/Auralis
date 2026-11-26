@@ -65,6 +65,7 @@ export interface MeState {
   mutedThreads?: Record<string, number>;
   threadSeen?: Record<string, number>; // thread -> newest message id this member has read
   chatThemes?: Record<string, string>;
+  connectors?: ConnectorView[]; // my connectors, private to me: what is linked, when it last synced, and why it failed
   pushKey?: string;
   watch?: WatchState | null; // private watch party (e.g. with one friend), if any
 }
@@ -93,6 +94,27 @@ export interface Member {
   caffeineUntil?: number;
   tipsyUntil?: number;
   presence?: PresenceState | null;
+  nowPlaying?: NowPlaying | null; // what their record player is showing, when Spotify is linked
+}
+
+// What a linked Spotify account is playing. It rides in publicPlayer on purpose: the record player is
+// in the house, so housemates are meant to see the track.
+export interface NowPlaying {
+  track: string | null;
+  artist: string | null;
+  playing?: boolean; // false while paused, so the card's button says Play
+  at?: number;
+}
+
+// One connector as its owner sees it. `value` is masked when it is long (a calendar's secret address).
+export interface ConnectorView {
+  id: string;
+  label: string;
+  value?: string;
+  lastSync?: number | null;
+  error?: string | null;
+  warning?: string | null; // true while the stored sign-in lacks a scope the card needs (reconnect)
+  data?: { units?: number; solved?: number; events?: number; track?: string | null; artist?: string | null; playing?: boolean } | null;
 }
 
 export interface Look {
@@ -360,6 +382,10 @@ export interface ClientMessages {
   // Groups
   group_new: { t: 'group_new'; name: string; members: string[] };
   group_leave: { t: 'group_leave'; g: string };
+  // Connectors (GitHub, LeetCode, a calendar feed, Spotify)
+  connector_add: { t: 'connector_add'; kind: string; value?: string };
+  connector_del: { t: 'connector_del'; kind: string };
+  connector_sync: { t: 'connector_sync'; kind: string };
   // Calendar
   event_add: { t: 'event_add'; scope: 'house' | 'personal'; date: string; time?: string; text: string };
   event_del: { t: 'event_del'; scope: 'house' | 'personal'; id: number };
