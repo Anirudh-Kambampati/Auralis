@@ -33,7 +33,7 @@ type Member = {
 type Todo = { id: number; text: string; done: boolean; by: string; byId?: string; all?: boolean; to?: string[]; ticks?: string[]; at?: number; mine?: boolean; conn?: 'leetcode'; repeat?: 'daily' | 'weekly' | 'monthly'; repeatUntil?: number; parentId?: number; priority?: 'low' | 'medium' | 'high' };
 type Presence = { status: string; custom?: string; until?: number; at?: number } | null;
 type Chat = { id: number; from: string; by: string; text: string; at: number; img?: string; replyTo?: number }; // img: key of a picture
-type CalEvent = { id: number; date: string; time?: string; text: string; by?: string }; // date YYYY-MM-DD, time HH:MM
+type CalEvent = { id: number; date: string; time?: string; text: string; by?: string; local?: boolean; scope?: 'house' | 'me' }; // date YYYY-MM-DD, time HH:MM; local = kept on this device only
 type Announcement = { id: number; text: string; by: string; byId: string; at: number };
 type Focus = { minutes: number; endsAt: number; tag?: string; pausedAt?: number | null };
 type Session = { at: number; minutes: number; tag: string; early?: boolean };
@@ -3369,10 +3369,18 @@ panel.addEventListener('click', (e) => {
     case 'calDay': calDay = v; renderPanel(); break;
     case 'caladd': {
       const text = panel.querySelector<HTMLInputElement>('#calText')!.value.trim(), time = panel.querySelector<HTMLInputElement>('#calTime')!.value;
-      if (text) send({ t: 'event_add', scope: calScope, date: calDay, time, text });
+      if (!text) break;
+      // A timed event syncs; an untimed one is kept on this device only, never sent.
+      if (time) send({ t: 'event_add', scope: calScope, date: calDay, time, text });
+      else { addLocalEvent({ date: calDay, text, scope: calScope as 'house' | 'me' }); renderPanel(); }
       break;
     }
-    case 'caldel': send({ t: 'event_del', scope: calScope, id: Number(v) }); break;
+    case 'caldel': {
+      const id = Number(v);
+      if (localEvents.some((e) => e.id === id)) { removeLocalEvent(id); renderPanel(); }
+      else send({ t: 'event_del', scope: calScope, id });
+      break;
+    }
     case 'connadd': case 'conndel': case 'connsync': case 'connspot': connectorAction(b.dataset.act!, v, settingsDialog); break;
     case 'snapshot': saveSnapshot(); break;
   }
@@ -3650,12 +3658,20 @@ spotifyCard.addEventListener('click', (e) => {
 
 // ---------- calendar: the house's shared one, or my own (with my exams in it) ----------
 const isoDay = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+// An untimed event is never sent to the server: it lives here, on this device only, and syncs nowhere.
+const LOCAL_EVENTS_KEY = 'auralis.localEvents';
+let localEvents: CalEvent[] = (() => { try { return JSON.parse(localStorage.getItem(LOCAL_EVENTS_KEY) ?? '[]'); } catch { return []; } })();
+let localEventSeq = Math.min(-1_000_000, ...localEvents.map((e) => e.id)) - 1;
+const saveLocalEvents = () => { try { localStorage.setItem(LOCAL_EVENTS_KEY, JSON.stringify(localEvents)); } catch { /* private mode */ } };
+const addLocalEvent = (ev: { date: string; text: string; scope: 'house' | 'me' }) => { localEvents.push({ ...ev, id: localEventSeq--, local: true }); saveLocalEvents(); };
+const removeLocalEvent = (id: number) => { localEvents = localEvents.filter((e) => e.id !== id); saveLocalEvents(); };
 let calScope = 'house';
 let calMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
 let calDay = isoDay(new Date());
 function calendarBody() {
-  const list: CalEvent[] = calScope === 'house' ? houseEvents
-    : [...(me.events ?? []), ...(myMember()?.exams ?? []).map((x, i) => ({ id: -1 - i, date: x.date, text: `📝 ${x.subject} exam` }))];
+  const local = localEvents.filter((e) => e.scope === calScope);
+  const list: CalEvent[] = calScope === 'house' ? [...houseEvents, ...local]
+    : [...(me.events ?? []), ...local, ...(myMember()?.exams ?? []).map((x, i) => ({ id: -1 - i, date: x.date, text: `📝 ${x.subject} exam` }))];
   const y = calMonth.getFullYear(), mo = calMonth.getMonth(), today = isoDay(new Date());
   const blanks = (new Date(y, mo, 1).getDay() + 6) % 7; // weeks start on Monday
   const busy = new Set(list.map((e) => e.date));
@@ -3674,7 +3690,7 @@ function calendarBody() {
     <div class="cal">${['M', 'T', 'W', 'T', 'F', 'S', 'S'].map((d) => `<span>${d}</span>`).join('')}${'<span></span>'.repeat(blanks)}${cells.join('')}</div>
     <h3>${label}</h3>
     ${day.length ? `<ul class="members">${day.map((e) => `<li><span class="who">${e.time ? `<b>${e.time}</b> ` : ''}${esc(e.text)}${calScope === 'house' && e.by ? ` <small class="hint">${esc(e.by)}</small>` : ''}</span>
-      ${e.id >= 0 ? `<button class="off small" data-act="caldel" data-v="${e.id}" aria-label="Delete ${esc(e.text)}">✕</button>` : ''}</li>`).join('')}</ul>` : '<p class="hint">Nothing planned.</p>'}
+      ${e.id >= 0 || e.local ? `<button class="off small" data-act="caldel" data-v="${e.id}" aria-label="Delete ${esc(e.text)}">✕</button>` : ''}</li>`).join('')}</ul>` : '<p class="hint">Nothing planned.</p>'}
     <div class="row"><input id="calText" maxlength="60" placeholder="${calScope === 'house' ? 'Group study at the library' : 'Dentist'}" aria-label="What's happening">
       <input id="calTime" type="time" aria-label="Time (optional)"><button data-act="caladd">Add</button></div>`;
 }

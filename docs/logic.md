@@ -190,6 +190,11 @@ A desk note's form sends one every seven seconds: after a note the form stays on
 - Reminders (`at`) are swept over the shared to-dos of every house and over the references people hold, so a task whose maker has moved away still nudges the people it is for; `reminded` keeps each one to a single nudge.
 - A task an older build saved on a house row is moved onto its maker's row at boot — or when a lazily loaded maker is read — with no task lost; one that had no maker goes to a member of its house. The same boot names the people an older "everyone" task was for (its house as it then stood) and writes their references.
 
+## Calendar
+
+- **A timed event is shared; an untimed one stays on the device.** Both calendars — the house's and your own — take a date and an optional time. An event with a time is stored on the server and syncs: a house event to every member (`h.events`), a personal one to your own other devices (`p.events`). An event with no time is never sent — the client keeps it in `localStorage` and shows it only on the device that wrote it, so it syncs nowhere, not to housemates and not to your other devices. The server drops an untimed `event_add` as a backstop, and the state it sends carries only timed events, so an untimed one saved by an older build stops syncing too.
+- An ICS feed's dates land on the personal calendar with their time; an all-day feed date has no time, so it stays local like any other untimed event.
+
 ## Chat: how fast, and how long
 
 - **The house chat belongs to the house.** Joining another house starts its chat from scratch: the lines on screen, the bubbles over speakers and the unread count are dropped with the house left behind (`chat = []` in the `state` handler), and the box fills with the new house's tail. Anything the server has sent for the old house stops arriving at that point too, so the card never shows two houses at once.

@@ -49,6 +49,8 @@ If the socket is down when the client writes, the message waits in the client's 
 | `place`, `move`, `pickup` | The item is in your storage; `canPlace` (inside your room, no overlap). A wall piece is placed with a negative room-local `y` (`-1` or `-2`), the wall band above the floor. Placing can swap a same-kind work piece out and picking a piece up closes its slot, so every nap on that room — any member's pet — is remapped to the piece's new index, or cleared when the piece itself is gone. |
 | `flip`, `restyle`, `room` | The furniture exists; colours and patterns come from the allowed lists. |
 | `todo_*`, `chat` | Text cleaned and length-capped; chat flood guard (one message per 0.6 s). |
+| `event_add {scope, date, time, text}` | A `time` (`HH:MM`) is required: an untimed event is dropped and kept on the device instead, so only timed events ever reach the server. A house event goes to `h.events`, a personal one to `p.events`; the state sends only timed events, so a legacy untimed one stops syncing. |
+| `event_del {scope, id}` | Removes the event from the house or personal calendar. |
 | `connector_add {kind, value}` | A known kind from `shared/connectors.js`; a username or http(s) address of the right shape; never an OAuth kind. Stored on `p.conn` and synced once at once. |
 | `connector_del {kind}` | Deletes that connector and the events it imported. |
 | `connector_sync {kind}` | Ignores that connector's interval for one sync. |
@@ -97,7 +99,7 @@ The tour replaces the per-item toasts, which had the failure this one is built t
 
 1. Settings → Connectors sends `connector_add {kind, value}`. The server checks the value against `shared/connectors.js`, stores it on the player's own row (`p.conn.<kind>`) and syncs it at once rather than waiting for the sweep.
 2. Every 60 s the sweep walks the players that have a connector; each one whose `nextAt` has passed is fetched — GitHub's public events, LeetCode's public GraphQL, the iCal address, or Spotify's now-playing. **The address is checked before it is fetched**: http/https only, no credentials in the URL, no private, loopback or metadata address once the hostname resolves, and every redirect hop is checked again.
-3. What comes back is turned into a surface that already exists: a feed's dates replace that source's events in `me.events` (each carries `src` and `key`), while GitHub and LeetCode activity pays coins and appends study minutes through the normal session log.
+3. What comes back is turned into a surface that already exists: a feed's dates replace that source's events in `me.events` (each carries `src` and `key`; only timed dates are sent — an all-day one stays on the device), while GitHub and LeetCode activity pays coins and appends study minutes through the normal session log.
 4. Coins and minutes are paid on the **delta** of today's totals and capped per connector per day, so a repeated sync pays nothing.
 5. A failure stores a short message on the connector and backs off 30 minutes; it never throws into a save or a socket.
 6. The owner sees `me.connectors` (value, last sync, error). The house sees exactly one thing: `members[].nowPlaying`, the track on a linked record player.

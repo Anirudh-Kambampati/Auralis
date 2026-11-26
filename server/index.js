@@ -756,6 +756,10 @@ function send(ws, msg) {
   ws.send(JSON.stringify(msg));
 }
 
+// Only a timed event is ever shared: an untimed one stays on the device that wrote it, so the state
+// carries timed events alone and a legacy untimed one (saved by an older build) stops syncing too.
+const timedEvents = (list) => (list ?? []).filter((e) => e.time);
+
 function broadcastHouseNow(code, full = false, only = null) {
   const h = db.houses[code];
   if (!h) return;
@@ -778,7 +782,7 @@ function broadcastHouseNow(code, full = false, only = null) {
     const dmw = houseDmWatch(p);
     const gw = houseGroupWatch(p);
     const privateWatch = gw ? groupWatchPayload(gw[0], gw[1]) : dmw ? dmWatchPayload(dmw[0], dmw[1], id) : null;
-    send(ws, { t: 'state', house: { ...house, ...(f && { chat: tail(thread) }), members: h.members.map((mid) => { const q = db.players[mid]; return { ...publicPlayer(q, id), rooms: roomsFor(id, q, code) }; }), todos: todoView(h, id) }, me: { id: p.id, home: p.home, ...houseLists(p), coins: p.coins, discount: !!p.discount, notes: p.notes ?? [], sentNotes: p.sentNotes ?? [], scratch: p.scratch ?? [], inbox: p.inbox ?? [], inboxSeen: p.inboxSeen ?? 0, tipsSeen: p.tipsSeen ?? [], events: p.events ?? [], connectors: connectorView(p), spotifyOk: spotifyAllowed(p), inventory: p.inventory, crafted: p.crafted ?? [], ready: p.ready ?? {}, petAccs: p.petAccs ?? [], ...(sentSessions.get(id) !== mySessions(p).length && { sessions: mySessions(p) }), subjects: p.subjects ?? [], hiddenSubjects: p.hiddenSubjects ?? [], todos: p.todos ?? [], dm: f ? dmView(p) : undefined, groups: f ? groupsView(p) : groupsMeta(p), friends: friendList(p), notify: p.notify ?? {}, mutedThreads: mutedView(p), threadSeen: seenView(p), chatThemes: p.chatThemes ?? {}, pushKey: pushOn ? PUSH_KEY : undefined, watch: privateWatch } });
+    send(ws, { t: 'state', house: { ...house, events: timedEvents(house.events), ...(f && { chat: tail(thread) }), members: h.members.map((mid) => { const q = db.players[mid]; return { ...publicPlayer(q, id), rooms: roomsFor(id, q, code) }; }), todos: todoView(h, id) }, me: { id: p.id, home: p.home, ...houseLists(p), coins: p.coins, discount: !!p.discount, notes: p.notes ?? [], sentNotes: p.sentNotes ?? [], scratch: p.scratch ?? [], inbox: p.inbox ?? [], inboxSeen: p.inboxSeen ?? 0, tipsSeen: p.tipsSeen ?? [], events: timedEvents(p.events), connectors: connectorView(p), spotifyOk: spotifyAllowed(p), inventory: p.inventory, crafted: p.crafted ?? [], ready: p.ready ?? {}, petAccs: p.petAccs ?? [], ...(sentSessions.get(id) !== mySessions(p).length && { sessions: mySessions(p) }), subjects: p.subjects ?? [], hiddenSubjects: p.hiddenSubjects ?? [], todos: p.todos ?? [], dm: f ? dmView(p) : undefined, groups: f ? groupsView(p) : groupsMeta(p), friends: friendList(p), notify: p.notify ?? {}, mutedThreads: mutedView(p), threadSeen: seenView(p), chatThemes: p.chatThemes ?? {}, pushKey: pushOn ? PUSH_KEY : undefined, watch: privateWatch } });
     sentSessions.set(id, mySessions(p).length);
   }
 }

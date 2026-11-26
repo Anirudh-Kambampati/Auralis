@@ -235,8 +235,9 @@ export const social = {
     const { db, p, cleanText, m, newId, MAX_EVENTS } = ctx;
     {
           const h = db.houses[p.house], text = cleanText(m.text, 60);
-          if (!text || !/^\d{4}-\d{2}-\d{2}$/.test(m.date ?? '') || (m.time && !/^\d{2}:\d{2}$/.test(m.time))) return;
-          const ev = { id: newId(), date: m.date, time: m.time || undefined, text, by: p.name };
+          // Only a timed event is shared: an untimed one stays on the device that wrote it, so it is never sent.
+          if (!text || !/^\d{4}-\d{2}-\d{2}$/.test(m.date ?? '') || !/^\d{2}:\d{2}$/.test(m.time ?? '')) return;
+          const ev = { id: newId(), date: m.date, time: m.time, text, by: p.name };
           const add = (list) => [...(list ?? []), ev].sort((a, b) => `${a.date}${a.time ?? ''}`.localeCompare(`${b.date}${b.time ?? ''}`)).slice(-MAX_EVENTS);
           if (m.scope === 'house') h.events = add(h.events);
           else p.events = add(p.events);
